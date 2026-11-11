@@ -76,6 +76,15 @@ class PairingRequiredException implements Exception {
   String toString() => 'PairingRequiredException(reason: $reason)';
 }
 
+class CameraBusyException implements Exception {
+  const CameraBusyException([this.reason]);
+
+  final int? reason;
+
+  @override
+  String toString() => 'CameraBusyException(reason: $reason)';
+}
+
 class CameraDisconnectedException implements Exception {
   const CameraDisconnectedException([this.cause]);
 
@@ -119,7 +128,9 @@ abstract interface class CameraClient {
 
   Future<List<CameraObject>> listPhotos();
 
-  Future<Uint8List?> thumbnail(int handle);
+  Future<CameraObject?> objectInfo(int handle);
+
+  Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken});
 
   Future<void> download(
     CameraObject object,

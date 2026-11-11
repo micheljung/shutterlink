@@ -1,30 +1,41 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+import 'package:eos_transfer/app.dart';
+import 'package:eos_transfer/ptpip/camera_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:eos_transfer/main.dart';
+import 'fakes/fake_camera_client.dart';
+import 'fakes/test_app.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('starts on the connect screen and shows pairing help', (
+    tester,
+  ) async {
+    final dependencies = await testDependencies(
+      (_, _) => throw const PairingRequiredException(),
+    );
+    await tester.pumpWidget(EosTransferApp(dependencies: dependencies));
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Set up the camera'), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Pair this phone on the camera'), findsOneWidget);
+  });
+
+  testWidgets('returns to the connect screen when the camera drops', (
+    tester,
+  ) async {
+    final client = FakeCameraClient([cameraObject(1, 'IMG_0001.JPG')]);
+    final dependencies = await testDependencies((_, _) async => client);
+    await tester.pumpWidget(EosTransferApp(dependencies: dependencies));
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    expect(find.text('Photos (1)'), findsOneWidget);
+
+    client.simulateDisconnect();
+    await tester.pumpAndSettle();
+
+    expect(find.text('The camera disconnected.'), findsOneWidget);
+    expect(find.text('Connect'), findsOneWidget);
   });
 }
