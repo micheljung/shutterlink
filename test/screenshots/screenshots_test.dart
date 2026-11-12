@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -48,14 +49,28 @@ void main() {
   }, variant: _platform);
 
   testWidgets('gallery', (tester) async {
-    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _pumpApp(
+      tester,
+      _ScreenshotCameraClient(),
+      downloaded: _photos.skip(_newestDayCount).map((photo) => photo.$1),
+    );
     await _connect(tester);
-    await tester.longPress(find.byType(ThumbnailTile).first);
-    for (final index in [2, 3, 7]) {
-      await tester.tap(find.byType(ThumbnailTile).at(index));
-    }
+    final tiles = find.byType(ThumbnailTile);
+    final gesture = await tester.startGesture(tester.getCenter(tiles.at(0)));
+    await tester.pump(kLongPressTimeout);
+    await gesture.moveTo(tester.getCenter(tiles.at(3)));
+    await gesture.up();
     await tester.pumpAndSettle();
     await _capture(tester, 'gallery');
+  }, variant: _platform);
+
+  testWidgets('preview', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _connect(tester);
+    await tester.tap(find.byType(ThumbnailTile).at(1));
+    await tester.pumpAndSettle();
+    await _precacheImages(tester);
+    await _capture(tester, 'preview');
   }, variant: _platform);
 
   testWidgets('download sheet', (tester) async {
@@ -119,7 +134,11 @@ Future<void> _loadFonts() async {
   await load('DejaVu Sans', [_arrowFallbackFont]);
 }
 
-Future<void> _pumpApp(WidgetTester tester, CameraClient client) async {
+Future<void> _pumpApp(
+  WidgetTester tester,
+  FakeCameraClient client, {
+  Iterable<String> downloaded = const [],
+}) async {
   tester.view
     ..physicalSize = _logicalSize * _pixelRatio
     ..devicePixelRatio = _pixelRatio;
@@ -130,6 +149,20 @@ Future<void> _pumpApp(WidgetTester tester, CameraClient client) async {
   final settings = SettingsRepository(prefs);
   final workDirectory = Directory.systemTemp.createTempSync('shutterlink_');
   addTearDown(() => workDirectory.deleteSync(recursive: true));
+  final history = DownloadHistoryRepository(
+    File(p.join(workDirectory.path, DownloadHistoryRepository.fileName)),
+  );
+  final downloadedNames = downloaded.toSet();
+  await tester.runAsync(
+    () => history.record(
+      cameraKeyOf(client.deviceInfo),
+      client.objects.where(
+        (object) => downloadedNames.contains(
+          p.basenameWithoutExtension(object.filename),
+        ),
+      ),
+    ),
+  );
   await tester.pumpWidget(
     RepaintBoundary(
       key: _boundaryKey,
@@ -146,11 +179,7 @@ Future<void> _pumpApp(WidgetTester tester, CameraClient client) async {
           connector: (_, _) async => client,
           thumbnailCache: _PrerenderedThumbnails(thumbnails!),
           downloadDirectory: workDirectory,
-          downloadHistory: DownloadHistoryRepository(
-            File(
-              p.join(workDirectory.path, DownloadHistoryRepository.fileName),
-            ),
-          ),
+          downloadHistory: history,
         ),
       ),
     ),
@@ -161,6 +190,10 @@ Future<void> _pumpApp(WidgetTester tester, CameraClient client) async {
 Future<void> _connect(WidgetTester tester) async {
   await tester.tap(find.text('Connect'));
   await tester.pumpAndSettle();
+  await _precacheImages(tester);
+}
+
+Future<void> _precacheImages(WidgetTester tester) async {
   await tester.runAsync(() async {
     for (final element in find.byType(Image).evaluate()) {
       await precacheImage((element.widget as Image).image, element);
@@ -191,6 +224,8 @@ Future<void> _capture(WidgetTester tester, String name) async {
     debugDisableShadows = true;
   }
 }
+
+const _newestDayCount = 5;
 
 final _photos = [
   ('IMG_4821', {CameraObjectKind.jpeg, CameraObjectKind.raw}),
@@ -227,7 +262,12 @@ class _ScreenshotCameraClient extends FakeCameraClient {
             ++handle,
             '$name.${kind == CameraObjectKind.jpeg ? 'JPG' : 'CR3'}',
             size: '$name.JPG' == _stallName ? _stalledFileSize : _fileSize,
-            captureDate: start.subtract(Duration(minutes: index * 3)),
+            captureDate: start.subtract(
+              Duration(
+                days: index < _newestDayCount ? 0 : 1,
+                minutes: index * 3,
+              ),
+            ),
           ),
     ];
   }
