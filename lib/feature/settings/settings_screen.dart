@@ -58,6 +58,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: Spacing.extraLarge),
+          Text('Preview quality', style: theme.textTheme.titleMedium),
+          const SizedBox(height: Spacing.small),
+          BlocBuilder<SettingsCubit, SettingsState>(
+            buildWhen: (previous, current) =>
+                previous.previewQuality != current.previewQuality,
+            builder: (context, state) => SegmentedButton<PreviewQuality>(
+              segments: const [
+                ButtonSegment(
+                  value: PreviewQuality.thumbnail,
+                  label: Text('Thumbnail'),
+                ),
+                ButtonSegment(
+                  value: PreviewQuality.full,
+                  label: Text('Full resolution'),
+                ),
+              ],
+              selected: {state.previewQuality},
+              onSelectionChanged: (selection) =>
+                  cubit.setPreviewQuality(selection.single),
+            ),
+          ),
+          const SizedBox(height: Spacing.extraLarge),
           Text('Camera address', style: theme.textTheme.titleMedium),
           const SizedBox(height: Spacing.small),
           TextField(

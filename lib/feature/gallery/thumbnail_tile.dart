@@ -16,6 +16,7 @@ class ThumbnailTile extends StatefulWidget {
     required this.cache,
     required this.client,
     required this.onTap,
+    required this.onPreview,
   });
 
   static const decodeWidth = 320;
@@ -26,6 +27,7 @@ class ThumbnailTile extends StatefulWidget {
   final ThumbnailCache cache;
   final CameraClient client;
   final VoidCallback onTap;
+  final VoidCallback onPreview;
 
   @override
   State<ThumbnailTile> createState() => _ThumbnailTileState();
@@ -117,6 +119,43 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
                 top: _inset,
                 child: Icon(Icons.check_circle, color: colors.primary),
               ),
+            Positioned(
+              left: 0,
+              top: 0,
+              child: Semantics(
+                button: true,
+                label: 'Preview',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onPreview,
+                  child: SizedBox.square(
+                    dimension: kMinInteractiveDimension,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.all(_inset),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: colors.inverseSurface.withValues(
+                              alpha: _previewBackgroundAlpha,
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(_previewIconPadding),
+                            child: Icon(
+                              Icons.open_in_full,
+                              size: _previewIconSize,
+                              color: colors.onInverseSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -126,6 +165,9 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
   static const _selectedTint = 0.25;
   static const _border = 3.0;
   static const _inset = 4.0;
+  static const _previewIconSize = 16.0;
+  static const _previewIconPadding = 8.0;
+  static const _previewBackgroundAlpha = 0.6;
 }
 
 class _Placeholder extends StatelessWidget {
