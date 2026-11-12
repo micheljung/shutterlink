@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/identity_repository.dart';
+import '../../data/ssdp_discovery.dart';
 import '../download/download_cubit.dart';
 import '../download/download_state.dart';
 import '../settings/settings_screen.dart';
@@ -54,7 +55,9 @@ class ConnectScreen extends StatelessWidget {
               ),
             const SizedBox(height: Spacing.large),
             if (state is ConnectConnecting)
-              const _ConnectingIndicator()
+              _ConnectingIndicator(cameraName: state.cameraName)
+            else if (state is ConnectChooseCamera)
+              _CameraChooser(cameras: state.cameras)
             else
               FilledButton.icon(
                 icon: const Icon(Icons.wifi),
@@ -69,20 +72,49 @@ class ConnectScreen extends StatelessWidget {
 }
 
 class _ConnectingIndicator extends StatelessWidget {
-  const _ConnectingIndicator();
+  const _ConnectingIndicator({this.cameraName});
+
+  final String? cameraName;
 
   @override
-  Widget build(BuildContext context) => const Column(
+  Widget build(BuildContext context) => Column(
     children: [
-      CircularProgressIndicator(),
-      SizedBox(height: Spacing.medium),
+      const CircularProgressIndicator(),
+      const SizedBox(height: Spacing.medium),
       Text(
-        'Connecting… If the camera asks to pair, confirm '
+        '${cameraName == null ? 'Connecting…' : 'Connecting to $cameraName…'} '
+        'If the camera asks to pair, confirm '
         '"${IdentityRepository.friendlyName}" on the camera.',
         textAlign: TextAlign.center,
       ),
     ],
   );
+}
+
+class _CameraChooser extends StatelessWidget {
+  const _CameraChooser({required this.cameras});
+
+  final List<DiscoveredCamera> cameras;
+
+  @override
+  Widget build(BuildContext context) {
+    final cubit = context.read<ConnectCubit>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Choose a camera', style: Theme.of(context).textTheme.titleMedium),
+        for (final camera in cameras)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.photo_camera_outlined),
+            title: Text(camera.name),
+            subtitle: Text(camera.host),
+            onTap: () => cubit.chooseCamera(camera),
+          ),
+        TextButton(onPressed: cubit.cancelChoice, child: const Text('Cancel')),
+      ],
+    );
+  }
 }
 
 class _PairingCard extends StatelessWidget {

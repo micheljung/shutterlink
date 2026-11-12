@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/camera_host_resolver.dart';
 import '../../data/identity_repository.dart';
 import '../../data/network_binder.dart';
+import '../../data/ssdp_discovery.dart';
 import '../../ptpip/camera_client.dart';
 import 'connect_state.dart';
 
@@ -14,13 +16,17 @@ typedef CameraConnector = Future<CameraClient> Function(
   CameraIdentity identity,
 );
 
+typedef CameraDiscovery = Future<List<DiscoveredCamera>> Function();
+
 class ConnectCubit extends Cubit<ConnectState> {
   ConnectCubit({
     required this._connector,
     required this._identity,
     required this._hostResolver,
     required this._networkBinder,
-  }) : super(const ConnectIdle());
+    CameraDiscovery? discovery,
+  }) : _discovery = discovery ?? const SsdpDiscovery().discover,
+       super(const ConnectIdle());
 
   static const noWifiCode = 'no_wifi';
   static const noWifiMessage =
@@ -33,14 +39,45 @@ class ConnectCubit extends Cubit<ConnectState> {
   final IdentityRepository _identity;
   final CameraHostResolver _hostResolver;
   final NetworkBinder _networkBinder;
+  final CameraDiscovery _discovery;
 
   Future<void> connect() async {
     if (state is ConnectConnecting || state is ConnectConnected) return;
     emit(const ConnectConnecting());
-    String? host;
+    final String? override;
+    final String gateway;
     try {
-      final gateway = await _networkBinder.bindToWifi();
-      host = await _hostResolver.resolve(boundGateway: gateway);
+      final boundGateway = await _networkBinder.bindToWifi();
+      override = _hostResolver.override;
+      gateway = await _hostResolver.gateway(boundGateway: boundGateway);
+    } on PlatformException catch (error) {
+      _emitPlatformFailure(error);
+      return;
+    }
+    if (override != null) return _connectTo(override);
+    await _connectTo(
+      gateway,
+      onUnreachable: (error) => _discoverAfter(gateway, error),
+    );
+  }
+
+  Future<void> chooseCamera(DiscoveredCamera camera) async {
+    if (state is! ConnectChooseCamera) return;
+    emit(ConnectConnecting(cameraName: camera.name));
+    await _connectTo(camera.host);
+  }
+
+  Future<void> cancelChoice() async {
+    if (state is! ConnectChooseCamera) return;
+    await _unbind();
+    emit(const ConnectIdle());
+  }
+
+  Future<void> _connectTo(
+    String host, {
+    Future<void> Function(Exception error)? onUnreachable,
+  }) async {
+    try {
       final client = await _connector(host, await _identity.identity());
       if (isClosed) {
         await client.close();
@@ -55,16 +92,49 @@ class ConnectCubit extends Cubit<ConnectState> {
       await _unbind();
       emit(const ConnectFailed(busyMessage));
     } on PlatformException catch (error) {
-      emit(
-        ConnectFailed(
-          error.code == noWifiCode ? noWifiMessage : '${error.message}',
-        ),
-      );
+      _emitPlatformFailure(error);
     } on Exception catch (error) {
-      await _unbind();
-      emit(ConnectFailed('Could not reach the camera at $host ($error).'));
+      if (onUnreachable != null &&
+          error is CameraDisconnectedException &&
+          error.cause is SocketException) {
+        return onUnreachable(error);
+      }
+      await _failUnreachable(host, error);
     }
   }
+
+  Future<void> _discoverAfter(String gateway, Exception error) async {
+    var cameras = const <DiscoveredCamera>[];
+    try {
+      await _networkBinder.acquireMulticastLock();
+      cameras = await _discovery();
+    } on Exception {
+      cameras = const [];
+    } finally {
+      await _releaseMulticastLock();
+    }
+    if (isClosed) return;
+    switch (cameras) {
+      case []:
+        await _failUnreachable(gateway, error);
+      case [final camera]:
+        emit(ConnectConnecting(cameraName: camera.name));
+        await _connectTo(camera.host);
+      default:
+        emit(ConnectChooseCamera(cameras));
+    }
+  }
+
+  Future<void> _failUnreachable(String host, Exception error) async {
+    await _unbind();
+    emit(ConnectFailed('Could not reach the camera at $host ($error).'));
+  }
+
+  void _emitPlatformFailure(PlatformException error) => emit(
+    ConnectFailed(
+      error.code == noWifiCode ? noWifiMessage : '${error.message}',
+    ),
+  );
 
   Future<void> disconnect() async {
     final current = state;
@@ -87,6 +157,14 @@ class ConnectCubit extends Cubit<ConnectState> {
   Future<void> _unbind() async {
     try {
       await _networkBinder.unbind();
+    } on PlatformException {
+      return;
+    }
+  }
+
+  Future<void> _releaseMulticastLock() async {
+    try {
+      await _networkBinder.releaseMulticastLock();
     } on PlatformException {
       return;
     }

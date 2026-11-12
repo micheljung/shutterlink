@@ -19,6 +19,12 @@ class NoopNetworkBinder implements NetworkBinder {
 
   @override
   Future<void> unbind() async {}
+
+  @override
+  Future<void> acquireMulticastLock() async {}
+
+  @override
+  Future<void> releaseMulticastLock() async {}
 }
 
 Future<AppDependencies> testDependencies(CameraConnector connector) async {
