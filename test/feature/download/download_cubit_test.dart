@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
 import 'package:shutterlink/feature/gallery/photo_group.dart';
+import 'package:shutterlink/ptpip/camera_client.dart';
 
 import '../../fakes/fake_camera_client.dart';
 
@@ -13,6 +16,7 @@ void main() {
   late Directory root;
   late Directory work;
   late RecordingPhotoSaver saver;
+  late DownloadHistoryRepository history;
   late DownloadCubit cubit;
 
   final pairJpeg = cameraObject(1, 'IMG_0001.JPG', size: 10);
@@ -23,6 +27,13 @@ void main() {
 
   List<PhotoGroup> groups() => groupPhotos(objects);
 
+  final cameraKey = cameraKeyOf(FakeCameraClient(objects).deviceInfo);
+
+  Future<List<CameraObject>> recorded() async => [
+    for (final object in objects)
+      if (await history.contains(cameraKey, object)) object,
+  ];
+
   List<File> workFiles() => work.existsSync()
       ? work.listSync(recursive: true).whereType<File>().toList()
       : [];
@@ -31,7 +42,10 @@ void main() {
     root = await Directory.systemTemp.createTemp('download');
     work = Directory('${root.path}/work');
     saver = RecordingPhotoSaver();
-    cubit = DownloadCubit(saver: saver, workDirectory: work);
+    history = DownloadHistoryRepository(
+      File(p.join(root.path, DownloadHistoryRepository.fileName)),
+    );
+    cubit = DownloadCubit(saver: saver, workDirectory: work, history: history);
   });
 
   tearDown(() async {
@@ -56,6 +70,58 @@ void main() {
     expect(cubit.state.saved, hasLength(3));
     expect(cubit.state.overallProgress, 1);
     expect(workFiles(), isEmpty);
+  });
+
+  test('records saved files and skips them next time', () async {
+    await cubit.start(FakeCameraClient(objects), groups(), DownloadFormat.jpeg);
+    expect(await recorded(), [pairJpeg, lone]);
+    cubit.dismiss();
+
+    final client = FakeCameraClient(objects);
+    await cubit.start(client, groups(), DownloadFormat.jpeg);
+
+    expect(cubit.state.status, DownloadStatus.completed);
+    expect(cubit.state.alreadyDownloaded, hasLength(2));
+    expect(cubit.state.tasks, isEmpty);
+    expect(client.requestedOffsets, isEmpty);
+    expect(saver.saved, hasLength(2));
+  });
+
+  test('a partly downloaded pair fetches only the missing file', () async {
+    await history.record(cameraKey, [pairJpeg]);
+    final client = FakeCameraClient(objects);
+
+    await cubit.start(
+      client,
+      groupPhotos([pairJpeg, pairRaw]),
+      DownloadFormat.both,
+    );
+
+    expect(client.requestedOffsets.keys, [pairRaw.handle]);
+    expect(saver.saved, [(jpeg: null, raw: 'IMG_0001.CR3')]);
+    expect(await recorded(), [pairJpeg, pairRaw]);
+  });
+
+  test('a failing history write still counts the photo as saved', () async {
+    final blocker = File(p.join(root.path, 'blocker'))..createSync();
+    final failingCubit = DownloadCubit(
+      saver: saver,
+      workDirectory: work,
+      history: DownloadHistoryRepository(
+        File(p.join(blocker.path, DownloadHistoryRepository.fileName)),
+      ),
+    );
+    addTearDown(failingCubit.close);
+
+    await failingCubit.start(
+      FakeCameraClient(objects),
+      groupPhotos([lone]),
+      DownloadFormat.jpeg,
+    );
+
+    expect(failingCubit.state.status, DownloadStatus.completed);
+    expect(failingCubit.state.saved, hasLength(1));
+    expect(failingCubit.state.failed, isEmpty);
   });
 
   test('skips groups lacking the requested format', () async {
@@ -85,6 +151,7 @@ void main() {
     expect(cubit.state.status, DownloadStatus.cancelled);
     expect(saver.saved, isEmpty);
     expect(workFiles(), isEmpty);
+    expect(await recorded(), isEmpty);
   });
 
   test('disconnect pauses and resume continues from the file offset', () async {
@@ -99,6 +166,7 @@ void main() {
     expect(cubit.state.status, DownloadStatus.paused);
     expect(cubit.state.error, DownloadCubit.disconnectedMessage);
     expect(saver.saved, hasLength(1));
+    expect(await recorded(), [rawOnly]);
     final partial = workFiles().single;
     expect(partial.lengthSync(), fakeChunkSize);
 
@@ -148,6 +216,7 @@ void main() {
     );
     expect(cubit.state.saved, hasLength(2));
     expect(workFiles(), isEmpty);
+    expect(await recorded(), [pairJpeg, pairRaw, rawOnly]);
   });
 
   test('cancelling a paused queue discards kept files', () async {

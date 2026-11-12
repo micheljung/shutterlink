@@ -12,6 +12,7 @@ class ThumbnailTile extends StatefulWidget {
     super.key,
     required this.group,
     required this.selected,
+    required this.downloaded,
     required this.cache,
     required this.client,
     required this.onTap,
@@ -21,6 +22,7 @@ class ThumbnailTile extends StatefulWidget {
 
   final PhotoGroup group;
   final bool selected;
+  final bool downloaded;
   final ThumbnailCache cache;
   final CameraClient client;
   final VoidCallback onTap;
@@ -103,6 +105,12 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
               bottom: _inset,
               child: _FormatBadge(group: widget.group),
             ),
+            if (widget.downloaded)
+              const Positioned(
+                right: _inset,
+                bottom: _inset,
+                child: _DownloadedBadge(),
+              ),
             if (widget.selected)
               Positioned(
                 right: _inset,
@@ -129,6 +137,32 @@ class _Placeholder extends StatelessWidget {
   Widget build(BuildContext context) => Center(
     child: Icon(failed ? Icons.broken_image_outlined : Icons.photo_outlined),
   );
+}
+
+class _DownloadedBadge extends StatelessWidget {
+  const _DownloadedBadge();
+
+  static const _size = 16.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.inverseSurface,
+        shape: BoxShape.circle,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(Spacing.tiny),
+        child: Icon(
+          Icons.download_done,
+          size: _size,
+          color: colors.onInverseSurface,
+          semanticLabel: 'Downloaded',
+        ),
+      ),
+    );
+  }
 }
 
 class _FormatBadge extends StatelessWidget {

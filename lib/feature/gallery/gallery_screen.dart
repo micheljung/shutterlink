@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/download_history.dart';
+import '../../data/settings_repository.dart';
 import '../../ptpip/camera_client.dart';
 import '../connect/connect_cubit.dart';
 import '../download/download_cubit.dart';
 import '../download/download_sheet.dart';
 import '../download/download_state.dart';
+import '../history/download_history_cubit.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
 import '../spacing.dart';
 import 'gallery_cubit.dart';
 import 'gallery_state.dart';
+import 'photo_group.dart';
 import 'thumbnail_cache.dart';
 import 'thumbnail_tile.dart';
 
@@ -22,23 +26,33 @@ class GalleryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => GalleryCubit(client)..load(),
-    child: _GalleryView(client: client),
+    child: _GalleryView(
+      client: client,
+      cameraKey: cameraKeyOf(client.deviceInfo),
+    ),
   );
 }
 
 class _GalleryView extends StatelessWidget {
-  const _GalleryView({required this.client});
+  const _GalleryView({required this.client, required this.cameraKey});
 
   static const _maxTileExtent = 160.0;
   static const _tileSpacing = 2.0;
 
   final CameraClient client;
+  final String cameraKey;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<GalleryCubit>().state;
     final cubit = context.read<GalleryCubit>();
     final cache = context.read<ThumbnailCache>();
+    final history = context.watch<DownloadHistoryCubit>();
+    final format = context.select<SettingsCubit, DownloadFormat>(
+      (cubit) => cubit.state.format,
+    );
+    bool isDownloaded(PhotoGroup group) =>
+        history.isDownloaded(cameraKey, group.filesFor(format));
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -47,6 +61,14 @@ class _GalleryView extends StatelessWidget {
               : '${state.selected.length} selected',
         ),
         actions: [
+          IconButton(
+            tooltip: 'Select new',
+            icon: const Icon(Icons.fiber_new_outlined),
+            onPressed: () => cubit.selectWhere(
+              (group) =>
+                  group.filesFor(format).isNotEmpty && !isDownloaded(group),
+            ),
+          ),
           IconButton(
             tooltip: state.allSelected ? 'Select none' : 'Select all',
             icon: Icon(state.allSelected ? Icons.deselect : Icons.select_all),
@@ -95,6 +117,7 @@ class _GalleryView extends StatelessWidget {
               key: ValueKey(group.key),
               group: group,
               selected: state.selected.contains(group.key),
+              downloaded: isDownloaded(group),
               cache: cache,
               client: client,
               onTap: () => cubit.toggle(group),

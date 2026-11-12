@@ -78,15 +78,27 @@ void main() {
     test('planDownload skips groups lacking the requested format', () {
       final groups = [pair, jpegOnly, rawOnly];
 
-      final jpegPlan = planDownload(groups, DownloadFormat.jpeg);
+      final jpegPlan = planDownload(
+        groups,
+        DownloadFormat.jpeg,
+        isDownloaded: (_) => false,
+      );
       expect(jpegPlan.tasks.map((task) => task.group), [pair, jpegOnly]);
       expect(jpegPlan.skipped, [rawOnly]);
 
-      final rawPlan = planDownload(groups, DownloadFormat.raw);
+      final rawPlan = planDownload(
+        groups,
+        DownloadFormat.raw,
+        isDownloaded: (_) => false,
+      );
       expect(rawPlan.tasks.map((task) => task.group), [pair, rawOnly]);
       expect(rawPlan.skipped, [jpegOnly]);
 
-      final bothPlan = planDownload(groups, DownloadFormat.both);
+      final bothPlan = planDownload(
+        groups,
+        DownloadFormat.both,
+        isDownloaded: (_) => false,
+      );
       expect(bothPlan.tasks, hasLength(3));
       expect(bothPlan.skipped, isEmpty);
     });
