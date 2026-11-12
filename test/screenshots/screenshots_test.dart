@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
@@ -143,6 +144,11 @@ Future<void> _pumpApp(WidgetTester tester, CameraClient client) async {
           connector: (_, _) async => client,
           thumbnailCache: _PrerenderedThumbnails(thumbnails!),
           downloadDirectory: workDirectory,
+          downloadHistory: DownloadHistoryRepository(
+            File(
+              p.join(workDirectory.path, DownloadHistoryRepository.fileName),
+            ),
+          ),
         ),
       ),
     ),

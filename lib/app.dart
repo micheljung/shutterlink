@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'data/camera_host_resolver.dart';
+import 'data/download_history.dart';
 import 'data/identity_repository.dart';
 import 'data/network_binder.dart';
 import 'data/photo_saver.dart';
@@ -14,6 +15,7 @@ import 'feature/connect/connect_state.dart';
 import 'feature/download/download_cubit.dart';
 import 'feature/gallery/gallery_screen.dart';
 import 'feature/gallery/thumbnail_cache.dart';
+import 'feature/history/download_history_cubit.dart';
 import 'feature/settings/settings_cubit.dart';
 
 class AppDependencies {
@@ -26,6 +28,7 @@ class AppDependencies {
     required this.connector,
     required this.thumbnailCache,
     required this.downloadDirectory,
+    required this.downloadHistory,
   });
 
   final SettingsRepository settings;
@@ -36,6 +39,7 @@ class AppDependencies {
   final CameraConnector connector;
   final ThumbnailCache thumbnailCache;
   final Directory downloadDirectory;
+  final DownloadHistoryRepository downloadHistory;
 }
 
 class ShutterlinkApp extends StatelessWidget {
@@ -64,6 +68,9 @@ class ShutterlinkApp extends StatelessWidget {
             saver: dependencies.photoSaver,
             workDirectory: dependencies.downloadDirectory,
           ),
+        ),
+        BlocProvider(
+          create: (_) => DownloadHistoryCubit(dependencies.downloadHistory),
         ),
       ],
       child: MaterialApp(

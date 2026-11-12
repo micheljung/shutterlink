@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/network_binder.dart';
 import 'package:shutterlink/data/settings_repository.dart';
@@ -23,6 +25,10 @@ Future<AppDependencies> testDependencies(CameraConnector connector) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
   final settings = SettingsRepository(prefs);
+  final historyDirectory = Directory.systemTemp.createTempSync(
+    'shutterlink_test_history',
+  );
+  addTearDown(() => historyDirectory.deleteSync(recursive: true));
   return AppDependencies(
     settings: settings,
     identity: IdentityRepository(prefs),
@@ -33,6 +39,9 @@ Future<AppDependencies> testDependencies(CameraConnector connector) async {
     thumbnailCache: MemoryThumbnailCache(),
     downloadDirectory: Directory(
       p.join(Directory.systemTemp.path, 'shutterlink_test_downloads'),
+    ),
+    downloadHistory: DownloadHistoryRepository(
+      File(p.join(historyDirectory.path, DownloadHistoryRepository.fileName)),
     ),
   );
 }

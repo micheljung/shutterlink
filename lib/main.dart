@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'data/camera_host_resolver.dart';
+import 'data/download_history.dart';
 import 'data/identity_repository.dart';
 import 'data/network_binder.dart';
 import 'data/photo_saver.dart';
@@ -23,6 +24,7 @@ Future<void> main() async {
   final settings = SettingsRepository(prefs);
   final cacheDirectory = await getApplicationCacheDirectory();
   final temporaryDirectory = await getTemporaryDirectory();
+  final supportDirectory = await getApplicationSupportDirectory();
 
   runApp(
     ShutterlinkApp(
@@ -39,6 +41,11 @@ Future<void> main() async {
         ),
         downloadDirectory: Directory(
           p.join(temporaryDirectory.path, 'downloads'),
+        ),
+        downloadHistory: DownloadHistoryRepository(
+          File(
+            p.join(supportDirectory.path, DownloadHistoryRepository.fileName),
+          ),
         ),
       ),
     ),
