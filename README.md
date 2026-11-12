@@ -77,7 +77,7 @@ which one to use if there are several.
 
 ## Install
 
-- **F-Droid:** submitted, pending inclusion. F-Droid builds the app from this
+- **F-Droid:** [submitted](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/57043), pending inclusion. F-Droid builds the app from this
   repository and signs it.
 - **From source:** see [Build and run](#build-and-run).
 
@@ -195,7 +195,7 @@ ios/Runner/AppDelegate.swift
 test/
   ptpip/fake_camera.dart  In-process emulated EOS camera (TCP server)
   screenshots/            Renders the README screenshots
-docs/fdroid/            Draft F-Droid build recipe
+docs/fdroid/            Copy of the F-Droid build recipe
 fastlane/metadata/      F-Droid store listing
 ```
 
