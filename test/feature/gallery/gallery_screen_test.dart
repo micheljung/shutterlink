@@ -68,15 +68,19 @@ void main() {
     expect(find.text('RAW'), findsOneWidget);
   });
 
-  testWidgets('tapping tiles and select all update the selection', (
+  testWidgets('long-press, tap and select all update the selection', (
     tester,
   ) async {
     await pumpGallery(tester);
 
-    await tester.tap(find.byType(ThumbnailTile).first);
+    await tester.longPress(find.byType(ThumbnailTile).first);
     await tester.pump();
     expect(find.text('1 selected'), findsOneWidget);
     expect(find.text('Download (1)'), findsOneWidget);
+
+    await tester.tap(find.byType(ThumbnailTile).last);
+    await tester.pump();
+    expect(find.text('2 selected'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Select all'));
     await tester.pump();
@@ -179,7 +183,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(downloadedBadge, findsNothing);
 
-    await tester.tap(tileOf('IMG_0002'));
+    await tester.longPress(tileOf('IMG_0002'));
     await tester.pump();
     await tester.tap(find.text('Download (1)'));
     await pumpUntil(

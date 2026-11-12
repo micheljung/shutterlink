@@ -9,15 +9,13 @@ import '../download/download_cubit.dart';
 import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
-import '../preview/preview_screen.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
 import '../spacing.dart';
 import 'gallery_cubit.dart';
+import 'gallery_grid.dart';
 import 'gallery_state.dart';
 import 'photo_group.dart';
-import 'thumbnail_cache.dart';
-import 'thumbnail_tile.dart';
 
 class GalleryScreen extends StatelessWidget {
   const GalleryScreen({super.key, required this.client});
@@ -37,9 +35,6 @@ class GalleryScreen extends StatelessWidget {
 class _GalleryView extends StatelessWidget {
   const _GalleryView({required this.client, required this.cameraKey});
 
-  static const _maxTileExtent = 160.0;
-  static const _tileSpacing = 2.0;
-
   final CameraClient client;
   final String cameraKey;
 
@@ -47,7 +42,6 @@ class _GalleryView extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<GalleryCubit>().state;
     final cubit = context.read<GalleryCubit>();
-    final cache = context.read<ThumbnailCache>();
     final history = context.watch<DownloadHistoryCubit>();
     final format = context.select<SettingsCubit, DownloadFormat>(
       (cubit) => cubit.state.format,
@@ -105,28 +99,9 @@ class _GalleryView extends StatelessWidget {
         GalleryStatus.loaded when state.groups.isEmpty => const Center(
           child: Text('No photos on the card.'),
         ),
-        GalleryStatus.loaded => GridView.builder(
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: _maxTileExtent,
-            mainAxisSpacing: _tileSpacing,
-            crossAxisSpacing: _tileSpacing,
-          ),
-          itemCount: state.groups.length,
-          itemBuilder: (context, index) {
-            final group = state.groups[index];
-            return ThumbnailTile(
-              key: ValueKey(group.key),
-              group: group,
-              selected: state.selected.contains(group.key),
-              downloaded: isDownloaded(group),
-              cache: cache,
-              client: client,
-              onTap: () => cubit.toggle(group),
-              onPreview: () => Navigator.of(context).push(
-                PreviewScreen.route(context, client: client, index: index),
-              ),
-            );
-          },
+        GalleryStatus.loaded => GalleryGrid(
+          client: client,
+          isDownloaded: isDownloaded,
         ),
       },
       bottomNavigationBar: _DownloadBar(client: client),
