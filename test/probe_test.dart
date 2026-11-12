@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:eos_transfer/ptpip/ptpip.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/ptpip/ptpip.dart';
 
 import '../bin/probe.dart';
 import 'ptpip/fake_camera.dart';

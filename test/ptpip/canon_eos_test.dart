@@ -1,5 +1,5 @@
-import 'package:eos_transfer/ptpip/ptpip.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/ptpip/ptpip.dart';
 
 void main() {
   test('Canon EOS opcodes and formats match libgphoto2 ptp.h', () {

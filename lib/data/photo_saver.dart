@@ -35,9 +35,9 @@ class PlatformPhotoSaver implements PhotoSaver {
        _documentsDirectory =
            documentsDirectory ?? getApplicationDocumentsDirectory;
 
-  static const album = 'EOS R';
+  static const album = 'Shutterlink';
   static const defaultTimeout = Duration(minutes: 2);
-  static const channel = MethodChannel('ch.micheljung.eos_transfer/photos');
+  static const channel = MethodChannel('ch.micheljung.shutterlink/photos');
   static const saveRawMethod = 'saveRaw';
 
   final SaverPlatform _platform;

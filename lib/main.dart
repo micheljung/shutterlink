@@ -25,7 +25,7 @@ Future<void> main() async {
   final temporaryDirectory = await getTemporaryDirectory();
 
   runApp(
-    EosTransferApp(
+    ShutterlinkApp(
       dependencies: AppDependencies(
         settings: settings,
         identity: IdentityRepository(prefs),

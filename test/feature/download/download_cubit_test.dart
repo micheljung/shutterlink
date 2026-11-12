@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:eos_transfer/data/settings_repository.dart';
-import 'package:eos_transfer/feature/download/download_cubit.dart';
-import 'package:eos_transfer/feature/download/download_state.dart';
-import 'package:eos_transfer/feature/gallery/photo_group.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/download/download_cubit.dart';
+import 'package:shutterlink/feature/download/download_state.dart';
+import 'package:shutterlink/feature/gallery/photo_group.dart';
 
 import '../../fakes/fake_camera_client.dart';
 

@@ -3,9 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
-import 'package:eos_transfer/data/photo_saver.dart';
-import 'package:eos_transfer/feature/gallery/thumbnail_cache.dart';
-import 'package:eos_transfer/ptpip/camera_client.dart';
+import 'package:shutterlink/data/photo_saver.dart';
+import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
+import 'package:shutterlink/ptpip/camera_client.dart';
 
 const fakeChunkSize = 4;
 

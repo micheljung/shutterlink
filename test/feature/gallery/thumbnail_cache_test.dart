@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:eos_transfer/feature/gallery/thumbnail_cache.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 
 import '../../fakes/fake_camera_client.dart';
 

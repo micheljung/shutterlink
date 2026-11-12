@@ -1,6 +1,6 @@
-import 'package:eos_transfer/data/identity_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shutterlink/data/identity_repository.dart';
 
 void main() {
   const guidLength = 16;

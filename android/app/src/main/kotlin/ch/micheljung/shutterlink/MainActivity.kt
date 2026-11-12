@@ -1,4 +1,4 @@
-package ch.micheljung.eos_transfer
+package ch.micheljung.shutterlink
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

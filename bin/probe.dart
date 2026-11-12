@@ -3,8 +3,8 @@ import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:collection/collection.dart';
-import 'package:eos_transfer/ptpip/ptpip.dart';
 import 'package:path/path.dart' as p;
+import 'package:shutterlink/ptpip/ptpip.dart';
 import 'package:uuid/uuid.dart';
 
 const exitOk = 0;
@@ -13,8 +13,8 @@ const exitUnavailable = 69;
 const exitCameraBusy = 75;
 const exitPairingRequired = 77;
 
-const _defaultName = 'EOS Transfer';
-const _defaultGuidFileName = '.eos_transfer_guid';
+const _defaultName = 'Shutterlink';
+const _defaultGuidFileName = '.shutterlink_guid';
 const _bytesPerMegabyte = 1024 * 1024;
 const _microsecondsPerSecond = 1000000;
 const _hexRadix = 16;

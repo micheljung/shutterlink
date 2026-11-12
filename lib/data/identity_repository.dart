@@ -9,7 +9,7 @@ import '../ptpip/camera_client.dart';
 class IdentityRepository {
   IdentityRepository(this._prefs, {this._uuid = const Uuid()});
 
-  static const friendlyName = 'EOS Transfer';
+  static const friendlyName = 'Shutterlink';
   static const guidKey = 'camera_identity_guid';
 
   final SharedPreferences _prefs;

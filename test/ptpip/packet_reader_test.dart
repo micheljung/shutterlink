@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:eos_transfer/ptpip/ptpip.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/ptpip/ptpip.dart';
 
 void main() {
   final packets = <PtpIpPacket>[

@@ -13,7 +13,7 @@ abstract interface class NetworkBinder {
 class PlatformNetworkBinder implements NetworkBinder {
   const PlatformNetworkBinder();
 
-  static const channel = MethodChannel('ch.micheljung.eos_transfer/network');
+  static const channel = MethodChannel('ch.micheljung.shutterlink/network');
 
   @override
   Future<String?> bindToWifi() async {

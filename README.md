@@ -1,4 +1,4 @@
-# EOS Transfer
+# Shutterlink
 
 Download JPEG and CR3 photos from a Canon EOS R to an Android or iOS phone
 over the camera's own Wi-Fi. The camera speaks PTP/IP (TCP port 15740),
@@ -25,7 +25,7 @@ fvm dart run bin/probe.dart --host <camera-ip> --dump packets.txt
 It pairs, prints the device info and photo count, fetches one thumbnail,
 downloads the newest photo (or `--index n`) and reports the transfer rate.
 The camera IP is usually the Wi-Fi gateway address. The GUID is stored in
-`~/.eos_transfer_guid` (`--guid-file`). Exit code 77 means the camera
+`~/.shutterlink_guid` (`--guid-file`). Exit code 77 means the camera
 rejected the GUID and needs pairing.
 
 ## App

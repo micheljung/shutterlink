@@ -1,15 +1,15 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:eos_transfer/data/camera_host_resolver.dart';
-import 'package:eos_transfer/data/identity_repository.dart';
-import 'package:eos_transfer/data/network_binder.dart';
-import 'package:eos_transfer/data/settings_repository.dart';
-import 'package:eos_transfer/feature/connect/connect_cubit.dart';
-import 'package:eos_transfer/feature/connect/connect_state.dart';
-import 'package:eos_transfer/ptpip/camera_client.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/identity_repository.dart';
+import 'package:shutterlink/data/network_binder.dart';
+import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/connect/connect_cubit.dart';
+import 'package:shutterlink/feature/connect/connect_state.dart';
+import 'package:shutterlink/ptpip/camera_client.dart';
 
 import '../../fakes/fake_camera_client.dart';
 

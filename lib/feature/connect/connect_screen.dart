@@ -28,7 +28,7 @@ class ConnectScreen extends StatelessWidget {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('EOS Transfer'),
+        title: const Text('Shutterlink'),
         actions: [
           IconButton(
             tooltip: 'Settings',

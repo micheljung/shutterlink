@@ -4,7 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
-import 'package:eos_transfer/ptpip/ptpip.dart';
+import 'package:shutterlink/ptpip/ptpip.dart';
 
 const fakeStorageId = 0x00020001;
 const fakeConnectionNumber = 7;
@@ -421,7 +421,7 @@ final pairedGuid = Uint8List.fromList(
   List.generate(ptpIpGuidSize, (i) => 0xA0 + i),
 );
 
-final pairedIdentity = CameraIdentity(guid: pairedGuid, name: 'EOS Transfer');
+final pairedIdentity = CameraIdentity(guid: pairedGuid, name: 'Shutterlink');
 
 const testResponseTimeout = Duration(milliseconds: 500);
 const testPollInterval = Duration(milliseconds: 50);

@@ -22,7 +22,7 @@ import UIKit
 enum RawPhotoSaver {
   static func register(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(
-      name: "ch.micheljung.eos_transfer/photos", binaryMessenger: messenger)
+      name: "ch.micheljung.shutterlink/photos", binaryMessenger: messenger)
     channel.setMethodCallHandler { call, result in
       guard call.method == "saveRaw",
         let arguments = call.arguments as? [String: Any],

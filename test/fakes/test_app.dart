@@ -1,12 +1,12 @@
 import 'dart:io';
 
-import 'package:eos_transfer/app.dart';
-import 'package:eos_transfer/data/camera_host_resolver.dart';
-import 'package:eos_transfer/data/identity_repository.dart';
-import 'package:eos_transfer/data/network_binder.dart';
-import 'package:eos_transfer/data/settings_repository.dart';
-import 'package:eos_transfer/feature/connect/connect_cubit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shutterlink/app.dart';
+import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/identity_repository.dart';
+import 'package:shutterlink/data/network_binder.dart';
+import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/connect/connect_cubit.dart';
 
 import 'fake_camera_client.dart';
 

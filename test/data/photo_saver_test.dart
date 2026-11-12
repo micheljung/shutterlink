@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:eos_transfer/data/photo_saver.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/data/photo_saver.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -58,7 +58,7 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  test('Android JPEG goes to the EOS R album through gal', () async {
+  test('Android JPEG goes to the Shutterlink album through gal', () async {
     final jpeg = await tempFile('IMG_0001.JPG');
 
     await saver(SaverPlatform.android).save(jpeg: jpeg);

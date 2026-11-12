@@ -1,7 +1,7 @@
-import 'package:eos_transfer/app.dart';
-import 'package:eos_transfer/feature/gallery/thumbnail_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/app.dart';
+import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/test_app.dart';
@@ -17,7 +17,7 @@ void main() {
   Future<FakeCameraClient> pumpGallery(WidgetTester tester) async {
     final client = FakeCameraClient(objects);
     final dependencies = await testDependencies((_, _) async => client);
-    await tester.pumpWidget(EosTransferApp(dependencies: dependencies));
+    await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
     await tester.tap(find.text('Connect'));
     await tester.pumpAndSettle();
     return client;

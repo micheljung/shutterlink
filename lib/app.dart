@@ -38,8 +38,8 @@ class AppDependencies {
   final Directory downloadDirectory;
 }
 
-class EosTransferApp extends StatelessWidget {
-  const EosTransferApp({super.key, required this.dependencies});
+class ShutterlinkApp extends StatelessWidget {
+  const ShutterlinkApp({super.key, required this.dependencies});
 
   static const _seedColor = Colors.red;
 
@@ -67,7 +67,7 @@ class EosTransferApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'EOS Transfer',
+        title: 'Shutterlink',
         theme: ThemeData(colorSchemeSeed: _seedColor),
         darkTheme: ThemeData(
           colorSchemeSeed: _seedColor,

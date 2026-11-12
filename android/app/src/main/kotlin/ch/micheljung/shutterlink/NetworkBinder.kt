@@ -1,4 +1,4 @@
-package ch.micheljung.eos_transfer
+package ch.micheljung.shutterlink
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -50,7 +50,7 @@ class NetworkBinder(context: Context) {
     }
 
     private companion object {
-        const val CHANNEL = "ch.micheljung.eos_transfer/network"
+        const val CHANNEL = "ch.micheljung.shutterlink/network"
         const val NO_WIFI = "no_wifi"
         const val BIND_FAILED = "bind_failed"
     }

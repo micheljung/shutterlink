@@ -1,4 +1,4 @@
-package ch.micheljung.eos_transfer
+package ch.micheljung.shutterlink
 
 import android.content.ContentValues
 import android.content.Context
@@ -125,9 +125,9 @@ class RawFileSaver(private val context: Context) {
     }
 
     private companion object {
-        const val CHANNEL = "ch.micheljung.eos_transfer/photos"
-        const val ALBUM = "EOS R"
-        const val RELATIVE_PATH = "Download/EOS R/"
+        const val CHANNEL = "ch.micheljung.shutterlink/photos"
+        const val ALBUM = "Shutterlink"
+        const val RELATIVE_PATH = "Download/Shutterlink/"
         const val RAW_MIME_TYPE = "image/x-canon-cr3"
         const val INVALID_ARGUMENTS = "invalid_arguments"
         const val SAVE_FAILED = "save_failed"

@@ -1,7 +1,7 @@
-import 'package:eos_transfer/data/camera_host_resolver.dart';
-import 'package:eos_transfer/data/settings_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/settings_repository.dart';
 
 void main() {
   late SettingsRepository settings;
