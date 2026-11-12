@@ -50,7 +50,8 @@ void main() {
   testWidgets('gallery', (tester) async {
     await _pumpApp(tester, _ScreenshotCameraClient());
     await _connect(tester);
-    for (final index in [0, 2, 3, 7]) {
+    await tester.longPress(find.byType(ThumbnailTile).first);
+    for (final index in [2, 3, 7]) {
       await tester.tap(find.byType(ThumbnailTile).at(index));
     }
     await tester.pumpAndSettle();
@@ -61,7 +62,8 @@ void main() {
     final client = _ScreenshotCameraClient(stall: true);
     await _pumpApp(tester, client);
     await _connect(tester);
-    for (final index in [0, 1, 2, 4, 5]) {
+    await tester.longPress(find.byType(ThumbnailTile).first);
+    for (final index in [1, 2, 4, 5]) {
       await tester.tap(find.byType(ThumbnailTile).at(index));
     }
     await tester.pump();

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../ptpip/camera_client.dart';
@@ -43,6 +45,35 @@ class GalleryCubit extends Cubit<GalleryState> {
       selected: state.groups.where(test).map((group) => group.key).toSet(),
     ),
   );
+
+  void setSelected(Iterable<PhotoGroup> groups, bool selected) {
+    final keys = groups.map((group) => group.key);
+    emit(
+      state.copyWith(
+        selected: selected
+            ? {...state.selected, ...keys}
+            : state.selected.difference(keys.toSet()),
+      ),
+    );
+  }
+
+  void selectRange(
+    String anchorKey,
+    String toKey, {
+    required Set<String> base,
+    required bool select,
+  }) {
+    final keys = state.groups.map((group) => group.key).toList();
+    final anchor = keys.indexOf(anchorKey);
+    final to = keys.indexOf(toKey);
+    if (anchor < 0 || to < 0) return;
+    final range = keys.sublist(min(anchor, to), max(anchor, to) + 1);
+    emit(
+      state.copyWith(
+        selected: select ? {...base, ...range} : base.difference(range.toSet()),
+      ),
+    );
+  }
 
   void clearSelection() => emit(state.copyWith(selected: const {}));
 }
