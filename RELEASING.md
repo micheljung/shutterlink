@@ -19,6 +19,29 @@ for free and open-source Android apps.
 - The store listing (title, descriptions, changelogs, screenshots) is read
   from [`fastlane/metadata/android/en-US/`](fastlane/metadata/android/en-US).
 
+## Release APKs on Nexus
+
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml).
+To build an existing tag, run the workflow manually ("Run workflow") with the
+tag, for example `v1.1.0`.
+
+It checks that the tag matches the `pubspec.yaml` version, builds the APK,
+signs it with the release key and uploads it to
+`https://repo.micheljung.ch/repository/shutterlink-releases/shutterlink-<version>.apk`,
+for example `shutterlink-1.1.0+2.apk`.
+
+It needs these GitHub Actions settings:
+
+| Name | Kind |
+|---|---|
+| `NEXUS_USERNAME` | variable |
+| `NEXUS_PASSWORD` | secret |
+| `SHUTTERLINK_CERT_SHA256` | variable: the release certificate's SHA-256, checked after signing |
+| `SHUTTERLINK_KEYSTORE_BASE64`, `SHUTTERLINK_KEYSTORE_PASSWORD`, `SHUTTERLINK_KEY_ALIAS`, `SHUTTERLINK_KEY_PASSWORD` | secrets |
+
+Keep a backup of the release keystore. Android only installs updates signed
+with the same key, so losing it means every user has to uninstall first.
+
 ## Submission
 
 Submitted for 1.1.0 in
