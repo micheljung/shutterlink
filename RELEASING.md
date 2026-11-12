@@ -5,35 +5,26 @@ for free and open-source Android apps.
 
 ## How F-Droid works
 
-- F-Droid never takes an APK from us. Its build server checks out a git tag of
+- F-Droid never takes an APK from us. Its build server checks out a tagged commit of
   this repository and builds the app itself, following a build recipe.
 - The recipe lives in F-Droid's own repository,
   [fdroiddata](https://gitlab.com/fdroid/fdroiddata), as
-  `metadata/ch.micheljung.shutterlink.yml`. Our draft is
-  [`docs/fdroid/ch.micheljung.shutterlink.yml`](docs/fdroid/ch.micheljung.shutterlink.yml).
+  `metadata/ch.micheljung.shutterlink.yml`.
+  [`docs/fdroid/ch.micheljung.shutterlink.yml`](docs/fdroid/ch.micheljung.shutterlink.yml)
+  is a copy of the submitted version.
+- It builds one APK per CPU architecture. Their version codes are the
+  `pubspec.yaml` version code plus 1000 (armeabi-v7a), 2000 (arm64-v8a) and
+  4000 (x86_64), as Flutter assigns them.
 - F-Droid signs the APK with its own key. We hold no signing secrets.
 - The store listing (title, descriptions, changelogs, screenshots) is read
   from [`fastlane/metadata/android/en-US/`](fastlane/metadata/android/en-US).
 
-## First submission (once)
+## Submission
 
-1. Merge the pull request that adds the recipe.
-2. Tag the merged commit and push the tag **before** opening the F-Droid
-   merge request, because the recipe builds `commit: v1.1.0`:
-
-   ```bash
-   git tag v1.1.0
-   git push origin v1.1.0
-   ```
-
-3. Fork [fdroiddata](https://gitlab.com/fdroid/fdroiddata) on GitLab.
-4. Copy `docs/fdroid/ch.micheljung.shutterlink.yml` to
-   `metadata/ch.micheljung.shutterlink.yml` in the fork, commit and push.
-5. Open a merge request against fdroiddata. Its pipeline runs `fdroid lint`,
-   `fdroid build` and `fdroid checkupdates`. Check in the `checkupdates`
-   output that `UpdateCheckData` finds version `1.1.0` and code `2`.
-6. Answer the reviewers' questions. After the merge, the app usually shows up
-   in F-Droid within a few days.
+Submitted for 1.1.0 in
+[fdroiddata!57043](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/57043).
+Answer the reviewers' questions there. After the merge, the app usually shows
+up in F-Droid within a few days.
 
 ## Every later release
 

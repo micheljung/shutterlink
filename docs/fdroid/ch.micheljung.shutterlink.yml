@@ -1,6 +1,6 @@
 Categories:
-  - Multimedia
   - Connectivity
+  - File Transfer
 License: MIT
 AuthorName: Michel Jung
 SourceCode: https://github.com/micheljung/shutterlink
@@ -13,24 +13,68 @@ Repo: https://github.com/micheljung/shutterlink.git
 
 Builds:
   - versionName: 1.1.0
-    versionCode: 2
-    commit: v1.1.0
-    output: build/app/outputs/flutter-apk/app-release.apk
+    versionCode: 1002
+    commit: 69d22ce70a87c1663eacc9487dcc7d221c76c5f2
+    output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
     srclibs:
       - flutter@3.47.5
+    rm:
+      - ios
     prebuild:
       - sed -i -e '/signingConfig = /d' android/app/build.gradle.kts
       - export PUB_CACHE=$(pwd)/.pub-cache
       - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
     scandelete:
       - .pub-cache
     build:
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter build apk --release
+      - $$flutter$$/bin/flutter build apk --release --split-per-abi --target-platform="android-arm"
+
+  - versionName: 1.1.0
+    versionCode: 2002
+    commit: 69d22ce70a87c1663eacc9487dcc7d221c76c5f2
+    output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+    srclibs:
+      - flutter@3.47.5
+    rm:
+      - ios
+    prebuild:
+      - sed -i -e '/signingConfig = /d' android/app/build.gradle.kts
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release --split-per-abi --target-platform="android-arm64"
+
+  - versionName: 1.1.0
+    versionCode: 4002
+    commit: 69d22ce70a87c1663eacc9487dcc7d221c76c5f2
+    output: build/app/outputs/flutter-apk/app-x86_64-release.apk
+    srclibs:
+      - flutter@3.47.5
+    rm:
+      - ios
+    prebuild:
+      - sed -i -e '/signingConfig = /d' android/app/build.gradle.kts
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release --split-per-abi --target-platform="android-x64"
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
+VercodeOperation:
+  - '%c + 1000'
+  - '%c + 2000'
+  - '%c + 4000'
 UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
 CurrentVersion: 1.1.0
-CurrentVersionCode: 2
+CurrentVersionCode: 4002
