@@ -32,8 +32,9 @@ Early. Be aware of what has and hasn't been verified:
 - The protocol layer and the app are tested against an in-process emulated
   camera (`test/ptpip/fake_camera.dart`). They have **not yet been verified on a
   real EOS R**, nor on physical Android or iOS devices.
-- The Android debug APK builds in CI. The **iOS build has not been compiled
-  yet**; the Swift code (RAW save to Photos) is untested.
+- The Android debug APK builds, and CI checks it on every push. The **iOS
+  build has not been compiled yet**; the Swift code (RAW save to Photos) is
+  untested.
 
 Reports from real hardware are very welcome.
 
@@ -118,9 +119,10 @@ Flutter dependency.
 - **Listing and thumbnails** use standard `GetObjectHandles`, `GetObjectInfo`
   and `GetThumb`.
 - **Downloads** use `GetPartialObject` in 1 MiB chunks, which is also what makes
-  resuming possible. Larger blocks are known to fail on the EOS R.
-- **Never `CloseSession`.** The EOS R misbehaves after it, so the client just
-  closes the sockets.
+  resuming possible. libgphoto2 notes that the EOS R rejects larger blocks.
+- **Never `CloseSession`.** libgphoto2 flags the EOS R as failing later
+  operations after it, so the client restores remote mode and closes the
+  sockets instead.
 
 ```mermaid
 sequenceDiagram

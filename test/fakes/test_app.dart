@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
@@ -30,6 +31,8 @@ Future<AppDependencies> testDependencies(CameraConnector connector) async {
     photoSaver: RecordingPhotoSaver(),
     connector: connector,
     thumbnailCache: MemoryThumbnailCache(),
-    downloadDirectory: Directory.systemTemp,
+    downloadDirectory: Directory(
+      p.join(Directory.systemTemp.path, 'shutterlink_test_downloads'),
+    ),
   );
 }
