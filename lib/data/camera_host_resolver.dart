@@ -13,9 +13,12 @@ class CameraHostResolver {
   final SettingsRepository _settings;
   final GatewayLookup _wifiGateway;
 
-  Future<String> resolve({String? boundGateway}) async {
-    final override = _settings.hostOverride;
-    if (override != null) return override;
+  String? get override => _settings.hostOverride;
+
+  Future<String> resolve({String? boundGateway}) async =>
+      override ?? await gateway(boundGateway: boundGateway);
+
+  Future<String> gateway({String? boundGateway}) async {
     if (_usable(boundGateway)) return boundGateway!;
     final gateway = await _wifiGateway();
     if (_usable(gateway)) return gateway!;

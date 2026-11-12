@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 
+import '../../data/ssdp_discovery.dart';
 import '../../ptpip/camera_client.dart';
 
 sealed class ConnectState extends Equatable {
@@ -14,7 +15,21 @@ class ConnectIdle extends ConnectState {
 }
 
 class ConnectConnecting extends ConnectState {
-  const ConnectConnecting();
+  const ConnectConnecting({this.cameraName});
+
+  final String? cameraName;
+
+  @override
+  List<Object?> get props => [cameraName];
+}
+
+class ConnectChooseCamera extends ConnectState {
+  const ConnectChooseCamera(this.cameras);
+
+  final List<DiscoveredCamera> cameras;
+
+  @override
+  List<Object?> get props => [cameras];
 }
 
 class ConnectConnected extends ConnectState {

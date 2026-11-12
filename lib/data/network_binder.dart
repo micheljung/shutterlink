@@ -8,6 +8,11 @@ abstract interface class NetworkBinder {
   Future<String?> bindToWifi();
 
   Future<void> unbind();
+
+  /// Lets Wi-Fi deliver multicast packets, which Android drops by default.
+  Future<void> acquireMulticastLock();
+
+  Future<void> releaseMulticastLock();
 }
 
 class PlatformNetworkBinder implements NetworkBinder {
@@ -25,5 +30,17 @@ class PlatformNetworkBinder implements NetworkBinder {
   Future<void> unbind() async {
     if (!Platform.isAndroid) return;
     await channel.invokeMethod<void>('unbind');
+  }
+
+  @override
+  Future<void> acquireMulticastLock() async {
+    if (!Platform.isAndroid) return;
+    await channel.invokeMethod<void>('acquireMulticastLock');
+  }
+
+  @override
+  Future<void> releaseMulticastLock() async {
+    if (!Platform.isAndroid) return;
+    await channel.invokeMethod<void>('releaseMulticastLock');
   }
 }

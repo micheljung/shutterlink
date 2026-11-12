@@ -4,12 +4,16 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.Build
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 
 class NetworkBinder(context: Context) {
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    private val multicastLock = context.getSystemService(WifiManager::class.java)
+        .createMulticastLock(MULTICAST_LOCK_TAG)
+        .apply { setReferenceCounted(false) }
 
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
@@ -26,6 +30,14 @@ class NetworkBinder(context: Context) {
                 }
                 "unbind" -> {
                     connectivity.bindProcessToNetwork(null)
+                    result.success(null)
+                }
+                "acquireMulticastLock" -> {
+                    multicastLock.acquire()
+                    result.success(null)
+                }
+                "releaseMulticastLock" -> {
+                    if (multicastLock.isHeld) multicastLock.release()
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -53,5 +65,6 @@ class NetworkBinder(context: Context) {
         const val CHANNEL = "ch.micheljung.shutterlink/network"
         const val NO_WIFI = "no_wifi"
         const val BIND_FAILED = "bind_failed"
+        const val MULTICAST_LOCK_TAG = "shutterlink-ssdp"
     }
 }
