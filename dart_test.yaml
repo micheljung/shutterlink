@@ -1,0 +1,3 @@
+tags:
+  screenshots:
+    skip: Renders README screenshots; run with --tags screenshots --run-skipped.
