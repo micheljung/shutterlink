@@ -38,6 +38,8 @@ class FakeCameraClient implements CameraClient {
   final requestedOffsets = <int, List<int>>{};
   final thumbnailRequests = <int>[];
   final thumbnailTokens = <CancelToken?>[];
+  final downloadTokens = <int, List<CancelToken?>>{};
+  final contentOverrides = <int, Uint8List>{};
   Map<int, CameraObject?> objectInfoOverrides = {};
   final _disconnected = Completer<void>();
   Completer<void>? chunkGate;
@@ -89,7 +91,8 @@ class FakeCameraClient implements CameraClient {
     CancelToken? cancelToken,
   }) async {
     requestedOffsets.putIfAbsent(object.handle, () => []).add(offset);
-    final content = contentFor(object);
+    downloadTokens.putIfAbsent(object.handle, () => []).add(cancelToken);
+    final content = contentOverrides[object.handle] ?? contentFor(object);
     var position = offset;
     while (position < content.length) {
       if (cancelToken?.isCancelled ?? false) {

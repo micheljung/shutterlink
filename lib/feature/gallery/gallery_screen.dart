@@ -9,6 +9,7 @@ import '../download/download_cubit.dart';
 import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
+import '../preview/preview_screen.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
 import '../spacing.dart';
@@ -121,6 +122,9 @@ class _GalleryView extends StatelessWidget {
               cache: cache,
               client: client,
               onTap: () => cubit.toggle(group),
+              onPreview: () => Navigator.of(context).push(
+                PreviewScreen.route(context, client: client, index: index),
+              ),
             );
           },
         ),

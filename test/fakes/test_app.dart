@@ -29,6 +29,14 @@ Future<AppDependencies> testDependencies(CameraConnector connector) async {
     'shutterlink_test_history',
   );
   addTearDown(() => historyDirectory.deleteSync(recursive: true));
+  final downloadDirectory = Directory.systemTemp.createTempSync(
+    'shutterlink_test_downloads',
+  );
+  addTearDown(() {
+    if (downloadDirectory.existsSync()) {
+      downloadDirectory.deleteSync(recursive: true);
+    }
+  });
   return AppDependencies(
     settings: settings,
     identity: IdentityRepository(prefs),
@@ -37,9 +45,7 @@ Future<AppDependencies> testDependencies(CameraConnector connector) async {
     photoSaver: RecordingPhotoSaver(),
     connector: connector,
     thumbnailCache: MemoryThumbnailCache(),
-    downloadDirectory: Directory(
-      p.join(Directory.systemTemp.path, 'shutterlink_test_downloads'),
-    ),
+    downloadDirectory: downloadDirectory,
     downloadHistory: DownloadHistoryRepository(
       File(p.join(historyDirectory.path, DownloadHistoryRepository.fileName)),
     ),
