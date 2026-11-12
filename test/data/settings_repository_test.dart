@@ -22,6 +22,17 @@ void main() {
     );
   });
 
+  test('preview quality defaults to thumbnail and persists changes', () async {
+    expect(settings.previewQuality, PreviewQuality.thumbnail);
+
+    await settings.setPreviewQuality(PreviewQuality.full);
+
+    expect(
+      SettingsRepository(await SharedPreferences.getInstance()).previewQuality,
+      PreviewQuality.full,
+    );
+  });
+
   test('blank host override clears it', () async {
     await settings.setHostOverride(' 192.168.1.5 ');
     expect(settings.hostOverride, '192.168.1.5');
