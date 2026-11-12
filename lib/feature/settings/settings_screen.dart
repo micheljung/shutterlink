@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/camera_host_resolver.dart';
 import '../../data/settings_repository.dart';
+import '../history/download_history_cubit.dart';
 import '../spacing.dart';
 import 'settings_cubit.dart';
 
@@ -71,8 +72,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             onChanged: cubit.setHostOverride,
           ),
+          const SizedBox(height: Spacing.extraLarge),
+          Text('Download history', style: theme.textTheme.titleMedium),
+          const SizedBox(height: Spacing.small),
+          Text(
+            'Downloaded photos are marked and skipped on later downloads.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: Spacing.small),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              onPressed: () => _confirmClearHistory(context),
+              child: const Text('Clear download history'),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmClearHistory(BuildContext context) async {
+    final history = context.read<DownloadHistoryCubit>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear download history?'),
+        content: const Text('All photos will download again.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed ?? false) await history.clear();
   }
 }

@@ -38,5 +38,11 @@ class GalleryCubit extends Cubit<GalleryState> {
     state.copyWith(selected: state.groups.map((group) => group.key).toSet()),
   );
 
+  void selectWhere(bool Function(PhotoGroup group) test) => emit(
+    state.copyWith(
+      selected: state.groups.where(test).map((group) => group.key).toSet(),
+    ),
+  );
+
   void clearSelection() => emit(state.copyWith(selected: const {}));
 }

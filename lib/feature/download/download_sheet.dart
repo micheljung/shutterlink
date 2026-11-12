@@ -136,6 +136,8 @@ class _Summary extends StatelessWidget {
           'Skipped (format not on card): '
           '${state.skipped.map((group) => group.baseName).join(', ')}',
         ),
+      if (state.alreadyDownloaded.isNotEmpty)
+        Text('${state.alreadyDownloaded.length} already downloaded, skipped'),
       for (final reason in DownloadFailureReason.values)
         if (state.failed.any((failure) => failure.reason == reason))
           Text(

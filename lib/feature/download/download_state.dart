@@ -22,6 +22,7 @@ class DownloadState extends Equatable {
     this.status = DownloadStatus.idle,
     this.tasks = const [],
     this.skipped = const [],
+    this.alreadyDownloaded = const [],
     this.nextTask = 0,
     this.currentFile,
     this.fileReceived = 0,
@@ -35,6 +36,7 @@ class DownloadState extends Equatable {
   final DownloadStatus status;
   final List<DownloadTask> tasks;
   final List<PhotoGroup> skipped;
+  final List<PhotoGroup> alreadyDownloaded;
   final int nextTask;
   final String? currentFile;
   final int fileReceived;
@@ -70,6 +72,7 @@ class DownloadState extends Equatable {
     status: status ?? this.status,
     tasks: tasks,
     skipped: skipped,
+    alreadyDownloaded: alreadyDownloaded,
     nextTask: nextTask ?? this.nextTask,
     currentFile: currentFile != null ? currentFile() : this.currentFile,
     fileReceived: fileReceived ?? this.fileReceived,
@@ -85,6 +88,7 @@ class DownloadState extends Equatable {
     status,
     tasks,
     skipped,
+    alreadyDownloaded,
     nextTask,
     currentFile,
     fileReceived,

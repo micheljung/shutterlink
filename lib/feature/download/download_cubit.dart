@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as p;
 
+import '../../data/download_history.dart';
 import '../../data/photo_saver.dart';
 import '../../data/settings_repository.dart';
 import '../../ptpip/camera_client.dart';
@@ -11,16 +12,21 @@ import 'download_plan.dart';
 import 'download_state.dart';
 
 class DownloadCubit extends Cubit<DownloadState> {
-  DownloadCubit({required this._saver, required this._workDirectory})
-    : super(const DownloadState());
+  DownloadCubit({
+    required this._saver,
+    required this._workDirectory,
+    required this._history,
+  }) : super(const DownloadState());
 
   static const disconnectedMessage =
       'Camera disconnected. Reconnect to resume the download.';
 
   final PhotoSaver _saver;
   final Directory _workDirectory;
+  final DownloadHistoryRepository _history;
   final _changedTasks = <int>{};
   CancelToken? _cancelToken;
+  String _cameraKey = '';
 
   Future<void> start(
     CameraClient client,
@@ -30,12 +36,21 @@ class DownloadCubit extends Cubit<DownloadState> {
     if (state.status == DownloadStatus.running) return;
     await _discardPartialFiles();
     _changedTasks.clear();
-    final plan = planDownload(groups, format);
+    _cameraKey = cameraKeyOf(client.deviceInfo);
+    final recorded = await _history.load();
+    final plan = planDownload(
+      groups,
+      format,
+      isDownloaded: (object) => recorded.contains(
+        DownloadHistoryRepository.entryKey(_cameraKey, object),
+      ),
+    );
     emit(
       DownloadState(
         status: DownloadStatus.running,
         tasks: plan.tasks,
         skipped: plan.skipped,
+        alreadyDownloaded: plan.alreadyDownloaded,
       ),
     );
     await _run(client, _cancelToken = CancelToken());
@@ -178,6 +193,11 @@ class DownloadCubit extends Cubit<DownloadState> {
         jpeg: files[task.group.jpeg],
         raw: files[task.group.raw],
       );
+      try {
+        await _history.record(_cameraKey, task.files);
+      } on FileSystemException {
+        // The photo is saved; a lost entry only means it is offered again.
+      }
       return null;
     } on TransferCancelledException {
       rethrow;

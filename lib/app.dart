@@ -67,6 +67,7 @@ class ShutterlinkApp extends StatelessWidget {
           create: (_) => DownloadCubit(
             saver: dependencies.photoSaver,
             workDirectory: dependencies.downloadDirectory,
+            history: dependencies.downloadHistory,
           ),
         ),
         BlocProvider(
