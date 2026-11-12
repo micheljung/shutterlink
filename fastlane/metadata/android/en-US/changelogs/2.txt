@@ -1,0 +1,4 @@
+* Downloaded photos are marked and skipped on later downloads; "Select new" selects the rest
+* Full-screen preview with a thumbnail or full-resolution quality setting
+* Gallery grouped by day; select a day or long-press and drag to select a range
+* Finds the camera on your home Wi-Fi

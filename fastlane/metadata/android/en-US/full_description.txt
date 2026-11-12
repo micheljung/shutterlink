@@ -1,0 +1,14 @@
+Shutterlink downloads JPEG and CR3 photos from a Canon EOS R to your phone over the camera's Wi-Fi. It talks to the camera directly using PTP/IP. No cloud, no account, no Canon app.
+
+Features:
+* Thumbnail grid of the memory card, grouped by day. A RAW+JPEG pair is one tile.
+* Download as JPEG, RAW (CR3) or both. Files are saved byte-identical to the originals.
+* Downloaded photos are marked and skipped on later downloads. "Select new" selects everything not yet downloaded.
+* Full-screen preview with swipe. Choose thumbnail or full-resolution quality in Settings.
+* Select a whole day, or long-press and drag to select a range.
+* Interrupted downloads resume after reconnecting.
+* Connects in the camera's access point mode, and finds the camera on your home Wi-Fi.
+
+Shutterlink is not tested on real hardware yet. Reports are welcome.
+
+Canon and EOS are trademarks of Canon Inc. This project is not affiliated with or endorsed by Canon.

@@ -8,19 +8,33 @@ camera's own Wi-Fi. No cloud, no Canon app, just PTP/IP written in pure Dart.
 
 <p>
   <img src="docs/screenshots/connect.png" width="200" alt="Connect screen with camera setup steps">
-  <img src="docs/screenshots/gallery.png" width="200" alt="Photo grid with RAW+JPEG badges and a selection">
+  <img src="docs/screenshots/gallery.png" width="200" alt="Photo grid grouped by day, with downloaded badges and a range selection">
+  <img src="docs/screenshots/preview.png" width="200" alt="Full-screen photo preview">
   <img src="docs/screenshots/download.png" width="200" alt="Download sheet showing progress">
-  <img src="docs/screenshots/settings.png" width="200" alt="Settings for download format and camera address">
+  <img src="docs/screenshots/settings.png" width="200" alt="Settings for download format, preview quality, camera address and download history">
 </p>
 
 ## Features
 
-- Thumbnail grid of the memory card, newest first. A RAW+JPEG pair is one tile.
+- Thumbnail grid of the memory card, newest first and grouped by day. A
+  RAW+JPEG pair is one tile.
 - Select some or all photos and download them as JPEG, RAW (CR3), or both.
+- Tap a photo to select it once something is selected. Long-press and drag to
+  select a range, across rows and days. Select or deselect a whole day from its
+  header.
+- Downloaded photos get a badge and are skipped on later downloads. **Select
+  new** selects everything not downloaded yet. The history can be cleared in
+  Settings.
+- Full-screen preview: tap a photo with nothing selected, or its expand icon.
+  Swipe between photos and select from there. Settings choose between the
+  thumbnail (instant) and full resolution (the JPEG, or the CR3's embedded
+  preview).
 - Per-file and overall progress. Cancel stops within one chunk.
 - Interrupted downloads resume from the last received byte after reconnecting.
 - Files are saved byte-identical to the originals: JPEGs to the gallery, CR3
   files to `Download/` on Android and to Photos as RAW on iOS.
+- Finds the camera on a home Wi-Fi network via SSDP when it isn't at the
+  Wi-Fi gateway.
 - On Android the app binds to the camera's Wi-Fi, so traffic doesn't leave over
   mobile data when the camera network has no internet.
 - A command-line probe (`bin/probe.dart`) to test the protocol from a laptop.
@@ -32,7 +46,7 @@ Early. Be aware of what has and hasn't been verified:
 - The protocol layer and the app are tested against an in-process emulated
   camera (`test/ptpip/fake_camera.dart`). They have **not yet been verified on a
   real EOS R**, nor on physical Android or iOS devices.
-- The Android debug APK builds, and CI checks it on every push. The **iOS
+- The Android release APK builds, and CI checks it on every push. The **iOS
   build has not been compiled yet**; the Swift code (RAW save to Photos) is
   untested.
 
@@ -57,6 +71,18 @@ Reports from real hardware are very welcome.
 Later connections skip step 6. The camera address defaults to the Wi-Fi
 gateway; you can override it in Settings.
 
+If the camera is in infrastructure mode on your home Wi-Fi instead, join the
+same network and tap **Connect**: the app finds the camera via SSDP and asks
+which one to use if there are several.
+
+## Install
+
+- **F-Droid:** submitted, pending inclusion. F-Droid builds the app from this
+  repository and signs it.
+- **From source:** see [Build and run](#build-and-run).
+
+Releases are described in [RELEASING.md](RELEASING.md).
+
 ## Build and run
 
 Requires [FVM](https://fvm.app) (the Flutter version is pinned in `.fvmrc`).
@@ -65,7 +91,7 @@ Requires [FVM](https://fvm.app) (the Flutter version is pinned in `.fvmrc`).
 fvm install
 fvm flutter pub get
 fvm flutter run                 # on a connected device
-fvm flutter build apk --debug   # Android APK
+fvm flutter build apk --release # Android APK
 ```
 
 The Android build needs JDK 17.
@@ -153,19 +179,24 @@ sequenceDiagram
 bin/probe.dart          Command-line protocol probe
 lib/
   ptpip/                PTP/IP client in pure Dart (packets, sockets, session, Canon ops)
-  data/                 Settings, pairing identity, network binding, photo saving
+  data/                 Settings, pairing identity, network binding, SSDP discovery,
+                        download history, photo saving
   feature/
     connect/            Camera setup instructions and connection state
-    gallery/            Thumbnail grid, RAW+JPEG grouping, thumbnail cache
+    gallery/            Thumbnail grid, day sections, range selection, thumbnail cache
+    preview/            Full-screen preview
     download/           Download planning, progress, resume
-    settings/           Download format and camera address
+    history/            Downloaded-photo marks
+    settings/           Download format, preview quality, camera address
 android/app/src/main/kotlin/ch/micheljung/shutterlink/
-                        Wi-Fi network binding, CR3 saving via MediaStore
+                        Wi-Fi network binding, multicast lock, CR3 saving via MediaStore
 ios/Runner/AppDelegate.swift
                         CR3 saving to Photos as RAW
 test/
   ptpip/fake_camera.dart  In-process emulated EOS camera (TCP server)
   screenshots/            Renders the README screenshots
+docs/fdroid/            Draft F-Droid build recipe
+fastlane/metadata/      F-Droid store listing
 ```
 
 ## Testing
@@ -197,8 +228,6 @@ fvm flutter test --tags screenshots --run-skipped
 
 - Wi-Fi only; no USB.
 - Photos only; videos are hidden.
-- The camera address comes from the Wi-Fi gateway or a manual setting; there
-  is no SSDP discovery.
 - No Canon CCAPI support.
 - No remote shooting or live view.
 
