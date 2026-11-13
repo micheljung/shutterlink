@@ -25,6 +25,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static const _tunnelTestOwner = 'tunnel_test';
+  static const _tunnelTestHost = 'example.com';
+  static const _tunnelTestPort = 443;
+
   late final _hostController = TextEditingController(
     text: context.read<SettingsCubit>().state.hostOverride,
   );
@@ -155,24 +159,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _runTunnelTest(BuildContext context) async {
-    const host = 'example.com';
-    const port = 443;
+    final binder = context.read<NetworkBinder>();
     final stopwatch = Stopwatch()..start();
     String report;
     try {
-      final gateway = await PlatformNetworkBinder().acquireBinding(
-        'tunnel_test',
-      );
+      final gateway = await binder.acquireBinding(_tunnelTestOwner);
       final tunnel = await const UploadTunnel().connect(
-        host,
-        port,
+        _tunnelTestHost,
+        _tunnelTestPort,
         allowMetered: true,
       );
       final tunnelled = stopwatch.elapsedMilliseconds;
-      final socket = await SecureSocket.secure(tunnel.socket, host: host);
+      final socket = await SecureSocket.secure(
+        tunnel.socket,
+        host: _tunnelTestHost,
+      );
       final secured = stopwatch.elapsedMilliseconds;
       socket.write(
-        'GET / HTTP/1.1\r\nHost: $host\r\nConnection: close\r\n\r\n',
+        'GET / HTTP/1.1\r\nHost: $_tunnelTestHost\r\nConnection: close\r\n\r\n',
       );
       final statusLine = await socket
           .cast<List<int>>()
@@ -188,6 +192,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           'total: ${stopwatch.elapsedMilliseconds} ms';
     } catch (e) {
       report = 'Failed after ${stopwatch.elapsedMilliseconds} ms:\n$e';
+    } finally {
+      await binder.releaseBinding(_tunnelTestOwner);
     }
     if (!context.mounted) return;
     await showDialog<void>(
