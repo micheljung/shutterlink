@@ -1,5 +1,4 @@
 import 'package:path/path.dart' as p;
-import 'package:uuid/uuid.dart';
 
 import '../feature/gallery/day_section.dart';
 import 'storage_backend.dart';
@@ -9,7 +8,7 @@ import 'storage_backend.dart';
 const maxNameCandidates = 1000;
 
 /// `YYYY-MM-DD` of [captureDate] in local time, matching the gallery days.
-String remoteDirectoryFor(DateTime captureDate) {
+String captureDayOf(DateTime captureDate) {
   final day = dayOf(captureDate)!;
   String two(int n) => n.toString().padLeft(2, '0');
   return '${day.year.toString().padLeft(4, '0')}-${two(day.month)}-'
@@ -24,34 +23,42 @@ String candidateName(String filename, int index) {
   return '${stem}_$index$ext';
 }
 
-String tempNameFor(String name) => '.$name.tmp-${const Uuid().v4()}';
+/// The index [name] was generated from, or 0 if it matches no candidate.
+int candidateIndexOf(String filename, String name) {
+  for (var index = 0; index < maxNameCandidates; index++) {
+    if (candidateName(filename, index) == name) return index;
+  }
+  return 0;
+}
+
+/// Never `.part`, which Nextcloud refuses.
+String tempNameFor(String name, String unique) => '.$name.tmp-$unique';
 
 /// Splits a user-entered base path into non-empty segments.
 List<String> pathSegments(String path) =>
     path.split('/').where((s) => s.isNotEmpty && s != '.').toList();
 
-typedef ResolvedName = ({RemoteTarget target, bool alreadyPresent});
-
-/// Picks the first candidate name in [directory] that is free or already
-/// holds an identical file. Never selects a name with different content.
-Future<ResolvedName> resolveRemoteName(
+/// The first candidate index at or after [from] whose name in [directory] is
+/// free, or null if an identical file already exists under one of them.
+/// Never selects a name with different content.
+Future<int?> freeNameIndex(
   StorageBackend backend, {
   required String directory,
   required String filename,
   required int size,
   required String sha256,
-  int startIndex = 0,
+  int from = 0,
 }) async {
-  for (var i = startIndex; i < maxNameCandidates; i++) {
+  for (var i = from; i < maxNameCandidates; i++) {
     final target = RemoteTarget(
       directory: directory,
       name: candidateName(filename, i),
     );
     switch (await backend.probe(target, size: size, sha256: sha256)) {
       case ProbeResult.absent:
-        return (target: target, alreadyPresent: false);
+        return i;
       case ProbeResult.identical:
-        return (target: target, alreadyPresent: true);
+        return null;
       case ProbeResult.different:
         continue;
     }

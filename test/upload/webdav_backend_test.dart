@@ -178,21 +178,17 @@ void main() {
       final bytes = bytesOf(10);
       final b = backend();
 
-      final resolved = await resolveRemoteName(
+      final index = await freeNameIndex(
         b,
         directory: '2026-11-13',
         filename: 'IMG_0001.JPG',
         size: bytes.length,
         sha256: sha256Of(bytes),
       );
-      expect(resolved.target.name, 'IMG_0001_1.JPG');
-      expect(resolved.alreadyPresent, isFalse);
+      final name = candidateName('IMG_0001.JPG', index!);
+      expect(name, 'IMG_0001_1.JPG');
 
-      final request = await uploadRequest(
-        tmp,
-        bytes,
-        name: resolved.target.name,
-      );
+      final request = await uploadRequest(tmp, bytes, name: name);
       expect(await b.upload(request), UploadResult.uploaded);
       expect(server.files[remote('2026-11-13/IMG_0001.JPG')], bytesOf(5));
       expect(server.files[remote('2026-11-13/IMG_0001_1.JPG')], bytes);
@@ -204,14 +200,14 @@ void main() {
       server.files[remote('2026-11-13/IMG_0001.JPG')] = bytes;
       final b = backend();
 
-      final resolved = await resolveRemoteName(
+      final index = await freeNameIndex(
         b,
         directory: '2026-11-13',
         filename: 'IMG_0001.JPG',
         size: bytes.length,
         sha256: sha256Of(bytes),
       );
-      expect(resolved.alreadyPresent, isTrue);
+      expect(index, isNull);
       expect(
         await b.upload(await uploadRequest(tmp, bytes)),
         UploadResult.alreadyPresent,

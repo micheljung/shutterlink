@@ -13,7 +13,7 @@ import '../ptpip/camera_client.dart';
 import 'destination.dart';
 import 'media_saver.dart';
 import 'network_policy.dart';
-import 'queue_naming.dart';
+import 'remote_path.dart';
 import 'storage_backend.dart';
 import 'upload_item.dart';
 
@@ -611,36 +611,18 @@ class UploadQueue {
   bool _targets(String id, String fingerprint) =>
       !_closed && _repository.items[id]?.destinationFingerprint == fingerprint;
 
-  /// The first candidate name that is free, or null if an identical file
-  /// already exists under one of them.
   Future<int?> _freeNameIndex(
     StorageBackend backend,
     UploadItem item,
     int from,
-  ) async {
-    for (var index = from; index < maxNameCandidates; index++) {
-      final probe = await backend.probe(
-        RemoteTarget(
-          directory: item.captureDay,
-          name: candidateName(item.filename, index),
-        ),
-        size: item.size,
-        sha256: item.sha256,
-      );
-      switch (probe) {
-        case ProbeResult.absent:
-          return index;
-        case ProbeResult.identical:
-          return null;
-        case ProbeResult.different:
-          continue;
-      }
-    }
-    throw StorageException(
-      'No free name for ${item.filename} in ${item.captureDay}.',
-      retryable: false,
-    );
-  }
+  ) => freeNameIndex(
+    backend,
+    directory: item.captureDay,
+    filename: item.filename,
+    size: item.size,
+    sha256: item.sha256,
+    from: from,
+  );
 
   Future<void> _markUploaded(UploadItem item, String key) async {
     await _repository.recordUploaded(key);
