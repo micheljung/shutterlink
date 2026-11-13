@@ -1,5 +1,6 @@
 export 'camera_client.dart';
 export 'canon_eos.dart';
+export 'canon_events.dart';
 export 'connection.dart';
 export 'dataset.dart';
 export 'packet.dart';

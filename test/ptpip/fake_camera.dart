@@ -10,8 +10,18 @@ const fakeStorageId = 0x00020001;
 const fakeConnectionNumber = 7;
 const fakeInitFailReason = PtpIpInitFailReason.rejectedInitiator;
 const _canonVendorExtensionId = 0x0B;
-const _canonEventTerminatorSize = 8;
-const _canonEventTerminatorType = 0;
+const _recordTypeAt = 0x04;
+const _recordHandleAt = 0x08;
+const _addedStorageAt = 0x0C;
+const _addedFormatAt = 0x10;
+const _addedSizeAt = 0x1C;
+const _addedParentAt = 0x20;
+const _objectAddedNameOffset = 0x28;
+const _added64ParentAt = 0x24;
+const _objectAdded64NameOffset = 0x2C;
+const _transferFormatAt = 0x0C;
+const _transferSizeAt = 0x14;
+const _transferNameOffset = 0x1C;
 
 final fakeCameraGuid = Uint8List.fromList(
   List.generate(ptpIpGuidSize, (i) => i),
@@ -48,6 +58,61 @@ class FakeObject {
   );
 }
 
+Uint8List _withName(ByteData record, int nameOffset, String name) {
+  final bytes = record.buffer.asUint8List();
+  bytes.setAll(nameOffset, name.codeUnits);
+  return bytes;
+}
+
+ByteData _record(int type, int nameOffset, String name) {
+  final size = nameOffset + name.length + 1;
+  return ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_recordTypeAt, type, Endian.little);
+}
+
+/// A Canon ObjectAddedEx (or ObjectAddedEx64) record, laid out like
+/// libgphoto2's `ptp_unpack_CANON_changes` reads it.
+Uint8List objectAddedRecord(FakeObject object, {bool sixtyFourBit = false}) {
+  final nameOffset = sixtyFourBit
+      ? _objectAdded64NameOffset
+      : _objectAddedNameOffset;
+  final record =
+      _record(
+          sixtyFourBit
+              ? CanonEosEvent.objectAddedEx64
+              : CanonEosEvent.objectAddedEx,
+          nameOffset,
+          object.filename,
+        )
+        ..setUint32(_recordHandleAt, object.handle, Endian.little)
+        ..setUint32(_addedStorageAt, object.storageId, Endian.little)
+        ..setUint16(_addedFormatAt, object.format, Endian.little);
+  if (sixtyFourBit) {
+    record
+      ..setUint64(_addedSizeAt, object.content.length, Endian.little)
+      ..setUint32(_added64ParentAt, object.parent, Endian.little);
+  } else {
+    record
+      ..setUint32(_addedSizeAt, object.content.length, Endian.little)
+      ..setUint32(_addedParentAt, object.parent, Endian.little);
+  }
+  return _withName(record, nameOffset, object.filename);
+}
+
+Uint8List transferRequestRecord(FakeObject object) {
+  final record =
+      _record(
+          CanonEosEvent.requestObjectTransfer,
+          _transferNameOffset,
+          object.filename,
+        )
+        ..setUint32(_recordHandleAt, object.handle, Endian.little)
+        ..setUint16(_transferFormatAt, object.format, Endian.little)
+        ..setUint32(_transferSizeAt, object.content.length, Endian.little);
+  return _withName(record, _transferNameOffset, object.filename);
+}
+
 Uint8List patternBytes(int length, {int seed = 1}) {
   final random = Random(seed);
   return Uint8List.fromList(List.generate(length, (_) => random.nextInt(256)));
@@ -69,6 +134,8 @@ class FakeCamera {
     this.initAckDelay = Duration.zero,
     this.trickleDelay,
     this.eventRecords,
+    this.initialDump,
+    this.eventDataOverride,
   }) : objects = objects ?? defaultObjects();
 
   static const defaultOperations = [
@@ -164,6 +231,10 @@ class FakeCamera {
   final Duration initAckDelay;
   final Duration? trickleDelay;
   final Uint8List? eventRecords;
+  final Uint8List? initialDump;
+  Uint8List? eventDataOverride;
+  final _pendingEvents = <Uint8List>[];
+  int getEventCount = 0;
 
   final receivedOpcodes = <int>[];
   final receivedRequests = <CommandRequest>[];
@@ -190,6 +261,13 @@ class FakeCamera {
     dropConnection();
     await _server.close();
   }
+
+  void addObject(FakeObject object, {bool sixtyFourBit = false}) {
+    objects.add(object);
+    queueEventRecord(objectAddedRecord(object, sixtyFourBit: sixtyFourBit));
+  }
+
+  void queueEventRecord(Uint8List record) => _pendingEvents.add(record);
 
   void sendEvent(int code) =>
       _write(_eventSocket!, EventPacket(code: code, transactionId: 0));
@@ -363,15 +441,7 @@ class FakeCamera {
           Uint8List.sublistView(o.content, start, end),
         );
       case CanonEosOperation.getEvent:
-        final events = PtpDataWriter();
-        final records = eventRecords;
-        if (records != null) {
-          events.bytes(records);
-        }
-        events
-          ..u32(_canonEventTerminatorSize)
-          ..u32(_canonEventTerminatorType);
-        respond(PtpResponseCode.ok, events.toBytes());
+        respond(PtpResponseCode.ok, _eventData());
       case PtpOperation.closeSession ||
           CanonEosOperation.setRemoteMode ||
           CanonEosOperation.setEventMode:
@@ -379,6 +449,30 @@ class FakeCamera {
       default:
         respond(PtpResponseCode.operationNotSupported);
     }
+  }
+
+  Uint8List _eventData() {
+    final first = getEventCount++ == 0;
+    final override = eventDataOverride;
+    if (override != null) {
+      return override;
+    }
+    final events = PtpDataWriter();
+    final dump = initialDump;
+    if (first && dump != null) {
+      events.bytes(dump);
+    }
+    final records = eventRecords;
+    if (records != null) {
+      events.bytes(records);
+    }
+    _pendingEvents
+      ..forEach(events.bytes)
+      ..clear();
+    events
+      ..u32(canonEventHeaderSize)
+      ..u32(CanonEosEvent.terminator);
+    return events.toBytes();
   }
 
   void _sendData(Socket socket, int txid, Uint8List data) {
