@@ -107,7 +107,12 @@ class ClockSyncBanner extends StatelessWidget {
                   child: FutureBuilder<Uint8List?>(
                     future: client.thumbnail(candidate.thumbnailSource.handle),
                     builder: (context, snapshot) => switch (snapshot.data) {
-                      final bytes? => Image.memory(bytes, fit: BoxFit.cover),
+                      final bytes? => Image.memory(
+                        bytes,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            const Icon(Icons.broken_image_outlined),
+                      ),
                       null => const Icon(Icons.image_outlined),
                     },
                   ),
