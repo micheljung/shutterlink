@@ -42,9 +42,10 @@ class StoredPhoto {
 }
 
 class SessionSnapshot {
-  const SessionSnapshot(this.photos, this.expiresAt);
+  const SessionSnapshot(this.photos, this.createdAt, this.expiresAt);
 
   final List<StoredPhoto> photos;
+  final DateTime createdAt;
   final DateTime expiresAt;
 }
 
@@ -226,7 +227,7 @@ class SessionStore {
       if (created == null) return null;
       final photos = await _listPhotos(name);
       if (photos.isEmpty) return null;
-      return SessionSnapshot(photos, created.add(retention));
+      return SessionSnapshot(photos, created, created.add(retention));
     });
   }
 
