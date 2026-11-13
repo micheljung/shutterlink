@@ -14,6 +14,8 @@ import '../../fakes/test_app.dart';
 const _pollInterval = Duration(milliseconds: 5);
 const _maxPolls = 2000;
 
+const _settingsScrollStep = 300.0;
+
 void main() {
   final objects = [
     cameraObject(1, 'IMG_0001.JPG'),
@@ -172,6 +174,16 @@ void main() {
 
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Clear download history'),
+      _settingsScrollStep,
+      scrollable: find
+          .descendant(
+            of: find.byType(SettingsScreen),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     await tester.tap(find.text('Clear download history'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Clear'));

@@ -335,6 +335,14 @@ class UploadQueue {
     _wake();
   }
 
+  /// Retries items that wait for a network or a backoff, e.g. on app resume.
+  /// Items that need the user keep waiting.
+  Future<void> resume() async {
+    await _ready.future;
+    await _resetWaiting(clearAttention: false);
+    _wake();
+  }
+
   /// Asks the user to remove gallery copies the app no longer owns.
   Future<int> removeKeptCopies() async {
     await _ready.future;

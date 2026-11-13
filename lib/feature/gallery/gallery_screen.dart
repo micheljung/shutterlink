@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -9,9 +10,12 @@ import '../download/download_cubit.dart';
 import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
+import '../live/live_transfer_cubit.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
+import '../settings/upload_settings_cubit.dart';
 import '../spacing.dart';
+import '../upload/upload_status_sheet.dart';
 import 'gallery_cubit.dart';
 import 'gallery_grid.dart';
 import 'gallery_state.dart';
@@ -46,6 +50,9 @@ class _GalleryView extends StatelessWidget {
     final format = context.select<SettingsCubit, DownloadFormat>(
       (cubit) => cubit.state.format,
     );
+    final uploads = context.select<UploadSettingsCubit, bool>(
+      (cubit) => cubit.state.destination != null,
+    );
     bool isDownloaded(PhotoGroup group) =>
         history.isDownloaded(cameraKey, group.filesFor(format));
     return Scaffold(
@@ -56,6 +63,19 @@ class _GalleryView extends StatelessWidget {
               : '${state.selected.length} selected',
         ),
         actions: [
+          if (uploads) ...[
+            if (defaultTargetPlatform == TargetPlatform.android)
+              IconButton(
+                tooltip: 'Start Live transfer',
+                icon: const Icon(Icons.sensors),
+                onPressed: context.read<LiveTransferCubit>().start,
+              ),
+            IconButton(
+              tooltip: 'Uploads',
+              icon: const Icon(Icons.cloud_upload_outlined),
+              onPressed: () => UploadStatusSheet.show(context),
+            ),
+          ],
           IconButton(
             tooltip: 'Select new',
             icon: const Icon(Icons.fiber_new_outlined),

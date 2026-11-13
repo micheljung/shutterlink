@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'data/camera_host_resolver.dart';
+import 'data/destination_repository.dart';
 import 'data/download_history.dart';
 import 'data/identity_repository.dart';
+import 'data/live_service.dart';
 import 'data/network_binder.dart';
 import 'data/photo_saver.dart';
 import 'data/settings_repository.dart';
@@ -16,7 +18,14 @@ import 'feature/download/download_cubit.dart';
 import 'feature/gallery/gallery_screen.dart';
 import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/history/download_history_cubit.dart';
+import 'feature/live/ingest_coordinator.dart';
+import 'feature/live/live_ingestor.dart';
+import 'feature/live/live_screen.dart';
+import 'feature/live/live_transfer_cubit.dart';
 import 'feature/settings/settings_cubit.dart';
+import 'feature/settings/upload_settings_cubit.dart';
+import 'feature/upload/upload_status_cubit.dart';
+import 'upload/upload_queue.dart';
 
 class AppDependencies {
   const AppDependencies({
@@ -29,6 +38,11 @@ class AppDependencies {
     required this.thumbnailCache,
     required this.downloadDirectory,
     required this.downloadHistory,
+    required this.destinations,
+    required this.uploadQueue,
+    required this.ingestCoordinator,
+    required this.liveService,
+    required this.connectionTester,
   });
 
   final SettingsRepository settings;
@@ -40,6 +54,13 @@ class AppDependencies {
   final ThumbnailCache thumbnailCache;
   final Directory downloadDirectory;
   final DownloadHistoryRepository downloadHistory;
+  final DestinationRepository destinations;
+
+  /// Started by the caller.
+  final UploadQueue uploadQueue;
+  final IngestCoordinator ingestCoordinator;
+  final LiveService liveService;
+  final ConnectionTester connectionTester;
 }
 
 class ShutterlinkApp extends StatelessWidget {
@@ -68,10 +89,41 @@ class ShutterlinkApp extends StatelessWidget {
             saver: dependencies.photoSaver,
             workDirectory: dependencies.downloadDirectory,
             history: dependencies.downloadHistory,
+            coordinator: dependencies.ingestCoordinator,
+            uploadQueue: dependencies.uploadQueue,
           ),
         ),
         BlocProvider(
           create: (_) => DownloadHistoryCubit(dependencies.downloadHistory),
+        ),
+        BlocProvider(
+          create: (_) => UploadSettingsCubit(
+            dependencies.destinations,
+            tester: dependencies.connectionTester,
+          ),
+        ),
+        BlocProvider(
+          create: (_) => UploadStatusCubit(dependencies.uploadQueue),
+        ),
+        BlocProvider(
+          lazy: false,
+          create: (context) => LiveTransferCubit(
+            connect: context.read<ConnectCubit>(),
+            connector: dependencies.connector,
+            identity: dependencies.identity,
+            hostResolver: dependencies.hostResolver,
+            networkBinder: dependencies.networkBinder,
+            service: dependencies.liveService,
+            queue: dependencies.uploadQueue,
+            ingestorFactory: (client, baseline) => LiveIngestor(
+              client: client,
+              format: dependencies.settings.format,
+              baseline: baseline,
+              history: dependencies.downloadHistory,
+              queue: dependencies.uploadQueue,
+              coordinator: dependencies.ingestCoordinator,
+            ),
+          ),
         ),
       ],
       child: MaterialApp(
@@ -94,11 +146,13 @@ class _Home extends StatelessWidget {
   Widget build(BuildContext context) =>
       BlocConsumer<ConnectCubit, ConnectState>(
         listenWhen: (previous, current) =>
-            previous is ConnectConnected && current is! ConnectConnected,
+            (previous is ConnectConnected || previous is ConnectLiveOwned) &&
+            current.runtimeType != previous.runtimeType,
         listener: (context, _) =>
             Navigator.of(context).popUntil((route) => route.isFirst),
         buildWhen: (previous, current) =>
             (previous is ConnectConnected) != (current is ConnectConnected) ||
+            (previous is ConnectLiveOwned) != (current is ConnectLiveOwned) ||
             (previous is ConnectConnected &&
                 current is ConnectConnected &&
                 previous.client != current.client),
@@ -107,6 +161,7 @@ class _Home extends StatelessWidget {
             key: ObjectKey(client),
             client: client,
           ),
+          ConnectLiveOwned() => const LiveScreen(),
           _ => const ConnectScreen(),
         },
       );
