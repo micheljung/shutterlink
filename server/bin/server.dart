@@ -15,7 +15,7 @@ final ArgParser _parser = ArgParser()
     defaultsTo: _defaultAddress,
     help: 'Address to bind; put a reverse proxy in front of it.',
   )
-  ..addOption('data-dir', mandatory: true, help: 'Directory for all data.')
+  ..addOption('data-dir', help: 'Directory for all data (required).')
   ..addOption(
     'upload-token-file',
     help: 'File holding the upload token (or set $_tokenEnvironment).',
@@ -43,11 +43,12 @@ Future<void> main(List<String> arguments) async {
       stdout.writeln(_parser.usage);
       return;
     }
-    options.option('data-dir');
   } on ArgParserException catch (e) {
     _usage(e.message);
   }
 
+  final dataDir = options.option('data-dir');
+  if (dataDir == null) _usage('--data-dir is required');
   final port = int.tryParse(options.option('port')!);
   if (port == null) _usage('Invalid --port');
   final retentionDays = int.tryParse(options.option('retention-days')!);
@@ -76,7 +77,7 @@ Future<void> main(List<String> arguments) async {
   }
 
   final server = await ShutterlinkServer.start(
-    dataDir: Directory(options.option('data-dir')!),
+    dataDir: Directory(dataDir),
     uploadToken: token,
     tips: tips,
     retention: Duration(days: retentionDays),
