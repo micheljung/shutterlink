@@ -15,7 +15,7 @@ class DaySection extends Equatable {
 List<DaySection> sectionsOf(List<PhotoGroup> groups) {
   final sections = <DaySection>[];
   for (final group in groups) {
-    final day = _dayOf(group.captureDate);
+    final day = dayOf(group.captureDate);
     if (sections.isEmpty || sections.last.day != day) {
       sections.add(DaySection(day: day, groups: [group]));
     } else {
@@ -25,7 +25,7 @@ List<DaySection> sectionsOf(List<PhotoGroup> groups) {
   return sections;
 }
 
-DateTime? _dayOf(DateTime? date) {
+DateTime? dayOf(DateTime? date) {
   if (date == null) return null;
   final local = date.toLocal();
   return DateTime(local.year, local.month, local.day);
