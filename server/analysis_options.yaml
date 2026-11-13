@@ -1,0 +1,11 @@
+include: package:lints/recommended.yaml
+
+linter:
+  rules:
+    - prefer_single_quotes
+    - directives_ordering
+    - prefer_final_locals
+    - require_trailing_commas
+    - avoid_dynamic_calls
+    - cancel_subscriptions
+    - always_declare_return_types
