@@ -47,6 +47,7 @@ class FakeCameraClient implements CameraClient {
   Completer<void>? objectInfoGate;
   int _chunksSent = 0;
   bool closed = false;
+  DateTime? cameraTimeValue;
 
   @override
   CameraDeviceInfo get deviceInfo => const CameraDeviceInfo(
@@ -86,6 +87,9 @@ class FakeCameraClient implements CameraClient {
     }
     return objects.firstWhereOrNull((object) => object.handle == handle);
   }
+
+  @override
+  Future<DateTime?> cameraTime() async => cameraTimeValue;
 
   @override
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken}) async {

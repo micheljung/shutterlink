@@ -135,6 +135,8 @@ abstract interface class CameraClient {
 
   Future<CameraObject?> objectInfo(int handle);
 
+  Future<DateTime?> cameraTime();
+
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken});
 
   Future<void> download(
