@@ -41,6 +41,37 @@ void main() {
     expect(put.statusCode, 410);
   });
 
+  for (final (description, created) in [
+    ('a missing', null),
+    ('an invalid', 'not a date'),
+  ]) {
+    test('a Session with $description created file expires by its folder '
+        'time', () async {
+      await server.upload(codeA, photoBytes(1));
+      final session = (await dir('sessions').list().single) as Directory;
+      final createdFile = File(p.join(session.path, 'created'));
+      if (created == null) {
+        await createdFile.delete();
+      } else {
+        await createdFile.writeAsString(created);
+      }
+      final touched = await Process.run('touch', [
+        '-d',
+        t0.toIso8601String(),
+        session.path,
+      ]);
+      expect(touched.exitCode, 0);
+
+      server.now.now = t0.add(_day * 29);
+      await server.app.store.purgeExpired();
+      expect(await session.exists(), isTrue);
+
+      server.now.now = t0.add(_day * 31);
+      await server.app.store.purgeExpired();
+      expect(await session.exists(), isFalse);
+    });
+  }
+
   test('removes orphan tmp files older than the cleanup interval', () async {
     final stale = File(p.join(dir('tmp').path, 'stale'));
     final fresh = File(p.join(dir('tmp').path, 'fresh'));

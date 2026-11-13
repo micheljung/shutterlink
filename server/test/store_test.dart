@@ -41,9 +41,43 @@ void main() {
     expect(await snapshot.photos.single.file.readAsBytes(), bytes);
   });
 
-  test('secret is owner-only', () async {
+  test('secret is owner-only and leaves no tmp file', () async {
     final mode = (await File('${dataDir.path}/secret').stat()).modeString();
     expect(mode, 'rw-------');
+    expect(await Directory('${dataDir.path}/tmp').list().isEmpty, isTrue);
+  });
+
+  test('a secret of the wrong length stops the server', () async {
+    final secret = File('${dataDir.path}/secret');
+    final original = await secret.readAsBytes();
+    await secret.writeAsBytes(original.sublist(1));
+
+    await expectLater(SessionStore.open(dataDir), throwsStateError);
+    expect(await secret.readAsBytes(), original.sublist(1));
+  });
+
+  test('photo reads only the requested file of a live Session', () async {
+    final bytes = photoBytes(1);
+    await store.put(codeA, keyOf(bytes), chunked(bytes));
+
+    final photo = await store.photo(codeA, keyOf(bytes));
+    expect(photo!.size, bytes.length);
+    expect(await photo.file.readAsBytes(), bytes);
+    expect(await store.photo(codeA, keyOf(photoBytes(2))), isNull);
+    expect(await store.photo(codeB, keyOf(bytes)), isNull);
+    expect(await store.photo(codeA, '../secret'), isNull);
+  });
+
+  test('created is written before the first photo', () async {
+    final bytes = photoBytes(1);
+    await store.put(codeA, keyOf(bytes), chunked(bytes));
+    final session = Directory(
+      '${dataDir.path}/sessions/${store.dirName(codeA)}',
+    );
+    final created = await File('${session.path}/created').stat();
+    final photos = await Directory('${session.path}/photos').stat();
+
+    expect(created.changed.isAfter(photos.changed), isFalse);
   });
 
   test(

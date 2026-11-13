@@ -4,10 +4,11 @@ import 'package:crypto/crypto.dart';
 
 final RegExp codePattern = RegExp(r'^[a-z]+(-[a-z]+){3}$');
 final RegExp keyPattern = RegExp(r'^[0-9a-f]{64}$');
+final RegExp _whitespace = RegExp(r'\s+');
 
 String? normalizeCode(String? raw) {
   if (raw == null) return null;
-  final code = raw.trim().toLowerCase();
+  final code = raw.trim().toLowerCase().replaceAll(_whitespace, '-');
   return codePattern.hasMatch(code) ? code : null;
 }
 

@@ -17,6 +17,7 @@ const int _secretLength = 32;
 const int _tmpNameLength = 16;
 const String _ownerOnlyMode = '600';
 const String _photoExtension = '.jpg';
+const int _byteValues = 256;
 
 enum PutError { tooLarge, shaMismatch, expired, sessionFull }
 
@@ -73,7 +74,10 @@ class SessionStore {
     }
     return SessionStore._(
       root,
-      await _loadSecret(File(p.join(root.path, 'secret'))),
+      await _loadSecret(
+        File(p.join(root.path, 'secret')),
+        Directory(p.join(root.path, 'tmp')),
+      ),
       clock: clock,
       retention: retention,
       maxPhotoBytes: maxPhotoBytes,
@@ -82,16 +86,33 @@ class SessionStore {
     );
   }
 
-  static Future<List<int>> _loadSecret(File file) async {
-    if (await file.exists()) return file.readAsBytes();
+  /// Fails on a secret of the wrong length: a new one would orphan every
+  /// stored Session.
+  static Future<List<int>> _loadSecret(File file, Directory tmpDir) async {
+    if (await file.exists()) {
+      final secret = await file.readAsBytes();
+      if (secret.length != _secretLength) {
+        throw StateError(
+          '${file.path} holds ${secret.length} bytes, expected '
+          '$_secretLength. Restore it from a backup.',
+        );
+      }
+      return secret;
+    }
     final random = Random.secure();
     final secret = Uint8List.fromList(
-      List.generate(_secretLength, (_) => random.nextInt(256)),
+      List.generate(_secretLength, (_) => random.nextInt(_byteValues)),
     );
-    await file.writeAsBytes(secret, flush: true);
+    final tmp = _tmpFileIn(tmpDir);
+    await tmp.writeAsBytes(secret, flush: true);
     if (!Platform.isWindows) {
-      await Process.run('chmod', [_ownerOnlyMode, file.path]);
+      final chmod = await Process.run('chmod', [_ownerOnlyMode, tmp.path]);
+      if (chmod.exitCode != 0) {
+        await tmp.delete();
+        throw FileSystemException('chmod failed: ${chmod.stderr}', tmp.path);
+      }
     }
+    await tmp.rename(file.path);
     return secret;
   }
 
@@ -116,13 +137,15 @@ class SessionStore {
   File _tombstone(String name) => File(p.join(_root.path, 'tombstones', name));
   Directory get _tmpDir => Directory(p.join(_root.path, 'tmp'));
 
-  File _newTmpFile() {
+  File _newTmpFile() => _tmpFileIn(_tmpDir);
+
+  static File _tmpFileIn(Directory dir) {
     final random = Random.secure();
     final name = List.generate(
       _tmpNameLength,
-      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      (_) => random.nextInt(_byteValues).toRadixString(16).padLeft(2, '0'),
     ).join();
-    return File(p.join(_tmpDir.path, name));
+    return File(p.join(dir.path, name));
   }
 
   Future<PutResult> put(String code, String key, Stream<List<int>> body) async {
@@ -168,10 +191,10 @@ class SessionStore {
     }
     final target = File(p.join(_photosDir(name).path, '$key$_photoExtension'));
     if (await target.exists()) {
-      final created = await _readCreated(name);
+      final created = await _readCreated(name) ?? await _writeCreated(name);
       return PutResult.stored(
         created: false,
-        expiresAt: created!.add(retention),
+        expiresAt: created.add(retention),
       );
     }
     final existing = await _listPhotos(name);
@@ -179,8 +202,9 @@ class SessionStore {
     if (existing.length >= maxSessionPhotos || total + size > maxSessionBytes) {
       return const PutResult.failed(PutError.sessionFull);
     }
-    await _photosDir(name).create(recursive: true);
+    await _sessionDir(name).create(recursive: true);
     final created = await _readCreated(name) ?? await _writeCreated(name);
+    await _photosDir(name).create();
     await tmp.rename(target.path);
     return PutResult.stored(created: true, expiresAt: created.add(retention));
   }
@@ -231,13 +255,16 @@ class SessionStore {
     });
   }
 
-  Future<StoredPhoto?> photo(String code, String key) async {
-    final snapshot = await this.snapshot(code);
-    if (snapshot == null) return null;
-    for (final photo in snapshot.photos) {
-      if (photo.key == key) return photo;
-    }
-    return null;
+  Future<StoredPhoto?> photo(String code, String key) {
+    final name = dirName(code);
+    return _mutex.run(name, () async {
+      if (!isValidKey(key) || await _tombstone(name).exists()) return null;
+      if (await _readCreated(name) == null) return null;
+      final file = File(p.join(_photosDir(name).path, '$key$_photoExtension'));
+      final stat = await file.stat();
+      if (stat.type != FileSystemEntityType.file) return null;
+      return StoredPhoto(key, file, stat.size, stat.modified);
+    });
   }
 
   Future<void> purgeExpired() async {
@@ -275,8 +302,10 @@ class SessionStore {
 
   Future<void> _purgeSession(String name, DateTime now) async {
     if (zipLocks.isLocked(name)) return;
-    final created = await _readCreated(name);
-    if (created == null || now.isBefore(created.add(retention))) return;
+    final created =
+        await _readCreated(name) ??
+        (await _sessionDir(name).stat()).modified.toUtc();
+    if (now.isBefore(created.add(retention))) return;
     await _tombstone(name).writeAsString(now.toIso8601String(), flush: true);
     await _sessionDir(name).delete(recursive: true);
   }
