@@ -200,15 +200,10 @@ class SessionsUploadQueue {
   }
 
   Future<_QueueData> _load() async {
-    final json = await _file.read();
-    var data = _QueueData([], 0, 0);
-    if (json is Map<String, Object?>) {
-      try {
-        data = _QueueData.fromJson(json);
-      } on Object {
-        data = _QueueData([], 0, 0);
-      }
-    }
+    final data = await _file.read(
+      _QueueData.fromJson,
+      () => _QueueData([], 0, 0),
+    );
     if (await _dropStale(data)) await _persist(data);
     return data;
   }

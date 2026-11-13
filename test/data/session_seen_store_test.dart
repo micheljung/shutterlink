@@ -98,4 +98,11 @@ void main() {
 
     expect(await store().states(), isEmpty);
   });
+
+  test('a corrupt file is moved aside before starting fresh', () async {
+    await file.writeAsString('{"entries": 5}');
+
+    expect(await store().states(), isEmpty);
+    expect(await File('${file.path}.corrupt').readAsString(), '{"entries": 5}');
+  });
 }

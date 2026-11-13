@@ -138,15 +138,8 @@ class SessionRepository {
     _changes.add(null);
   }
 
-  Future<_SessionsData> _read() async {
-    final json = await _file.read();
-    if (json is! Map<String, Object?>) return _SessionsData();
-    try {
-      return _SessionsData.fromJson(json);
-    } on Object {
-      return _SessionsData();
-    }
-  }
+  Future<_SessionsData> _read() =>
+      _file.read(_SessionsData.fromJson, _SessionsData.new);
 }
 
 class _SessionsData {

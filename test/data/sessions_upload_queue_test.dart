@@ -137,4 +137,12 @@ void main() {
     expect(await reloaded.expiredCount(), 1);
     expect(await reloaded.droppedCount(), 1);
   });
+
+  test('a corrupt manifest is moved aside before starting fresh', () async {
+    await manifest.writeAsString('[1, 2');
+
+    expect(await queue().items(), isEmpty);
+    expect(await File('${manifest.path}.corrupt').readAsString(), '[1, 2');
+    expect(await manifest.exists(), isFalse);
+  });
 }

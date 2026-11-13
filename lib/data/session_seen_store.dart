@@ -85,15 +85,8 @@ class SessionSeenStore {
         await _file.save(data.toJson());
       });
 
-  Future<_SeenData> _read() async {
-    final json = await _file.read();
-    if (json is! Map<String, Object?>) return _SeenData({}, {});
-    try {
-      return _SeenData.fromJson(json);
-    } on Object {
-      return _SeenData({}, {});
-    }
-  }
+  Future<_SeenData> _read() =>
+      _file.read(_SeenData.fromJson, () => _SeenData({}, {}));
 }
 
 class _SeenEntry {

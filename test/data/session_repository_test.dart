@@ -150,10 +150,21 @@ void main() {
     await file.writeAsString(json);
 
     expect(await repository().all(), isEmpty);
+    expect(await File('${file.path}.corrupt').readAsString(), json);
 
     await file.writeAsString('{not json');
     expect(await repository().all(), isEmpty);
+    expect(await File('${file.path}.corrupt').readAsString(), '{not json');
     expect(jsonDecode(json), isA<Map<String, Object?>>());
+  });
+
+  test('a corrupt file is kept aside when the next Session is saved', () async {
+    await file.writeAsString('{not json');
+
+    await repository().start();
+
+    expect(await File('${file.path}.corrupt').readAsString(), '{not json');
+    expect(await repository().all(), hasLength(1));
   });
 
   test('notifies changes and ignores unknown codes', () async {

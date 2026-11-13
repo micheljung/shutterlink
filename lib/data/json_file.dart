@@ -5,17 +5,28 @@ class JsonFile {
   JsonFile(this.file);
 
   static const _temporarySuffix = '.tmp';
+  static const corruptSuffix = '.corrupt';
 
   final File file;
   Future<void> _lastWrite = Future.value();
 
-  Future<Object?> read() async {
+  /// Returns [empty] without a file. An unreadable file is moved aside to
+  /// [corruptSuffix] first, so starting fresh never overwrites it.
+  Future<T> read<T>(
+    T Function(Map<String, Object?> json) parse,
+    T Function() empty,
+  ) async {
+    final String text;
     try {
-      return jsonDecode(await file.readAsString());
-    } on FileSystemException {
-      return null;
-    } on FormatException {
-      return null;
+      text = await file.readAsString();
+    } on PathNotFoundException {
+      return empty();
+    }
+    try {
+      return parse(jsonDecode(text) as Map<String, Object?>);
+    } on Object {
+      await file.rename('${file.path}$corruptSuffix');
+      return empty();
     }
   }
 
