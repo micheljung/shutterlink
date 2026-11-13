@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:clock/clock.dart';
 import 'package:crypto/crypto.dart';
 import 'package:equatable/equatable.dart';
+import 'package:path/path.dart' as p;
 
 import '../feature/sessions/session.dart';
 import '../feature/sessions/sessions_config.dart';
@@ -78,12 +79,20 @@ class UploadItem extends Equatable {
 }
 
 class SessionsUploadQueue {
-  SessionsUploadQueue(File manifest, {this._clock = const Clock()})
-    : _file = JsonFile(manifest);
+  SessionsUploadQueue(
+    File manifest, {
+    this._uploadDirectory,
+    this._clock = const Clock(),
+  }) : _file = JsonFile(manifest);
+
+  /// A file the collector is still downloading is younger than this, so it
+  /// is never swept as an orphan.
+  static const orphanAge = Duration(hours: 1);
 
   static const fileName = 'sessions_upload_queue.json';
 
   final JsonFile _file;
+  final Directory? _uploadDirectory;
   final Clock _clock;
   final _changes = StreamController<void>.broadcast();
   final _enqueued = StreamController<void>.broadcast();
@@ -205,7 +214,25 @@ class SessionsUploadQueue {
       () => _QueueData([], 0, 0),
     );
     if (await _dropStale(data)) await _persist(data);
+    await _sweepOrphans(data);
     return data;
+  }
+
+  Future<void> _sweepOrphans(_QueueData data) async {
+    final directory = _uploadDirectory;
+    if (directory == null || !await directory.exists()) return;
+    final queued = {
+      for (final item in data.items) p.canonicalize(item.filePath),
+    };
+    final cutoff = _clock.now().subtract(orphanAge);
+    await for (final entity in directory.list()) {
+      if (entity is! File || queued.contains(p.canonicalize(entity.path))) {
+        continue;
+      }
+      if ((await entity.stat()).modified.isBefore(cutoff)) {
+        await _delete(entity.path);
+      }
+    }
   }
 }
 

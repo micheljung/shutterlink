@@ -74,6 +74,9 @@ Future<void> main() async {
   AppLifecycleListener(onResume: () => unawaited(uploadQueue.resume()));
   final ingestCoordinator = IngestCoordinator();
   File supportFile(String name) => File(p.join(supportDirectory.path, name));
+  final sessionsUploadDirectory = Directory(
+    p.join(supportDirectory.path, SessionsDependencies.uploadDirectoryName),
+  );
 
   runApp(
     ShutterlinkApp(
@@ -99,18 +102,16 @@ Future<void> main() async {
             supportFile(SessionRepository.fileName),
           ),
           seen: SessionSeenStore(supportFile(SessionSeenStore.fileName)),
-          queue: SessionsUploadQueue(supportFile(SessionsUploadQueue.fileName)),
+          queue: SessionsUploadQueue(
+            supportFile(SessionsUploadQueue.fileName),
+            uploadDirectory: sessionsUploadDirectory,
+          ),
           credentials: SecureSessionsCredentials(settings),
           transport: TunnelTransport(networkStatus, connector: tcpConnector),
           settings: settings,
           ingestCoordinator: ingestCoordinator,
           stagedFileOf: uploadQueue.stagingFileFor,
-          uploadDirectory: Directory(
-            p.join(
-              supportDirectory.path,
-              SessionsDependencies.uploadDirectoryName,
-            ),
-          ),
+          uploadDirectory: sessionsUploadDirectory,
         ),
         destinations: destinations,
         uploadQueue: uploadQueue,

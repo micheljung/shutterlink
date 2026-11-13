@@ -145,4 +145,26 @@ void main() {
     expect(await File('${manifest.path}.corrupt').readAsString(), '[1, 2');
     expect(await manifest.exists(), isFalse);
   });
+
+  test('sweeps old upload files the queue does not reference', () async {
+    final kept = await photo('kept');
+    await queue().enqueue(sessionCode: code, file: kept);
+    final orphan = await photo('orphan');
+    final downloading = await photo('downloading');
+    final old = DateTime.now().subtract(SessionsUploadQueue.orphanAge * 2);
+    await orphan.setLastModified(old);
+    await kept.setLastModified(old);
+    now = DateTime.now().toUtc();
+
+    final reloaded = SessionsUploadQueue(
+      manifest,
+      uploadDirectory: orphan.parent,
+      clock: Clock(() => now),
+    );
+    expect(await reloaded.items(), hasLength(1));
+
+    expect(await orphan.exists(), isFalse);
+    expect(await kept.exists(), isTrue);
+    expect(await downloading.exists(), isTrue);
+  });
 }
