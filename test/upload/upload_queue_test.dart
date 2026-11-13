@@ -560,25 +560,37 @@ void main() {
       expect(server().files, hasLength(1));
     });
 
-    test('resuming the app retries backoffs but not failures', () async {
+    test('resuming the app retries only network waits', () async {
       server().failUploads = 1;
       final queue = await started();
       await add(queue, 'IMG_0001.JPG');
       await queue.idle;
-      expect(queue.snapshot.waiting.values, [WaitReason.backoff]);
+      server()
+        ..failUploads = 1
+        ..failure = const NoNetworkException();
+      await add(queue, 'IMG_0002.JPG');
+      await queue.idle;
+      expect(queue.snapshot.waiting.values.toSet(), {
+        WaitReason.backoff,
+        WaitReason.network,
+      });
 
       await queue.resume();
       await queue.idle;
-      expect(server().files, hasLength(1));
+      expect(server().files.keys, ['2026-11-13/IMG_0002.JPG']);
+      expect(queue.snapshot.waiting.values, [WaitReason.backoff]);
 
       server()
         ..failUploads = 1
         ..failure = const StorageException('Wrong password', retryable: false);
-      await add(queue, 'IMG_0002.JPG');
+      await add(queue, 'IMG_0003.JPG');
       await queue.idle;
       await queue.resume();
       await queue.idle;
-      expect(queue.snapshot.waiting.values, [WaitReason.attention]);
+      expect(queue.snapshot.waiting.values.toSet(), {
+        WaitReason.backoff,
+        WaitReason.attention,
+      });
     });
 
     test('permanent errors wait for the user', () async {

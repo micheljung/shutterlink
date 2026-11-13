@@ -306,7 +306,7 @@ class UploadQueue {
       try {
         item = await _saveToGallery(item);
       } on Object {
-        await _repository.remove(id);
+        await _remove(id);
         await _deleteStaging(staged.path);
         _emitSnapshot();
         rethrow;
@@ -335,11 +335,11 @@ class UploadQueue {
     _wake();
   }
 
-  /// Retries items that wait for a network or a backoff, e.g. on app resume.
-  /// Items that need the user keep waiting.
+  /// Retries items that wait for a network, e.g. on app resume. Backoffs
+  /// and items that need the user keep waiting.
   Future<void> resume() async {
     await _ready.future;
-    await _resetWaiting(clearAttention: false);
+    await _resetWaiting(clearAttention: false, networkOnly: true);
     _wake();
   }
 
@@ -356,7 +356,7 @@ class UploadQueue {
       return 0;
     }
     for (final item in kept) {
-      await _repository.remove(item.id);
+      await _remove(item.id);
     }
     _emitSnapshot();
     return kept.length;
@@ -394,9 +394,13 @@ class UploadQueue {
     }
   }
 
-  Future<void> _resetWaiting({required bool clearAttention}) async {
+  Future<void> _resetWaiting({
+    required bool clearAttention,
+    bool networkOnly = false,
+  }) async {
     for (final item in _repository.items.values.toList()) {
       if (item.id == _activeId || _busy.contains(item.id)) continue;
+      if (networkOnly && !_networkWaiting.contains(item.id)) continue;
       final attention = clearAttention && item.needsAttention;
       if (item.nextAttemptAt != null || attention) {
         await _put(
@@ -658,7 +662,7 @@ class UploadQueue {
     final keep = _destination?.keepLocalCopy ?? true;
     if (keep || mediaRef == null || mediaRef.isEmpty) {
       await _put(item.moveTo(UploadState.localKept));
-      await _repository.remove(item.id);
+      await _remove(item.id);
       return;
     }
     try {
@@ -672,7 +676,12 @@ class UploadQueue {
       return;
     }
     await _put(item.moveTo(UploadState.localDeleted));
-    await _repository.remove(item.id);
+    await _remove(item.id);
+  }
+
+  Future<void> _remove(String id) async {
+    _networkWaiting.remove(id);
+    await _repository.remove(id);
   }
 
   Future<void> _fail(String id, String fingerprint, Exception error) async {
