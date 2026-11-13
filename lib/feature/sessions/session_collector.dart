@@ -176,6 +176,7 @@ class SessionCollector {
       if (session == null) continue;
       if (!first) await _delay(collectorYield);
       first = false;
+      if (_isBusy()) return;
       final file = await _coordinator.run(keys, () => _download(group));
       if (file == null) continue;
       await _queue.enqueue(sessionCode: session.code, file: file);

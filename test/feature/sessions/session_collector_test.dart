@@ -110,6 +110,7 @@ void main() {
   SessionCollector collector(
     ClockSyncCubit clockSync, {
     List<String>? log,
+    void Function()? onYield,
     IngestCoordinator? coordinator,
     StagedFileOf? stagedFileOf,
   }) {
@@ -125,7 +126,10 @@ void main() {
       uploadDirectory: Directory(p.join(root.path, 'upload')),
       isBusy: () => busy,
       clock: Clock(() => now),
-      delay: (duration) async => log?.add('yield $duration'),
+      delay: (duration) async {
+        log?.add('yield $duration');
+        onYield?.call();
+      },
       timer: (delay, _) {
         final timer = _FakeTimer(delay);
         timers.add(timer);
@@ -476,6 +480,29 @@ void main() {
     await collecting.rescan();
     expect(client.log, ['start 1', 'end 1']);
     expect(timers.last.isActive, isTrue);
+  });
+
+  test('stops transferring when a download starts mid-pass', () async {
+    await sessions.start();
+    final photos = [shot(1, t0.add(second * 10)), shot(2, t0.add(second * 11))];
+    client.objects.addAll(photos);
+    now = t0.add(second * 20);
+    final collecting = collector(
+      await resolvedClock(),
+      onYield: () => busy = true,
+    );
+
+    await collecting.rescan();
+    expect(client.log, ['start 1', 'end 1']);
+    expect(await queue.items(), hasLength(1));
+
+    await collecting.onGroups(groupPhotos(photos));
+    expect(client.log, ['start 1', 'end 1']);
+
+    busy = false;
+    await collecting.rescan();
+    expect(client.log, ['start 1', 'end 1', 'start 2', 'end 2']);
+    expect(await queue.items(), hasLength(photos.length));
   });
 
   test('a camera object-added event brings the rescan forward', () async {
