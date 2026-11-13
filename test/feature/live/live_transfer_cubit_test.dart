@@ -98,6 +98,7 @@ class RecordingBinder implements NetworkBinder {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   const destination = Destination(
     type: DestinationType.webdav,
     endpoint: 'https://a.example.com/dav',
@@ -123,11 +124,38 @@ void main() {
   late List<ConnectState> connectStates;
   late LiveTransferCubit live;
   late List<LiveTransferState> liveStates;
+  late IdentityRepository identity;
+  late CameraConnector connector;
 
   CameraHostResolver resolver() => CameraHostResolver(
     SettingsRepository(prefs),
     wifiGateway: () async => null,
   );
+
+  LiveTransferCubit buildLive(LiveService liveService) {
+    final coordinator = IngestCoordinator();
+    return LiveTransferCubit(
+      connect: connect,
+      connector: connector,
+      identity: identity,
+      hostResolver: resolver(),
+      networkBinder: binder,
+      service: liveService,
+      queue: queue,
+      ingestorFactory: (client, baseline) => LiveIngestor(
+        client: client,
+        format: DownloadFormat.jpeg,
+        baseline: baseline,
+        history: history,
+        queue: queue,
+        coordinator: coordinator,
+        infoRetryDelay: Duration.zero,
+        rescanInterval: const Duration(days: 1),
+      ),
+      clock: () => now,
+      timerFactory: timers.create,
+    );
+  }
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -152,13 +180,13 @@ void main() {
     first = FakeCameraClient([old]);
     connections = [first];
     hosts = [];
-    final identity = IdentityRepository(prefs);
-    Future<CameraClient> connector(String host, CameraIdentity _) async {
+    identity = IdentityRepository(prefs);
+    connector = (String host, CameraIdentity _) async {
       hosts.add(host);
       final next = connections.removeAt(0);
       if (next is Exception) throw next;
       return next as CameraClient;
-    }
+    };
 
     connect = ConnectCubit(
       connector: connector,
@@ -169,28 +197,7 @@ void main() {
     connectStates = [];
     connect.stream.listen(connectStates.add);
     await connect.connect();
-    final coordinator = IngestCoordinator();
-    live = LiveTransferCubit(
-      connect: connect,
-      connector: connector,
-      identity: identity,
-      hostResolver: resolver(),
-      networkBinder: binder,
-      service: service,
-      queue: queue,
-      ingestorFactory: (client, baseline) => LiveIngestor(
-        client: client,
-        format: DownloadFormat.jpeg,
-        baseline: baseline,
-        history: history,
-        queue: queue,
-        coordinator: coordinator,
-        infoRetryDelay: Duration.zero,
-        rescanInterval: const Duration(days: 1),
-      ),
-      clock: () => now,
-      timerFactory: timers.create,
-    );
+    live = buildLive(service);
     liveStates = [];
     live.stream.listen(liveStates.add);
   });
@@ -384,5 +391,85 @@ void main() {
     expect(live.state, isA<LiveTransferring>());
     expect(hosts.last, cameraGateway);
     expect(binder.owners, {LiveTransferCubit.bindingOwner});
+  });
+
+  test('AC4: the notification follows ingest, upload and reconnect', () async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = PlatformLiveService.channel;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return call.method == 'requestNotificationPermission' ? true : null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(channel, null);
+      channel.setMethodCallHandler(null);
+    });
+    final channelLive = buildLive(PlatformLiveService(isAndroid: true));
+    connections.add(unreachable);
+
+    await channelLive.start();
+    first.objects.add(shot);
+    first.emitAdded(shot.handle);
+    await until(() => server.files.isNotEmpty);
+    await queue.idle;
+    await pumpEventQueue();
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    final reply = Completer<void>();
+    await messenger.handlePlatformMessage(
+      channel.name,
+      channel.codec.encodeMethodCall(
+        const MethodCall(PlatformLiveService.stopRequestedMethod),
+      ),
+      (_) => reply.complete(),
+    );
+    await reply.future;
+    await pumpEventQueue();
+
+    Map<String, Object> payload(
+      int count,
+      int uploaded,
+      int pending,
+      LiveServiceState state,
+      String text,
+    ) => {
+      'count': count,
+      'uploaded': uploaded,
+      'pending': pending,
+      'state': state.name,
+      'text': text,
+    };
+    const transferring = LiveServiceState.transferring;
+    const transferringText = LiveTransferCubit.transferringText;
+    expect(calls.map((call) => call.method), [
+      'requestNotificationPermission',
+      'start',
+      ...List.filled(5, 'updateStatus'),
+      'stop',
+    ]);
+    expect(calls.skip(1).take(6).map((call) => call.arguments), [
+      payload(
+        0,
+        0,
+        0,
+        LiveServiceState.connecting,
+        LiveTransferCubit.connectingText,
+      ),
+      payload(0, 0, 0, transferring, transferringText),
+      payload(0, 0, 1, transferring, transferringText),
+      payload(1, 0, 1, transferring, transferringText),
+      payload(1, 1, 0, transferring, transferringText),
+      payload(
+        1,
+        1,
+        0,
+        LiveServiceState.reconnecting,
+        LiveTransferCubit.reconnectingText,
+      ),
+    ]);
+    expect(channelLive.state, const LiveIdle());
+    await channelLive.close();
   });
 }

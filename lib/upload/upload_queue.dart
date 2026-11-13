@@ -632,6 +632,7 @@ class UploadQueue {
 
   Future<void> _markUploaded(UploadItem item, String key) async {
     await _repository.recordUploaded(key);
+    _completed++;
     await _put(
       item
           .moveTo(UploadState.uploaded)
@@ -641,7 +642,6 @@ class UploadQueue {
             lastError: () => null,
           ),
     );
-    _completed++;
   }
 
   Future<void> _finishLocal(UploadItem item) async {
