@@ -41,6 +41,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   final CameraHostResolver _hostResolver;
   final NetworkBinder _networkBinder;
   final CameraDiscovery _discovery;
+  CameraClient? _handedOver;
 
   Future<void> connect() async {
     if (state is ConnectConnecting || state is ConnectConnected) return;
@@ -143,6 +144,33 @@ class ConnectCubit extends Cubit<ConnectState> {
     emit(const ConnectIdle());
     await current.client.close();
     await _unbind();
+  }
+
+  /// Gives the connected client and the Wi-Fi binding to [owner]. Returns
+  /// null when no camera is connected.
+  CameraClient? handOver(String owner) {
+    final current = state;
+    if (current is! ConnectConnected) return null;
+    _networkBinder.transferBinding(bindingOwner, owner);
+    _handedOver = current.client;
+    emit(const ConnectLiveOwned());
+    return current.client;
+  }
+
+  /// Takes back a live [client] and [owner]'s binding; without a client the
+  /// owner releases its binding itself. Returns whether [client] was taken.
+  bool takeBack(CameraClient? client, {required String owner}) {
+    if (isClosed || state is! ConnectLiveOwned) return false;
+    final handedOver = _handedOver;
+    _handedOver = null;
+    if (client == null) {
+      emit(const ConnectIdle());
+      return false;
+    }
+    _networkBinder.transferBinding(owner, bindingOwner);
+    emit(ConnectConnected(client));
+    if (client != handedOver) unawaited(_watchDisconnect(client));
+    return true;
   }
 
   Future<void> _watchDisconnect(CameraClient client) async {

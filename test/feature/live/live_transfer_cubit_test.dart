@@ -1,0 +1,388 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/download_history.dart';
+import 'package:shutterlink/data/identity_repository.dart';
+import 'package:shutterlink/data/live_service.dart';
+import 'package:shutterlink/data/network_binder.dart';
+import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/connect/connect_cubit.dart';
+import 'package:shutterlink/feature/connect/connect_state.dart';
+import 'package:shutterlink/feature/live/ingest_coordinator.dart';
+import 'package:shutterlink/feature/live/live_ingestor.dart';
+import 'package:shutterlink/feature/live/live_transfer_cubit.dart';
+import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/upload/destination.dart';
+import 'package:shutterlink/upload/upload_queue.dart';
+
+import '../../fakes/fake_camera_client.dart';
+import '../../upload/upload_fakes.dart';
+
+const cameraGateway = '192.168.1.2';
+const homeGateway = '10.0.0.1';
+const unreachable = CameraDisconnectedException(
+  SocketException('Connection refused'),
+);
+
+class FakeLiveService implements LiveService {
+  final calls = <String>[];
+  final statuses = <LiveStatus>[];
+  final stopController = StreamController<void>.broadcast();
+  bool permitted = true;
+
+  @override
+  Future<void> start(LiveStatus status) async {
+    calls.add('start');
+    statuses.add(status);
+  }
+
+  @override
+  Future<void> updateStatus(LiveStatus status) async {
+    calls.add('update');
+    statuses.add(status);
+  }
+
+  @override
+  Future<void> stop() async => calls.add('stop');
+
+  @override
+  Future<bool> requestNotificationPermission() async => permitted;
+
+  @override
+  Stream<void> get stopRequests => stopController.stream;
+}
+
+class RecordingBinder implements NetworkBinder {
+  final calls = <String>[];
+  final owners = <String>{};
+  final lost = StreamController<void>.broadcast();
+  Object? Function() gateway = () => cameraGateway;
+
+  @override
+  Future<String?> acquireBinding(
+    String owner, {
+    bool holdNetwork = false,
+  }) async {
+    calls.add('acquire $owner${holdNetwork ? ' hold' : ''}');
+    final result = gateway();
+    if (result is Exception) throw result;
+    owners.add(owner);
+    return result as String?;
+  }
+
+  @override
+  Future<void> releaseBinding(String owner) async {
+    calls.add('release $owner');
+    owners.remove(owner);
+  }
+
+  @override
+  void transferBinding(String from, String to) {
+    calls.add('transfer $from>$to');
+    if (owners.remove(from)) owners.add(to);
+  }
+
+  @override
+  Stream<void> get bindingLost => lost.stream;
+
+  @override
+  Future<void> acquireMulticastLock() async {}
+
+  @override
+  Future<void> releaseMulticastLock() async {}
+}
+
+void main() {
+  const destination = Destination(
+    type: DestinationType.webdav,
+    endpoint: 'https://a.example.com/dav',
+  );
+  final date = DateTime(2026, 11, 13, 10);
+  final old = cameraObject(1, 'IMG_0001.JPG', captureDate: date);
+  final shot = cameraObject(2, 'IMG_0002.JPG', captureDate: date);
+  final missed = cameraObject(3, 'IMG_0003.JPG', captureDate: date);
+
+  late Directory root;
+  late SharedPreferences prefs;
+  late FakeStorageServer server;
+  late UploadQueue queue;
+  late DownloadHistoryRepository history;
+  late FakeLiveService service;
+  late RecordingBinder binder;
+  late FakeTimers timers;
+  late DateTime now;
+  late FakeCameraClient first;
+  late List<Object> connections;
+  late List<String> hosts;
+  late ConnectCubit connect;
+  late List<ConnectState> connectStates;
+  late LiveTransferCubit live;
+  late List<LiveTransferState> liveStates;
+
+  CameraHostResolver resolver() => CameraHostResolver(
+    SettingsRepository(prefs),
+    wifiGateway: () async => null,
+  );
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
+    root = await Directory.systemTemp.createTemp('live_transfer');
+    server = FakeStorageServer();
+    queue = UploadQueue(
+      repository: UploadQueueRepository.inDirectory(root),
+      stagingDirectory: Directory(p.join(root.path, 'staging')),
+      mediaSaver: FakeMediaSaver(),
+      backendFactory: (_, {required allowMetered}) async => server.backend(),
+      destination: destination,
+    );
+    await queue.start();
+    history = DownloadHistoryRepository(
+      File(p.join(root.path, DownloadHistoryRepository.fileName)),
+    );
+    service = FakeLiveService();
+    binder = RecordingBinder();
+    timers = FakeTimers();
+    now = DateTime(2026, 11, 13, 12);
+    first = FakeCameraClient([old]);
+    connections = [first];
+    hosts = [];
+    final identity = IdentityRepository(prefs);
+    Future<CameraClient> connector(String host, CameraIdentity _) async {
+      hosts.add(host);
+      final next = connections.removeAt(0);
+      if (next is Exception) throw next;
+      return next as CameraClient;
+    }
+
+    connect = ConnectCubit(
+      connector: connector,
+      identity: identity,
+      hostResolver: resolver(),
+      networkBinder: binder,
+    );
+    connectStates = [];
+    connect.stream.listen(connectStates.add);
+    await connect.connect();
+    final coordinator = IngestCoordinator();
+    live = LiveTransferCubit(
+      connect: connect,
+      connector: connector,
+      identity: identity,
+      hostResolver: resolver(),
+      networkBinder: binder,
+      service: service,
+      queue: queue,
+      ingestorFactory: (client, baseline) => LiveIngestor(
+        client: client,
+        format: DownloadFormat.jpeg,
+        baseline: baseline,
+        history: history,
+        queue: queue,
+        coordinator: coordinator,
+        infoRetryDelay: Duration.zero,
+        rescanInterval: const Duration(days: 1),
+      ),
+      clock: () => now,
+      timerFactory: timers.create,
+    );
+    liveStates = [];
+    live.stream.listen(liveStates.add);
+  });
+
+  tearDown(() async {
+    await live.close();
+    await connect.close();
+    await pumpEventQueue();
+    await queue.idle;
+    await queue.close();
+    await service.stopController.close();
+    await root.delete(recursive: true);
+  });
+
+  Future<void> fire() async {
+    timers.active!.fire();
+    await pumpEventQueue();
+  }
+
+  List<Duration> delays() => [for (final timer in timers.all) timer.delay];
+
+  test('takes over the connected camera and uploads new shots', () async {
+    await live.start();
+
+    expect(connect.state, const ConnectLiveOwned());
+    expect(live.state, const LiveTransferring());
+    expect(binder.calls, [
+      'acquire connect',
+      'transfer connect>live',
+      'acquire live hold',
+    ]);
+
+    first.objects.add(shot);
+    first.emitAdded(shot.handle);
+    await until(() => server.files.isNotEmpty);
+
+    expect(server.files.keys, ['2026-11-13/IMG_0002.JPG']);
+    expect(live.state.ingested, 1);
+  });
+
+  test('a disconnect reconnects instead of failing', () async {
+    connections.add(unreachable);
+    await live.start();
+
+    first.simulateDisconnect();
+    await pumpEventQueue();
+
+    expect(live.state, const LiveReconnecting());
+    expect(service.calls, isNot(contains('stop')));
+    expect(connectStates.whereType<ConnectFailed>(), isEmpty);
+    expect(connect.state, const ConnectLiveOwned());
+    expect(binder.calls, isNot(contains('release live')));
+    expect(service.statuses.last.state, LiveServiceState.reconnecting);
+  });
+
+  test('reconnects on the third attempt and catches up', () async {
+    final second = FakeCameraClient([old, missed]);
+    connections.addAll([unreachable, unreachable, second]);
+    await live.start();
+
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    await fire();
+    await fire();
+    expect(live.state, isA<LiveReconnecting>());
+    await fire();
+
+    expect(live.state, isA<LiveTransferring>());
+    expect(delays(), [
+      const Duration(seconds: 2),
+      const Duration(seconds: 4),
+      const Duration(seconds: 8),
+    ]);
+    await until(() => server.files.isNotEmpty);
+    expect(server.files.keys, ['2026-11-13/IMG_0003.JPG']);
+    expect(live.state.ingested, 1);
+  });
+
+  test('the reconnect delay doubles up to 30 s', () async {
+    await live.start();
+    binder.gateway = () => PlatformException(code: ConnectCubit.noWifiCode);
+
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    for (var i = 0; i < 6; i++) {
+      await fire();
+    }
+
+    expect(delays(), [
+      for (final seconds in [2, 4, 8, 16, 30, 30, 30])
+        Duration(seconds: seconds),
+    ]);
+    expect(live.state, const LiveReconnecting());
+  });
+
+  test('slows down to 60 s after 10 minutes of failures', () async {
+    await live.start();
+    binder.gateway = () => PlatformException(code: ConnectCubit.noWifiCode);
+    first.simulateDisconnect();
+    await pumpEventQueue();
+
+    now = now.add(LiveTransferCubit.unreachableAfter);
+    await fire();
+
+    expect(timers.active!.delay, LiveTransferCubit.unreachableReconnectDelay);
+    expect(live.state, const LiveReconnecting(unreachable: true));
+    expect(service.statuses.last.text, LiveTransferCubit.unreachableText);
+    expect(service.statuses.last.state, LiveServiceState.unreachable);
+  });
+
+  test('slows down on a Wi-Fi without the camera', () async {
+    connections.add(unreachable);
+    await live.start();
+    binder.gateway = () => homeGateway;
+    first.simulateDisconnect();
+    await pumpEventQueue();
+
+    await fire();
+
+    expect(hosts.last, homeGateway);
+    expect(timers.active!.delay, LiveTransferCubit.unreachableReconnectDelay);
+    expect(live.state, const LiveReconnecting(unreachable: true));
+  });
+
+  test('a lost Wi-Fi binding reconnects', () async {
+    connections.add(unreachable);
+    await live.start();
+
+    binder.lost.add(null);
+    await pumpEventQueue();
+
+    expect(first.closed, isTrue);
+    expect(live.state, const LiveReconnecting());
+  });
+
+  test('stop with the camera connected hands it back still bound', () async {
+    await live.start();
+
+    service.stopController.add(null);
+    await pumpEventQueue();
+
+    expect(live.state, const LiveIdle());
+    expect(connect.state, ConnectConnected(first));
+    expect(first.closed, isFalse);
+    expect(service.calls.last, 'stop');
+    expect(binder.calls, isNot(contains('release live')));
+    expect(binder.owners, {ConnectCubit.bindingOwner});
+  });
+
+  test('stop while reconnecting releases the binding', () async {
+    connections.add(unreachable);
+    await live.start();
+    first.simulateDisconnect();
+    await pumpEventQueue();
+
+    await live.stop();
+
+    expect(connect.state, const ConnectIdle());
+    expect(binder.calls.last, 'release live');
+    expect(binder.owners, isEmpty);
+    expect(timers.active, isNull);
+  });
+
+  test('closing mid-reconnect releases the binding', () async {
+    connections.add(unreachable);
+    await live.start();
+    first.simulateDisconnect();
+    await pumpEventQueue();
+
+    await live.close();
+
+    expect(binder.owners, isEmpty);
+    expect(timers.active, isNull);
+    expect(service.calls.last, 'stop');
+  });
+
+  test('runs without notifications and says so', () async {
+    service.permitted = false;
+
+    await live.start();
+
+    expect(live.state, const LiveTransferring(notificationsDenied: true));
+  });
+
+  test('connects by itself when no camera is connected', () async {
+    await connect.disconnect();
+    connections.add(FakeCameraClient([old]));
+
+    await live.start();
+
+    expect(live.state, isA<LiveTransferring>());
+    expect(hosts.last, cameraGateway);
+    expect(binder.owners, {LiveTransferCubit.bindingOwner});
+  });
+}
