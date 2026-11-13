@@ -126,18 +126,28 @@ class RecordingPhotoSaver implements PhotoSaver {
   Set<String> failFor = {};
 
   @override
-  Future<void> save({File? jpeg, File? raw}) async {
-    for (final file in [jpeg, raw]) {
+  Future<List<SavedMedia>> save({
+    File? jpeg,
+    File? raw,
+    bool deleteSources = true,
+  }) async {
+    final media = <SavedMedia>[];
+    for (final (file, kind) in [
+      (jpeg, CameraObjectKind.jpeg),
+      (raw, CameraObjectKind.raw),
+    ]) {
       if (file == null) continue;
       final name = file.uri.pathSegments.last;
       if (failFor.contains(name)) throw FileSystemException('fail', file.path);
       savedBytes[name] = await file.readAsBytes();
-      await file.delete();
+      if (deleteSources) await file.delete();
+      media.add(SavedMedia(kind, 'content://media/$name'));
     }
     saved.add((
       jpeg: jpeg?.uri.pathSegments.last,
       raw: raw?.uri.pathSegments.last,
     ));
+    return media;
   }
 }
 

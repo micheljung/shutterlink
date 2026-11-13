@@ -1,15 +1,34 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:equatable/equatable.dart';
 import 'package:flutter/services.dart';
 import 'package:gal/gal.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../ptpip/camera_client.dart';
+
+/// A file stored in the gallery. [uri] identifies it for a later delete when
+/// the platform reports one.
+class SavedMedia extends Equatable {
+  const SavedMedia(this.kind, [this.uri]);
+
+  final CameraObjectKind kind;
+  final String? uri;
+
+  @override
+  List<Object?> get props => [kind, uri];
+}
+
 abstract interface class PhotoSaver {
-  /// Saves fully downloaded files of one shot. Files are temporary and
-  /// removed afterwards.
-  Future<void> save({File? jpeg, File? raw});
+  /// Saves fully downloaded files of one shot. With [deleteSources] the files
+  /// are treated as temporary and removed afterwards.
+  Future<List<SavedMedia>> save({
+    File? jpeg,
+    File? raw,
+    bool deleteSources = true,
+  });
 }
 
 enum SaverPlatform {
@@ -45,43 +64,57 @@ class PlatformPhotoSaver implements PhotoSaver {
   final Duration timeout;
 
   @override
-  Future<void> save({File? jpeg, File? raw}) async {
+  Future<List<SavedMedia>> save({
+    File? jpeg,
+    File? raw,
+    bool deleteSources = true,
+  }) async {
     try {
       switch (_platform) {
         case SaverPlatform.android:
           await _ensureGalleryAccess(toAlbum: true);
-          if (jpeg != null) await _saveJpeg(jpeg, toAlbum: true);
-          if (raw != null) {
-            await _invokeSaveRaw({'raw': raw.path});
-          }
+          return [
+            if (jpeg != null) await _saveJpeg(jpeg, toAlbum: true),
+            if (raw != null) await _invokeSaveRaw({'raw': raw.path}),
+          ];
         case SaverPlatform.ios:
           if (raw == null) {
-            if (jpeg != null) await _saveJpegWithAccess(jpeg);
-          } else {
-            await _saveRawIos(jpeg: jpeg, raw: raw);
+            return [if (jpeg != null) await _saveJpegWithAccess(jpeg)];
           }
+          return await _saveRawIos(jpeg: jpeg, raw: raw);
         case SaverPlatform.other:
-          if (jpeg != null) await _saveJpegWithAccess(jpeg);
-          if (raw != null) await _copyToDocuments(raw);
+          return [
+            if (jpeg != null) await _saveJpegWithAccess(jpeg),
+            if (raw != null) await _copyToDocuments(raw),
+          ];
       }
     } finally {
-      for (final file in [jpeg, raw]) {
-        if (file != null && file.existsSync()) await file.delete();
+      if (deleteSources) {
+        for (final file in [jpeg, raw]) {
+          if (file != null && file.existsSync()) await file.delete();
+        }
       }
     }
   }
 
-  Future<void> _saveRawIos({File? jpeg, required File raw}) async {
+  Future<List<SavedMedia>> _saveRawIos({File? jpeg, required File raw}) async {
     try {
-      await _invokeSaveRaw({'raw': raw.path, 'jpeg': jpeg?.path});
+      final saved = await _invokeSaveRaw({'raw': raw.path, 'jpeg': jpeg?.path});
+      return [if (jpeg != null) SavedMedia(CameraObjectKind.jpeg), saved];
     } on Exception {
-      if (jpeg != null) await _saveJpegWithAccess(jpeg);
-      await _copyToDocuments(raw);
+      return [
+        if (jpeg != null) await _saveJpegWithAccess(jpeg),
+        await _copyToDocuments(raw),
+      ];
     }
   }
 
-  Future<void> _invokeSaveRaw(Map<String, Object?> arguments) =>
-      channel.invokeMethod<void>(saveRawMethod, arguments).timeout(timeout);
+  Future<SavedMedia> _invokeSaveRaw(Map<String, Object?> arguments) async {
+    final uri = await channel
+        .invokeMethod<Object?>(saveRawMethod, arguments)
+        .timeout(timeout);
+    return SavedMedia(CameraObjectKind.raw, uri is String ? uri : null);
+  }
 
   Future<void> _ensureGalleryAccess({required bool toAlbum}) async {
     if (!await Gal.hasAccess(toAlbum: toAlbum)) {
@@ -90,17 +123,23 @@ class PlatformPhotoSaver implements PhotoSaver {
   }
 
   // iOS albums require full photo library access; add-only suffices without.
-  Future<void> _saveJpegWithAccess(File jpeg) async {
+  Future<SavedMedia> _saveJpegWithAccess(File jpeg) async {
     await _ensureGalleryAccess(toAlbum: false);
-    await _saveJpeg(jpeg, toAlbum: false);
+    return _saveJpeg(jpeg, toAlbum: false);
   }
 
-  Future<void> _saveJpeg(File jpeg, {required bool toAlbum}) =>
-      Gal.putImage(jpeg.path, album: toAlbum ? album : null).timeout(timeout);
+  Future<SavedMedia> _saveJpeg(File jpeg, {required bool toAlbum}) async {
+    await Gal.putImage(
+      jpeg.path,
+      album: toAlbum ? album : null,
+    ).timeout(timeout);
+    return const SavedMedia(CameraObjectKind.jpeg);
+  }
 
-  Future<File> _copyToDocuments(File file) async {
+  Future<SavedMedia> _copyToDocuments(File file) async {
     final directory = await _documentsDirectory();
-    return file.copy(_uniquePath(directory, p.basename(file.path)));
+    final copy = await file.copy(_uniquePath(directory, p.basename(file.path)));
+    return SavedMedia(CameraObjectKind.raw, copy.path);
   }
 
   static String _uniquePath(Directory directory, String name) {
