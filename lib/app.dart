@@ -72,7 +72,10 @@ class ShutterlinkApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MultiRepositoryProvider(
-    providers: [RepositoryProvider.value(value: dependencies.thumbnailCache)],
+    providers: [
+      RepositoryProvider.value(value: dependencies.thumbnailCache),
+      RepositoryProvider.value(value: dependencies.networkBinder),
+    ],
     child: MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
