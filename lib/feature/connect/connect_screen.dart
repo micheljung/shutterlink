@@ -5,6 +5,7 @@ import '../../data/identity_repository.dart';
 import '../../data/ssdp_discovery.dart';
 import '../download/download_cubit.dart';
 import '../download/download_state.dart';
+import '../sessions/active_session_indicator.dart';
 import '../sessions/sessions_screen.dart';
 import '../settings/settings_screen.dart';
 import '../spacing.dart';
@@ -44,6 +45,7 @@ class ConnectScreen extends StatelessWidget {
         builder: (context, state) => ListView(
           padding: const EdgeInsets.all(Spacing.large),
           children: [
+            const ActiveSessionIndicator(),
             if (state is ConnectPairingRequired) const _PairingCard(),
             if (state is ConnectFailed) _ErrorCard(message: state.message),
             const _PausedDownloadNotice(),

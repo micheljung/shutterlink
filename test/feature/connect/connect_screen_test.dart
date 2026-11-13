@@ -8,6 +8,7 @@ import 'package:shutterlink/data/ssdp_discovery.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
+import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 
 import '../../fakes/fake_camera_client.dart';
@@ -45,6 +46,7 @@ void main() {
       MultiBlocProvider(
         providers: [
           BlocProvider.value(value: connect),
+          BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
           BlocProvider(
             create: (_) => DownloadCubit(
               saver: dependencies.photoSaver,

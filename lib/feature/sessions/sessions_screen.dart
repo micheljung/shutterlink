@@ -154,8 +154,8 @@ class SessionsAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final configured = context.select<SettingsCubit?, bool>(
-      (cubit) => cubit?.state.sessionsConfigured ?? false,
+    final configured = context.select<SettingsCubit, bool>(
+      (cubit) => cubit.state.sessionsConfigured,
     );
     if (!configured) return const SizedBox.shrink();
     return IconButton(
