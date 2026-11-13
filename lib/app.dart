@@ -203,7 +203,8 @@ class _SessionsUploadsState extends State<_SessionsUploads>
         listenWhen: (previous, current) =>
             previous.sessionsEnabled != current.sessionsEnabled ||
             previous.sessionsServerUrl != current.sessionsServerUrl ||
-            previous.sessionsConfigured != current.sessionsConfigured,
+            previous.sessionsConfigured != current.sessionsConfigured ||
+            previous.sessionsTokenRevision != current.sessionsTokenRevision,
         listener: (context, state) => context
             .read<SessionsUploadCubit>()
             .setEnabled(enabled: state.sessionsEnabled),

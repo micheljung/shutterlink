@@ -1,11 +1,18 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/data/upload_worker.dart';
+import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/sessions/clock_sync_banner.dart';
 import 'package:shutterlink/feature/sessions/session_qr_sheet.dart';
 import 'package:shutterlink/feature/sessions/sessions_cubit.dart';
+import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/sessions_settings_section.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
@@ -181,5 +188,46 @@ void main() {
           find.textContaining('server configuration').evaluate().isNotEmpty ||
           find.textContaining('Ready').evaluate().isNotEmpty,
     );
+  });
+
+  testWidgets('saving a corrected token wakes the paused upload worker', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      prefs: {
+        SettingsRepository.sessionsEnabledKey: true,
+        SettingsRepository.sessionsServerUrlKey: _serverUrl,
+      },
+      token: 'wrong',
+    );
+    await pumpUntil(tester, () => sessions.workers == 1);
+    var enqueued = false;
+    unawaited(() async {
+      final session = await sessions.repository.start();
+      final photo = File(p.join(sessions.uploadDirectory.path, 'a.jpg'));
+      await photo.create(recursive: true);
+      await photo.writeAsBytes([1, 2, 3]);
+      await sessions.queue.enqueue(sessionCode: session.code, file: photo);
+      enqueued = true;
+    }());
+    await pumpUntil(tester, () => enqueued);
+    await pumpUntil(tester, () => sessions.requests.length == 1);
+    final uploads = tester
+        .element(find.byType(ConnectScreen))
+        .read<SessionsUploadCubit>();
+    await pumpUntil(
+      tester,
+      () => uploads.state.status == UploadWorkerStatus.serverConfiguration,
+    );
+
+    await tester
+        .element(find.byType(ConnectScreen))
+        .read<SettingsCubit>()
+        .setSessionsToken('corrected');
+    await pumpUntil(tester, () => sessions.requests.length == 2);
+    expect(sessions.requests.last.headers['authorization'], 'Bearer corrected');
+    await tester.pumpWidget(const SizedBox());
+    await pumpUntil(tester, () => uploads.isClosed);
   });
 }
