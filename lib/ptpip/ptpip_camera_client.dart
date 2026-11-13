@@ -34,6 +34,9 @@ class PtpIpCameraClient implements CameraClient {
   bool _pollInFlight = false;
   final _addedObjects = StreamController<int>.broadcast();
 
+  /// Handles are only valid within this PTP session, like this client.
+  final _objectInfoCache = <int, PtpObjectInfo>{};
+
   @override
   final CameraDeviceInfo deviceInfo;
 
@@ -131,15 +134,15 @@ class PtpIpCameraClient implements CameraClient {
       final result = await _session.execute(CanonEosOperation.getEvent);
       _onEventData?.call(result.data);
       for (final event in parseCanonEvents(result.data)) {
-        final handle = switch (event) {
-          CanonObjectAdded(:final format)
-              when format == PtpObjectFormat.association =>
-            null,
-          CanonObjectAdded(:final handle) => handle,
-          CanonTransferRequested(:final handle) => handle,
-        };
-        if (handle != null && !_addedObjects.isClosed) {
-          _addedObjects.add(handle);
+        switch (event) {
+          case CanonObjectAdded(:final format)
+              when format == PtpObjectFormat.association:
+            break;
+          case CanonObjectAdded(:final handle) ||
+              CanonTransferRequested(:final handle):
+            if (!_addedObjects.isClosed) _addedObjects.add(handle);
+          case CanonObjectRemoved(:final handle):
+            _objectInfoCache.remove(handle);
         }
       }
     } on PtpResponseException {
@@ -163,6 +166,7 @@ class PtpIpCameraClient implements CameraClient {
     for (final storage in storages) {
       await _collect(storage, PtpHandle.root, photos, visited);
     }
+    _objectInfoCache.removeWhere((handle, _) => !visited.contains(handle));
     return photos;
   }
 
@@ -228,12 +232,7 @@ class PtpIpCameraClient implements CameraClient {
       if (!visited.add(handle)) {
         continue;
       }
-      final info = PtpObjectInfo.parse(
-        (await _session.execute(
-          PtpOperation.getObjectInfo,
-          params: [handle],
-        )).data,
-      );
+      final info = _objectInfoCache[handle] ?? await _fetchObjectInfo(handle);
       if (info.objectFormat == PtpObjectFormat.association) {
         await _collect(storage, handle, photos, visited);
         continue;
@@ -244,6 +243,21 @@ class PtpIpCameraClient implements CameraClient {
       }
       photos.add(_toCameraObject(handle, info, kind));
     }
+  }
+
+  /// A file still being written reports size 0, so it is not cached.
+  Future<PtpObjectInfo> _fetchObjectInfo(int handle) async {
+    final info = PtpObjectInfo.parse(
+      (await _session.execute(
+        PtpOperation.getObjectInfo,
+        params: [handle],
+      )).data,
+    );
+    if (info.compressedSize > 0 ||
+        info.objectFormat == PtpObjectFormat.association) {
+      _objectInfoCache[handle] = info;
+    }
+    return info;
   }
 
   static CameraObject _toCameraObject(

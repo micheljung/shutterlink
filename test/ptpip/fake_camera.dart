@@ -113,6 +113,15 @@ Uint8List transferRequestRecord(FakeObject object) {
   return _withName(record, _transferNameOffset, object.filename);
 }
 
+Uint8List objectRemovedRecord(int handle) {
+  const size = _recordHandleAt + 4;
+  final record = ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_recordTypeAt, CanonEosEvent.objectRemoved, Endian.little)
+    ..setUint32(_recordHandleAt, handle, Endian.little);
+  return record.buffer.asUint8List();
+}
+
 Uint8List patternBytes(int length, {int seed = 1}) {
   final random = Random(seed);
   return Uint8List.fromList(List.generate(length, (_) => random.nextInt(256)));
@@ -265,6 +274,11 @@ class FakeCamera {
   void addObject(FakeObject object, {bool sixtyFourBit = false}) {
     objects.add(object);
     queueEventRecord(objectAddedRecord(object, sixtyFourBit: sixtyFourBit));
+  }
+
+  void removeObject(int handle) {
+    objects.removeWhere((object) => object.handle == handle);
+    queueEventRecord(objectRemovedRecord(handle));
   }
 
   void queueEventRecord(Uint8List record) => _pendingEvents.add(record);

@@ -266,6 +266,8 @@ void _logRecords(StringSink out, String stamp, Uint8List data) {
             'size ${added.size} parent ${_hex(added.parent)} >>> ',
       CanonTransferRequested(:final handle) =>
         '>>> TransferRequested handle ${_hex(handle)} >>> ',
+      CanonObjectRemoved(:final handle) =>
+        '>>> ObjectRemoved handle ${_hex(handle)} >>> ',
       null => '',
     };
     out

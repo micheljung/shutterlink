@@ -18,6 +18,7 @@ abstract final class CanonEosOperation {
 abstract final class CanonEosEvent {
   static const terminator = 0;
   static const objectAddedEx = 0xC181;
+  static const objectRemoved = 0xC182;
   static const requestObjectTransfer = 0xC186;
   static const objectAddedEx64 = 0xC1A7;
   static const requestObjectTransfer64 = 0xC1A9;

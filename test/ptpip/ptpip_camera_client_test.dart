@@ -413,6 +413,100 @@ void main() {
     expect(camera.maxConcurrentRequests, 1);
   });
 
+  group('object info cache', () {
+    const folderCount = 3;
+    const perFolder = 84;
+    const firstFolderHandle = 0x100;
+    const firstPhotoHandle = 0x1000;
+    const addedHandle = 0x2000;
+    const totalObjects = folderCount + folderCount * perFolder;
+
+    List<FakeObject> manyObjects() => [
+      for (var f = 0; f < folderCount; f++) ...[
+        FakeObject(
+          handle: firstFolderHandle + f,
+          format: PtpObjectFormat.association,
+          filename: 'FOLDER$f',
+        ),
+        for (var i = 0; i < perFolder; i++)
+          _shot(
+            firstPhotoHandle + f * perFolder + i,
+            parent: firstFolderHandle + f,
+          ),
+      ],
+    ];
+
+    int count(int opcode) =>
+        camera.receivedOpcodes.where((o) => o == opcode).length;
+
+    test('a relisting of unchanged handles sends no GetObjectInfo', () async {
+      final c = await start(FakeCamera(objects: manyObjects()));
+      final first = await c.listPhotos();
+      expect(count(PtpOperation.getObjectInfo), totalObjects);
+      camera.receivedOpcodes.clear();
+
+      expect(await c.listPhotos(), first);
+      expect(count(PtpOperation.getObjectInfo), 0);
+      expect(count(PtpOperation.getObjectHandles), 1 + folderCount);
+    });
+
+    test('new handles are fetched once, deleted ones disappear', () async {
+      final c = await start(
+        FakeCamera(objects: manyObjects()),
+        eventPollInterval: const Duration(hours: 1),
+      );
+      await c.listPhotos();
+      camera
+        ..objects.add(_shot(addedHandle, parent: firstFolderHandle))
+        ..objects.add(_shot(addedHandle + 1, parent: firstFolderHandle + 1))
+        ..receivedOpcodes.clear();
+
+      final photos = await c.listPhotos();
+      expect(photos, hasLength(folderCount * perFolder + 2));
+      expect(count(PtpOperation.getObjectInfo), 2);
+
+      camera.objects.removeWhere((o) => o.handle == firstPhotoHandle);
+      final remaining = await c.listPhotos();
+      expect(remaining.map((p) => p.handle), isNot(contains(firstPhotoHandle)));
+      expect(remaining, hasLength(photos.length - 1));
+    });
+
+    test('a file still being written is fetched again', () async {
+      final c = await start(FakeCamera(objects: manyObjects()));
+      final writing = FakeObject(
+        handle: addedHandle,
+        format: PtpObjectFormat.exifJpeg,
+        filename: 'IMG_NEW.JPG',
+        parent: firstFolderHandle,
+      );
+      camera.objects.add(writing);
+      expect((await photo(c, addedHandle)).size, 0);
+
+      camera.objects
+        ..remove(writing)
+        ..add(_shot(addedHandle, parent: firstFolderHandle));
+      expect((await photo(c, addedHandle)).size, isPositive);
+    });
+
+    test('a removal event drops the cached info of a reused handle', () async {
+      final c = await start(FakeCamera(objects: manyObjects()));
+      await c.listPhotos();
+      camera.removeObject(firstPhotoHandle);
+      await Future<void>.delayed(_eventDeadline);
+      camera.objects.add(
+        FakeObject(
+          handle: firstPhotoHandle,
+          format: PtpObjectFormat.exifJpeg,
+          filename: 'IMG_REUSED.JPG',
+          parent: firstFolderHandle,
+          content: patternBytes(1),
+        ),
+      );
+
+      expect((await photo(c, firstPhotoHandle)).filename, 'IMG_REUSED.JPG');
+    });
+  });
+
   test('a new object on the camera is announced within two polls', () async {
     final c = await start(FakeCamera());
     final added = c.addedObjects.first.timeout(_eventDeadline);

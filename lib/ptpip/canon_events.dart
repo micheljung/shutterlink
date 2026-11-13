@@ -16,7 +16,7 @@ const _parentOffset = 0x20;
 const _nameOffset = 0x28;
 const _parentOffset64 = 0x24;
 const _nameOffset64 = 0x2C;
-const _transferMinSize = _handleOffset + _u32Size;
+const _handleRecordMinSize = _handleOffset + _u32Size;
 
 sealed class CanonEvent extends Equatable {
   const CanonEvent();
@@ -39,6 +39,15 @@ class CanonObjectAdded extends CanonEvent {
 
   @override
   List<Object?> get props => [handle, storageId, format, size, parent];
+}
+
+class CanonObjectRemoved extends CanonEvent {
+  const CanonObjectRemoved(this.handle);
+
+  final int handle;
+
+  @override
+  List<Object?> get props => [handle];
 }
 
 class CanonTransferRequested extends CanonEvent {
@@ -114,8 +123,10 @@ CanonEvent? parseCanonEvent(CanonEventRecord record) {
       );
     case CanonEosEvent.requestObjectTransfer ||
             CanonEosEvent.requestObjectTransfer64
-        when length >= _transferMinSize:
+        when length >= _handleRecordMinSize:
       return CanonTransferRequested(u32(_handleOffset));
+    case CanonEosEvent.objectRemoved when length >= _handleRecordMinSize:
+      return CanonObjectRemoved(u32(_handleOffset));
     default:
       return null;
   }

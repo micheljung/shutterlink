@@ -70,6 +70,12 @@ void main() {
     ]);
   });
 
+  test('an object removal yields its handle', () {
+    expect(parseCanonEvents(objectRemovedRecord(0x22)), [
+      const CanonObjectRemoved(0x22),
+    ]);
+  });
+
   test('a transfer request yields its handle', () {
     expect(
       parseCanonEvents(
