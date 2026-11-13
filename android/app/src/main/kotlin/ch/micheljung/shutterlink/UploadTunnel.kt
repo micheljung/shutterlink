@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.Closeable
 import java.io.IOException
@@ -24,14 +25,30 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class UploadTunnel(context: Context) {
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val executor = Executors.newCachedThreadPool()
     private val mainThread = Handler(Looper.getMainLooper())
     private val random = SecureRandom()
+    private val activeTunnels = AtomicInteger()
+    private val releaseCellular = Runnable { dropCellular() }
+    private var cellularCallback: ConnectivityManager.NetworkCallback? = null
+    private var cellular = CompletableFuture<Network>()
+    private var statusCallback: ConnectivityManager.NetworkCallback? = null
 
     fun register(messenger: BinaryMessenger) {
+        EventChannel(messenger, NETWORKS_CHANNEL).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, sink: EventChannel.EventSink) {
+                watchNetworks(sink)
+            }
+
+            override fun onCancel(arguments: Any?) {
+                statusCallback?.let { connectivity.unregisterNetworkCallback(it) }
+                statusCallback = null
+            }
+        })
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             if (call.method != "openTunnel") {
                 result.notImplemented()
@@ -59,8 +76,15 @@ class UploadTunnel(context: Context) {
 
     private fun open(host: String, port: Int, allowMetered: Boolean): Map<String, Any> {
         val cleanup = Cleanup()
+        mainThread.removeCallbacks(releaseCellular)
+        activeTunnels.incrementAndGet()
+        cleanup.add {
+            if (activeTunnels.decrementAndGet() == 0) {
+                mainThread.postDelayed(releaseCellular, CELLULAR_IDLE_MS)
+            }
+        }
         try {
-            val network = selectNetwork(allowMetered, cleanup)
+            val network = selectNetwork(allowMetered)
             val address = network.getAllByName(host).first()
             val upstream = network.socketFactory.createSocket().also(cleanup::add)
             upstream.connect(InetSocketAddress(address, port), TIMEOUT_MS)
@@ -79,7 +103,7 @@ class UploadTunnel(context: Context) {
         }
     }
 
-    private fun selectNetwork(allowMetered: Boolean, cleanup: Cleanup): Network {
+    private fun selectNetwork(allowMetered: Boolean): Network {
         @Suppress("DEPRECATION")
         connectivity.allNetworks.firstOrNull { network ->
             connectivity.getNetworkCapabilities(network)?.let {
@@ -89,24 +113,88 @@ class UploadTunnel(context: Context) {
             } == true
         }?.let { return it }
         if (!allowMetered) throw NoNetworkException("No unmetered internet network")
+        return try {
+            holdCellular().get(TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        } catch (e: TimeoutException) {
+            throw NoNetworkException("No mobile data network available")
+        }
+    }
+
+    /**
+     * Mobile data stays requested while uploads continue, so it is not torn
+     * down between files while the process is bound to the camera's Wi-Fi.
+     */
+    @Synchronized
+    private fun holdCellular(): CompletableFuture<Network> {
+        if (cellularCallback != null) return cellular
         val available = CompletableFuture<Network>()
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                available.complete(network)
+                synchronized(this@UploadTunnel) {
+                    if (!cellular.complete(network)) {
+                        cellular = CompletableFuture.completedFuture(network)
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                synchronized(this@UploadTunnel) {
+                    if (cellular.getNow(null) == network) cellular = CompletableFuture()
+                }
             }
         }
+        cellular = available
+        cellularCallback = callback
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
         connectivity.requestNetwork(request, callback)
-        cleanup.add { connectivity.unregisterNetworkCallback(callback) }
-        return try {
-            available.get(TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-        } catch (e: TimeoutException) {
-            throw NoNetworkException("No cellular network available")
-        }
+        return available
     }
+
+    @Synchronized
+    private fun dropCellular() {
+        if (activeTunnels.get() > 0) return
+        cellularCallback?.let { connectivity.unregisterNetworkCallback(it) }
+        cellularCallback = null
+        cellular = CompletableFuture()
+    }
+
+    private fun watchNetworks(sink: EventChannel.EventSink) {
+        statusCallback?.let { connectivity.unregisterNetworkCallback(it) }
+        val networks = mutableMapOf<Network, NetworkCapabilities>()
+        fun publish() = synchronized(networks) {
+            val snapshot = networks.values.map(::describe)
+            mainThread.post { sink.success(snapshot) }
+        }
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                synchronized(networks) { networks[network] = capabilities }
+                publish()
+            }
+
+            override fun onLost(network: Network) {
+                synchronized(networks) { networks.remove(network) }
+                publish()
+            }
+        }
+        val request = NetworkRequest.Builder()
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        connectivity.registerNetworkCallback(request, callback)
+        statusCallback = callback
+        publish()
+    }
+
+    private fun describe(capabilities: NetworkCapabilities): Map<String, Any> = mapOf(
+        "transport" to transportOf(capabilities),
+        "validated" to (
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            ),
+        "metered" to !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+    )
 
     private fun serve(server: ServerSocket, upstream: Socket, token: String, cleanup: Cleanup) {
         try {
@@ -137,13 +225,16 @@ class UploadTunnel(context: Context) {
 
     private fun networkType(network: Network): String {
         val capabilities = connectivity.getNetworkCapabilities(network) ?: return "unknown"
-        return when {
+        return transportOf(capabilities)
+    }
+
+    private fun transportOf(capabilities: NetworkCapabilities): String =
+        when {
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
             else -> "other"
         }
-    }
 
     private class Cleanup : Runnable {
         private val done = AtomicBoolean(false)
@@ -168,6 +259,8 @@ class UploadTunnel(context: Context) {
 
     private companion object {
         const val CHANNEL = "ch.micheljung.shutterlink/upload_tunnel"
+        const val NETWORKS_CHANNEL = "ch.micheljung.shutterlink/upload_tunnel/networks"
+        const val CELLULAR_IDLE_MS = 60_000L
         const val LOOPBACK = "127.0.0.1"
         const val TOKEN_BYTES = 32
         const val TIMEOUT_MS = 10_000

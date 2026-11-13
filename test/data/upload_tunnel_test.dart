@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/data/upload_tunnel.dart';
+import 'package:shutterlink/upload/network_policy.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -77,5 +78,45 @@ void main() {
         isA<PlatformException>().having((e) => e.code, 'code', 'no_network'),
       ),
     );
+  });
+
+  test('maps native network snapshots to a status', () async {
+    messenger.setMockStreamHandler(
+      UploadTunnel.networksChannel,
+      MockStreamHandler.inline(
+        onListen: (_, events) {
+          events.success([]);
+          events.success([
+            {'transport': 'wifi', 'validated': false, 'metered': false},
+            {'transport': 'cellular', 'validated': true, 'metered': true},
+            {'transport': 'ethernet', 'validated': true, 'metered': false},
+          ]);
+        },
+      ),
+    );
+    addTearDown(
+      () => messenger.setMockStreamHandler(UploadTunnel.networksChannel, null),
+    );
+
+    expect(await const UploadTunnel().networkStatus().take(2).toList(), [
+      NetworkStatus.offline,
+      const NetworkStatus([
+        NetworkInfo(
+          transport: NetworkTransport.wifi,
+          validated: false,
+          metered: false,
+        ),
+        NetworkInfo(
+          transport: NetworkTransport.cellular,
+          validated: true,
+          metered: true,
+        ),
+        NetworkInfo(
+          transport: NetworkTransport.other,
+          validated: true,
+          metered: false,
+        ),
+      ]),
+    ]);
   });
 }
