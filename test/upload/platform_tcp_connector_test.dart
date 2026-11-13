@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/data/upload_tunnel.dart';
 import 'package:shutterlink/upload/platform_tcp_connector.dart';
+import 'package:shutterlink/upload/storage_backend.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

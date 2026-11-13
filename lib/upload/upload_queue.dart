@@ -28,6 +28,10 @@ const initialBackoff = Duration(seconds: 5);
 const maxBackoff = Duration(minutes: 15);
 const backoffJitter = 0.2;
 
+/// How long an upload waits when the platform found no usable network while
+/// the reported network status still offered one.
+const noNetworkRecheck = Duration(seconds: 30);
+
 /// 5 s × 2^(attempts-1), capped at 15 min, ±20 % jitter from [random] ∈ [0,1).
 Duration backoffDelay(int attempts, double random) {
   final exponent = max(0, attempts - 1);
@@ -200,6 +204,7 @@ class UploadQueue {
   final String Function() _uniqueId;
   final _snapshots = StreamController<UploadQueueSnapshot>.broadcast();
   final _busy = <String>{};
+  final _networkWaiting = <String>{};
   final _idleWaiters = <Completer<void>>[];
   final _ready = Completer<void>();
   Destination? _destination;
@@ -536,6 +541,7 @@ class UploadQueue {
       return;
     }
     _activeId = item.id;
+    _networkWaiting.remove(item.id);
     _sentBytes = 0;
     _totalBytes = item.size;
     _emitSnapshot();
@@ -664,6 +670,18 @@ class UploadQueue {
   Future<void> _fail(String id, String fingerprint, Exception error) async {
     final item = _repository.items[id];
     if (item == null || item.destinationFingerprint != fingerprint) return;
+    if (error is NoNetworkException) {
+      _networkWaiting.add(id);
+      await _put(
+        item.copyWith(
+          state: item.state == UploadState.uploading
+              ? UploadState.savedToGallery
+              : null,
+          nextAttemptAt: () => _clock().add(noNetworkRecheck),
+        ),
+      );
+      return;
+    }
     final attempts = item.attempts + 1;
     final permanent = error is StorageException && !error.retryable;
     await _put(
@@ -750,7 +768,11 @@ class UploadQueue {
   ) {
     if (item.needsAttention) return WaitReason.attention;
     final next = item.nextAttemptAt;
-    if (next != null && next.isAfter(now)) return WaitReason.backoff;
+    if (next != null && next.isAfter(now)) {
+      return _networkWaiting.contains(item.id)
+          ? WaitReason.network
+          : WaitReason.backoff;
+    }
     if (item.state.index < UploadState.savedToGallery.index) return null;
     if (destination == null) return WaitReason.noDestination;
     return switch (decideNetwork(_network, destination.policy, item.kind)) {

@@ -93,6 +93,13 @@ class StorageException implements Exception {
   String toString() => message;
 }
 
+/// No network allowed for this upload has internet access; retrying once one
+/// appears may succeed.
+class NoNetworkException extends StorageException {
+  const NoNetworkException()
+    : super('Waiting for a network with internet access.');
+}
+
 /// The server's TLS certificate failed system validation and does not match
 /// the stored pin. The user may trust [fingerprint] after confirming it.
 class UntrustedCertificateException extends StorageException {
