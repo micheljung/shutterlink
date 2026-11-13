@@ -8,6 +8,9 @@ version: 1.2.0+3
 environment:
   sdk: ^3.13.4
 
+workspace:
+  - server
+
 dependencies:
   flutter:
     sdk: flutter
@@ -24,6 +27,9 @@ dependencies:
   crypto: ^3.0.8
   dartssh2: ^4.1.0
   flutter_secure_storage: ^11.2.0
+  http: ^1.6.0
+  pretty_qr_code: ^3.6.0
+  clock: ^1.1.3
 
 dev_dependencies:
   flutter_test:
@@ -32,6 +38,8 @@ dev_dependencies:
   bloc_test: ^10.0.0
   mocktail: ^1.0.5
   shelf: ^1.4.3
+  shutterlink_server:
+    path: server
 
 flutter:
   uses-material-design: true
