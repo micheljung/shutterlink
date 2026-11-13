@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/upload/remote_path.dart';
 import 'package:shutterlink/upload/storage_backend.dart';
@@ -119,5 +121,18 @@ void main() {
         ),
       );
     });
+  });
+
+  test('RemoteTarget and UploadRequest compare by value', () {
+    const target = RemoteTarget(directory: '2026-11-13', name: 'A.JPG');
+    expect(target.toString(), '2026-11-13/A.JPG');
+    UploadRequest request() => UploadRequest(
+      source: File('/tmp/a'),
+      target: target,
+      tempName: '.A.JPG.tmp-1',
+      size: 1,
+      sha256: 'x',
+    );
+    expect(request(), request());
   });
 }
