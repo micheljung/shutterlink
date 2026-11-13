@@ -9,6 +9,7 @@ on:
 env:
   FLUTTER_VERSION: 3.47.5
   PTPIP_MIN_COVERAGE: 90
+  UPLOAD_MIN_COVERAGE: 90
 
 jobs:
   test:
@@ -25,17 +26,30 @@ jobs:
       - run: flutter analyze
       - run: flutter test --coverage
       - name: Check lib/ptpip coverage
+        run: tool/check_coverage.sh ptpip "$PTPIP_MIN_COVERAGE" coverage/lcov.info
+      - name: Install OpenSSH server
         run: |
-          awk -F: -v min="$PTPIP_MIN_COVERAGE" '
-            /^SF:/ { ptpip = ($2 ~ /^lib\/ptpip\//) }
-            ptpip && /^LF:/ { found += $2 }
-            ptpip && /^LH:/ { hit += $2 }
-            END {
-              if (found == 0) { print "No lib/ptpip coverage data"; exit 1 }
-              pct = 100 * hit / found
-              printf "lib/ptpip line coverage: %.1f%% (%d/%d)\n", pct, hit, found
-              if (pct < min) { printf "Below %d%%\n", min; exit 1 }
-            }' coverage/lcov.info
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          sudo mkdir -p /run/sshd
+      - name: Create SFTP test user
+        run: |
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          sudo useradd -m sftptest
+          echo "sftptest:$password" | sudo chpasswd
+          echo "SFTP_TEST_USER=sftptest" >> "$GITHUB_ENV"
+          echo "SFTP_TEST_PASSWORD=$password" >> "$GITHUB_ENV"
+      - name: Run SFTP tests
+        run: |
+          set -o pipefail
+          flutter test --coverage --coverage-path coverage/sftp.lcov.info \
+            --tags "sftp || sftp-root" --run-skipped --reporter expanded | tee sftp.log
+      - name: Check SFTP tests ran
+        run: |
+          grep -E '\+[1-9][0-9]*: All tests passed' sftp.log && ! grep -qE '~[1-9]' sftp.log
+      - name: Check lib/upload coverage
+        run: tool/check_coverage.sh upload "$UPLOAD_MIN_COVERAGE" coverage/lcov.info coverage/sftp.lcov.info
 
   build-android:
     runs-on: ubuntu-latest
