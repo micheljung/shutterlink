@@ -7,16 +7,23 @@ import '../../data/download_history.dart';
 import '../../data/photo_saver.dart';
 import '../../data/settings_repository.dart';
 import '../../ptpip/camera_client.dart';
+import '../../upload/upload_queue.dart';
 import '../gallery/photo_group.dart';
+import '../live/ingest_coordinator.dart';
 import 'download_plan.dart';
 import 'download_state.dart';
+import 'object_fetcher.dart';
 
 class DownloadCubit extends Cubit<DownloadState> {
   DownloadCubit({
     required this._saver,
     required this._workDirectory,
     required this._history,
-  }) : super(const DownloadState());
+    IngestCoordinator? coordinator,
+    this._uploadQueue,
+    this._fetcher = const ObjectFetcher(),
+  }) : _coordinator = coordinator ?? IngestCoordinator(),
+       super(const DownloadState());
 
   static const disconnectedMessage =
       'Camera disconnected. Reconnect to resume the download.';
@@ -24,6 +31,9 @@ class DownloadCubit extends Cubit<DownloadState> {
   final PhotoSaver _saver;
   final Directory _workDirectory;
   final DownloadHistoryRepository _history;
+  final IngestCoordinator _coordinator;
+  final UploadQueue? _uploadQueue;
+  final ObjectFetcher _fetcher;
   final _changedTasks = <int>{};
   CancelToken? _cancelToken;
   String _cameraKey = '';
@@ -180,23 +190,49 @@ class DownloadCubit extends Cubit<DownloadState> {
     CameraClient client,
     DownloadTask task,
     CancelToken token,
+  ) => _coordinator.run(
+    task.files.map(_entryKey),
+    () => _runClaimedTask(client, task, token),
+  );
+
+  String _entryKey(CameraObject object) =>
+      DownloadHistoryRepository.entryKey(_cameraKey, object);
+
+  Future<DownloadFailureReason?> _runClaimedTask(
+    CameraClient client,
+    DownloadTask task,
+    CancelToken token,
   ) async {
     final files = <CameraObject, File>{};
     var keepFiles = false;
     try {
-      for (final object in task.files) {
+      final recorded = await _history.load();
+      final pending = task.files
+          .where((object) => !recorded.contains(_entryKey(object)))
+          .toList();
+      for (final object in pending) {
         if (token.isCancelled) throw const TransferCancelledException();
         files[object] = await _fetch(client, object, token);
       }
       if (token.isCancelled) throw const TransferCancelledException();
-      await _saver.save(
-        jpeg: files[task.group.jpeg],
-        raw: files[task.group.raw],
-      );
-      try {
-        await _history.record(_cameraKey, task.files);
-      } on FileSystemException {
-        // The photo is saved; a lost entry only means it is offered again.
+      final queue = _uploadQueue;
+      if (queue != null && queue.destination != null) {
+        for (final object in pending) {
+          await queue.add(
+            id: _entryKey(object),
+            file: files[object]!,
+            filename: object.filename,
+            kind: object.kind,
+            captureDate: object.captureDate,
+          );
+          await _record([object]);
+        }
+      } else if (pending.isNotEmpty) {
+        await _saver.save(
+          jpeg: files[task.group.jpeg],
+          raw: files[task.group.raw],
+        );
+        await _record(pending);
       }
       return null;
     } on TransferCancelledException {
@@ -211,46 +247,33 @@ class DownloadCubit extends Cubit<DownloadState> {
     }
   }
 
+  Future<void> _record(List<CameraObject> objects) async {
+    try {
+      await _history.record(_cameraKey, objects);
+    } on FileSystemException {
+      // The photo is saved; a lost entry only means it is offered again.
+    }
+  }
+
   Future<File> _fetch(
     CameraClient client,
     CameraObject object,
     CancelToken token,
   ) async {
-    final file = _workFile(object);
-    await file.parent.create(recursive: true);
-    var received = await file.exists() ? await file.length() : 0;
-    if (received > object.size) {
-      await file.delete();
-      received = 0;
-    }
-    if (received < object.size) {
-      _emit(
+    final file = await _fetcher.fetch(
+      client,
+      object,
+      _workFile(object),
+      cancelToken: token,
+      onResume: (received) => _emit(
         state.copyWith(
           currentFile: () => object.filename,
           fileReceived: received,
           fileTotal: object.size,
         ),
-      );
-      final sink = await file.open(mode: FileMode.append);
-      try {
-        await client.download(
-          object,
-          (chunk) async {
-            if (token.isCancelled) throw const TransferCancelledException();
-            await sink.writeFrom(chunk);
-            received += chunk.length;
-            _emit(state.copyWith(fileReceived: received));
-          },
-          offset: received,
-          cancelToken: token,
-        );
-      } finally {
-        await sink.close();
-      }
-    }
-    if (await file.length() != object.size) {
-      throw FileSystemException('Incomplete download', file.path);
-    }
+      ),
+      onReceived: (received) => _emit(state.copyWith(fileReceived: received)),
+    );
     _emit(
       state.copyWith(
         completedBytes: state.completedBytes + object.size,
