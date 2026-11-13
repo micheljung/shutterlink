@@ -1,3 +1,9 @@
 tags:
   screenshots:
     skip: Renders README screenshots; run with --tags screenshots --run-skipped.
+  sftp:
+    skip: Needs OpenSSH sshd; run with --tags sftp --run-skipped.
+  sftp-root:
+    skip: >-
+      Needs sshd, sudo -n and SFTP_TEST_USER/SFTP_TEST_PASSWORD; run with
+      --tags sftp-root --run-skipped.
