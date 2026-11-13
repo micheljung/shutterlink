@@ -163,6 +163,7 @@ Future<void> _pumpApp(
       ),
     ),
   );
+  final upload = testUploadDependencies(prefs, workDirectory);
   await tester.pumpWidget(
     RepaintBoundary(
       key: _boundaryKey,
@@ -180,6 +181,11 @@ Future<void> _pumpApp(
           thumbnailCache: _PrerenderedThumbnails(thumbnails!),
           downloadDirectory: workDirectory,
           downloadHistory: history,
+          destinations: upload.destinations,
+          uploadQueue: upload.uploadQueue,
+          ingestCoordinator: upload.ingestCoordinator,
+          liveService: upload.liveService,
+          connectionTester: noConnectionTest,
         ),
       ),
     ),

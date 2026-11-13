@@ -560,6 +560,27 @@ void main() {
       expect(server().files, hasLength(1));
     });
 
+    test('resuming the app retries backoffs but not failures', () async {
+      server().failUploads = 1;
+      final queue = await started();
+      await add(queue, 'IMG_0001.JPG');
+      await queue.idle;
+      expect(queue.snapshot.waiting.values, [WaitReason.backoff]);
+
+      await queue.resume();
+      await queue.idle;
+      expect(server().files, hasLength(1));
+
+      server()
+        ..failUploads = 1
+        ..failure = const StorageException('Wrong password', retryable: false);
+      await add(queue, 'IMG_0002.JPG');
+      await queue.idle;
+      await queue.resume();
+      await queue.idle;
+      expect(queue.snapshot.waiting.values, [WaitReason.attention]);
+    });
+
     test('permanent errors wait for the user', () async {
       server()
         ..failUploads = 1
