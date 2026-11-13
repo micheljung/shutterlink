@@ -15,7 +15,7 @@ import 'live_ingestor.dart';
 
 typedef LiveIngestorFactory = LiveIngestor Function(
   CameraClient client,
-  Set<String> baseline,
+  LiveBaseline baseline,
 );
 
 sealed class LiveTransferState extends Equatable {
@@ -110,7 +110,7 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
   StreamSubscription<Object?>? _ingestedSubscription;
   CameraClient? _client;
   LiveIngestor? _ingestor;
-  Set<String>? _baseline;
+  LiveBaseline? _baseline;
   String? _cameraHost;
   Timer? _retryTimer;
   Duration _reconnectDelay = initialReconnectDelay;
@@ -179,7 +179,7 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
 
   Future<bool> _attach(CameraClient client, {required bool catchUp}) async {
     final session = _session;
-    final Set<String> baseline;
+    final LiveBaseline baseline;
     try {
       baseline = _baseline ??= await LiveIngestor.baselineOf(client);
     } on Exception {

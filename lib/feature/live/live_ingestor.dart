@@ -7,6 +7,19 @@ import '../../upload/upload_queue.dart';
 import '../download/object_fetcher.dart';
 import 'ingest_coordinator.dart';
 
+/// The card as it was when Live started.
+class LiveBaseline {
+  LiveBaseline({required this.keys, Iterable<int> handles = const []})
+    : resolvedHandles = {...handles};
+
+  /// Entry keys of the photos on the card; they are never ingested.
+  final Set<String> keys;
+
+  /// Handles that need no further look; shared across reconnects so the
+  /// rescan only asks the camera about new ones.
+  final Set<int> resolvedHandles;
+}
+
 /// Turns new camera objects into gallery copies and queued uploads.
 class LiveIngestor {
   LiveIngestor({
@@ -19,15 +32,16 @@ class LiveIngestor {
     this._fetcher = const ObjectFetcher(),
     this._infoRetryDelay = defaultInfoRetryDelay,
     this._rescanInterval = defaultRescanInterval,
-  }) : _cameraKey = cameraKeyOf(_client.deviceInfo);
+  }) : _cameraKey = cameraKeyOf(_client.deviceInfo),
+       _resolvedHandles = _baseline.resolvedHandles;
 
   static const defaultInfoRetryDelay = Duration(milliseconds: 500);
-  static const defaultRescanInterval = Duration(seconds: 5);
+  static const defaultRescanInterval = Duration(seconds: 2);
   static const infoRetries = 3;
 
   final CameraClient _client;
   final DownloadFormat _format;
-  final Set<String> _baseline;
+  final LiveBaseline _baseline;
   final DownloadHistoryRepository _history;
   final UploadQueue _queue;
   final IngestCoordinator _coordinator;
@@ -36,23 +50,26 @@ class LiveIngestor {
   final Duration _rescanInterval;
   final String _cameraKey;
   final _ingested = StreamController<CameraObject>.broadcast();
-  final _resolvedHandles = <int>{};
+  final Set<int> _resolvedHandles;
   StreamSubscription<int>? _subscription;
   Timer? _rescanTimer;
   bool _rescanQueued = false;
+  bool _closed = false;
   Future<void> _pending = Future.value();
 
   /// Objects saved to the gallery and queued for upload.
   Stream<CameraObject> get ingested => _ingested.stream;
 
-  /// Entry keys of the photos on the card when Live starts; they are never
-  /// ingested.
-  static Future<Set<String>> baselineOf(CameraClient client) async {
+  static Future<LiveBaseline> baselineOf(CameraClient client) async {
     final cameraKey = cameraKeyOf(client.deviceInfo);
-    return {
-      for (final object in await client.listPhotos())
-        DownloadHistoryRepository.entryKey(cameraKey, object),
-    };
+    final photos = await client.listPhotos();
+    return LiveBaseline(
+      keys: {
+        for (final object in photos)
+          DownloadHistoryRepository.entryKey(cameraKey, object),
+      },
+      handles: photos.map((object) => object.handle),
+    );
   }
 
   /// Follows the camera's object-added events, and periodically diffs the
@@ -73,6 +90,7 @@ class LiveIngestor {
     _enqueue(() async {
       _rescanQueued = false;
       for (final handle in await _client.newestFolderHandles()) {
+        if (_closed) return;
         await _onAdded(handle);
       }
     });
@@ -81,11 +99,14 @@ class LiveIngestor {
   /// Ingests what was missed while the camera was unreachable.
   Future<void> catchUp() => _enqueue(() async {
     for (final object in await _client.listPhotos()) {
+      if (_closed) return;
       await _ingest(object);
     }
   });
 
+  /// Abandons queued work; an ingest already running finishes first.
   Future<void> close() async {
+    _closed = true;
     _rescanTimer?.cancel();
     await _subscription?.cancel();
     await _pending;
@@ -99,21 +120,22 @@ class LiveIngestor {
   }
 
   Future<void> _onAdded(int handle) async {
-    if (_resolvedHandles.contains(handle)) return;
-    final object = await _objectInfo(handle);
-    if (object != null) await _ingest(object);
+    if (_closed || _resolvedHandles.contains(handle)) return;
+    final info = await _objectInfo(handle);
+    if (info == null) return;
+    final object = info.object;
+    if (object == null || await _ingest(object)) _resolvedHandles.add(handle);
   }
 
-  /// Retries while the camera is still writing the file. Gives up silently;
+  /// Retries while the camera is still writing the file. Gives up with null;
   /// the next rescan or the reconnect catch-up picks the file up later.
-  Future<CameraObject?> _objectInfo(int handle) async {
+  Future<({CameraObject? object})?> _objectInfo(int handle) async {
     for (var attempt = 0; attempt <= infoRetries; attempt++) {
       if (attempt > 0) await Future<void>.delayed(_infoRetryDelay);
       try {
         final object = await _client.objectInfo(handle);
         if (object != null && object.size == 0) continue;
-        _resolvedHandles.add(handle);
-        return object;
+        return (object: object);
       } on CameraDisconnectedException {
         return null;
       } on Exception {
@@ -130,16 +152,17 @@ class LiveIngestor {
   };
 
   Future<bool> _isKnown(String key) async =>
-      _baseline.contains(key) ||
+      _baseline.keys.contains(key) ||
       (await _history.load()).contains(key) ||
       await _queue.contains(key);
 
-  Future<void> _ingest(CameraObject object) async {
-    if (!_wanted(object)) return;
+  /// Whether the object needs no further attempt.
+  Future<bool> _ingest(CameraObject object) async {
+    if (!_wanted(object)) return true;
     final key = DownloadHistoryRepository.entryKey(_cameraKey, object);
-    if (await _isKnown(key)) return;
-    await _coordinator.run([key], () async {
-      if (await _isKnown(key)) return;
+    if (await _isKnown(key)) return true;
+    return _coordinator.run([key], () async {
+      if (await _isKnown(key)) return true;
       try {
         final file = await _fetcher.fetch(
           _client,
@@ -155,10 +178,10 @@ class LiveIngestor {
         );
         await _history.record(_cameraKey, [object]);
       } on Exception {
-        // Left for the reconnect catch-up.
-        return;
+        return false;
       }
       if (!_ingested.isClosed) _ingested.add(object);
+      return true;
     });
   }
 }
