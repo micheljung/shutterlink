@@ -249,7 +249,33 @@ void main() {
         await seen.stateOf(
           SessionSeenStore.keyOf(cameraKey, client.objects.single),
         ),
+        isNull,
+      );
+    });
+
+    test('excludes only the sync photo among new photos', () async {
+      final sync = cubit();
+      await sync.start();
+      client.onList = (listing) {
+        if (listing == 2) {
+          client.objects.addAll([
+            shot(1, t0.add(const Duration(seconds: 3))),
+            shot(2, t0.add(const Duration(seconds: 3))),
+          ]);
+        }
+      };
+
+      await sync.syncShot();
+
+      expect(sync.state, isA<ClockResolved>());
+      final [syncPhoto, other] = client.objects;
+      expect(
+        await seen.stateOf(SessionSeenStore.keyOf(cameraKey, syncPhoto)),
         SeenState.excluded,
+      );
+      expect(
+        await seen.stateOf(SessionSeenStore.keyOf(cameraKey, other)),
+        isNull,
       );
     });
 
