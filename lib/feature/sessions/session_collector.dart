@@ -236,7 +236,8 @@ class SessionCollector {
   }
 
   /// Reuses a JPEG auto-upload already took off the camera, so it is not
-  /// downloaded twice.
+  /// downloaded twice. A staging file of another size is still being written
+  /// or is left over from a different photo.
   Future<bool> _copyStaged(CameraObject jpeg, File target) async {
     final staged = _stagedFileOf?.call(
       SessionSeenStore.keyOf(_cameraKey, jpeg),
@@ -244,6 +245,7 @@ class SessionCollector {
     );
     if (staged == null) return false;
     try {
+      if (await staged.length() != jpeg.size) return false;
       await staged.copy(target.path);
       return true;
     } on FileSystemException {

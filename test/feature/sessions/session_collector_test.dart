@@ -316,7 +316,8 @@ void main() {
     now = t0.add(second * 20);
     final staged = File(p.join(root.path, 'staged', photo.filename));
     await staged.parent.create();
-    await staged.writeAsBytes([7, 7, 7]);
+    final stagedBytes = List.filled(photo.size, 7);
+    await staged.writeAsBytes(stagedBytes);
     final requested = <String>[];
     final collecting = collector(
       await resolvedClock(),
@@ -331,7 +332,27 @@ void main() {
     expect(requested, ['${keyOf(photo)} ${photo.filename}']);
     expect(client.log, isEmpty);
     final item = (await queue.items()).single;
-    expect(await File(item.filePath).readAsBytes(), [7, 7, 7]);
+    expect(await File(item.filePath).readAsBytes(), stagedBytes);
+  });
+
+  test('downloads when the staged copy is incomplete', () async {
+    await sessions.start();
+    final photo = shot(1, t0.add(second * 10));
+    client.objects.add(photo);
+    now = t0.add(second * 20);
+    final staged = File(p.join(root.path, 'staged', photo.filename));
+    await staged.parent.create();
+    await staged.writeAsBytes(List.filled(photo.size - 1, 7));
+    final collecting = collector(
+      await resolvedClock(),
+      stagedFileOf: (_, _) => staged,
+    );
+
+    await collecting.rescan();
+
+    expect(client.log, ['start 1', 'end 1']);
+    final item = (await queue.items()).single;
+    expect(await File(item.filePath).readAsBytes(), contentFor(photo));
   });
 
   test('downloads when auto-upload has no staged copy', () async {
