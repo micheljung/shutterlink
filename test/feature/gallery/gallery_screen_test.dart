@@ -184,6 +184,8 @@ void main() {
           )
           .first,
     );
+    await tester.ensureVisible(find.text('Clear download history'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Clear download history'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Clear'));

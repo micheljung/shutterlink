@@ -1,7 +1,10 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/app.dart';
@@ -11,15 +14,24 @@ import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/live_service.dart';
 import 'package:shutterlink/data/network_binder.dart';
+import 'package:shutterlink/data/session_repository.dart';
+import 'package:shutterlink/data/session_seen_store.dart';
+import 'package:shutterlink/data/sessions_credentials.dart';
+import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/data/upload_transport.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/live/ingest_coordinator.dart';
+import 'package:shutterlink/feature/sessions/sessions_dependencies.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
 import 'package:shutterlink/upload/media_saver.dart';
+import 'package:shutterlink/upload/network_policy.dart';
+import 'package:shutterlink/upload/tcp_connector.dart';
 import 'package:shutterlink/upload/upload_queue.dart';
 
 import 'fake_camera_client.dart';
+import 'fake_sessions_credentials.dart';
 
 class NoopNetworkBinder implements NetworkBinder {
   @override
@@ -76,10 +88,56 @@ Future<void> noConnectionTest(
   DestinationSecrets secrets,
 ) async {}
 
-Future<AppDependencies> testDependencies(CameraConnector connector) async {
-  SharedPreferences.setMockInitialValues({});
-  final prefs = await SharedPreferences.getInstance();
-  final settings = SettingsRepository(prefs);
+typedef SessionsDependenciesFactory = SessionsDependencies Function(
+  SettingsRepository settings,
+  Directory directory,
+  IngestCoordinator coordinator,
+);
+
+/// A transport that is always available and answers with [newClient].
+TunnelTransport testTransport(http.Client Function() newClient) =>
+    TunnelTransport(
+      ValueNotifier(const NetworkStatus.unrestricted()),
+      connector: directNetworkConnector,
+      newClient: newClient,
+    );
+
+SessionsDependencies testSessionsDependencies(
+  SettingsRepository settings,
+  Directory directory,
+  IngestCoordinator coordinator, {
+  SessionsCredentials? credentials,
+  http.Client Function()? newClient,
+}) => SessionsDependencies(
+  repository: SessionRepository(
+    File(p.join(directory.path, SessionRepository.fileName)),
+  ),
+  seen: SessionSeenStore(
+    File(p.join(directory.path, SessionSeenStore.fileName)),
+  ),
+  queue: SessionsUploadQueue(
+    File(p.join(directory.path, SessionsUploadQueue.fileName)),
+  ),
+  credentials: credentials ?? FakeSessionsCredentials(),
+  transport: testTransport(
+    newClient ??
+        () => MockClient((_) async => http.Response('', HttpStatus.notFound)),
+  ),
+  settings: settings,
+  uploadDirectory: Directory(
+    p.join(directory.path, SessionsDependencies.uploadDirectoryName),
+  ),
+  ingestCoordinator: coordinator,
+);
+
+Future<AppDependencies> testDependencies(
+  CameraConnector connector, {
+  Map<String, Object> prefs = const {},
+  SessionsDependenciesFactory sessions = testSessionsDependencies,
+}) async {
+  SharedPreferences.setMockInitialValues(prefs);
+  final preferences = await SharedPreferences.getInstance();
+  final settings = SettingsRepository(preferences);
   final historyDirectory = Directory.systemTemp.createTempSync(
     'shutterlink_test_history',
   );
@@ -92,10 +150,10 @@ Future<AppDependencies> testDependencies(CameraConnector connector) async {
       downloadDirectory.deleteSync(recursive: true);
     }
   });
-  final upload = testUploadDependencies(prefs, historyDirectory);
+  final upload = testUploadDependencies(preferences, historyDirectory);
   return AppDependencies(
     settings: settings,
-    identity: IdentityRepository(prefs),
+    identity: IdentityRepository(preferences),
     hostResolver: CameraHostResolver(settings, wifiGateway: () async => null),
     networkBinder: NoopNetworkBinder(),
     photoSaver: RecordingPhotoSaver(),
@@ -110,5 +168,6 @@ Future<AppDependencies> testDependencies(CameraConnector connector) async {
     ingestCoordinator: upload.ingestCoordinator,
     liveService: upload.liveService,
     connectionTester: noConnectionTest,
+    sessions: sessions(settings, historyDirectory, upload.ingestCoordinator),
   );
 }
