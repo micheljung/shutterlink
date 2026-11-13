@@ -19,6 +19,7 @@ import '../../fakes/fake_camera_client.dart';
 class _MockNetworkBinder extends Mock implements NetworkBinder {}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   const gateway = '192.168.1.2';
   late SharedPreferences prefs;
   late _MockNetworkBinder binder;
@@ -282,5 +283,149 @@ void main() {
         verifyNever(binder.acquireMulticastLock);
       },
     );
+  });
+
+  group('Live ownership', () {
+    const live = 'live';
+
+    blocTest<ConnectCubit, ConnectState>(
+      'a client drop and disconnect() leave the binding to Live',
+      build: () => build((_, _) async => client),
+      act: (cubit) async {
+        await cubit.connect();
+        expect(cubit.handOver(live), client);
+        client.simulateDisconnect();
+        await Future<void>.delayed(Duration.zero);
+        await cubit.disconnect();
+      },
+      expect: () => [
+        const ConnectConnecting(),
+        ConnectConnected(client),
+        const ConnectLiveOwned(),
+      ],
+      verify: (_) {
+        verify(() => binder.transferBinding(ConnectCubit.bindingOwner, live))
+            .called(1);
+        verifyNever(() => binder.releaseBinding(any()));
+        expect(client.closed, isFalse);
+      },
+    );
+
+    blocTest<ConnectCubit, ConnectState>(
+      'a live client comes back with the binding',
+      build: () => build((_, _) async => client),
+      act: (cubit) async {
+        await cubit.connect();
+        cubit.handOver(live);
+        expect(cubit.takeBack(client, owner: live), isTrue);
+      },
+      skip: 2,
+      expect: () => [const ConnectLiveOwned(), ConnectConnected(client)],
+      verify: (_) =>
+          verify(() => binder.transferBinding(live, ConnectCubit.bindingOwner))
+              .called(1),
+    );
+
+    blocTest<ConnectCubit, ConnectState>(
+      'a reconnected client is watched for drops',
+      build: () => build((_, _) async => client),
+      act: (cubit) async {
+        await cubit.connect();
+        cubit.handOver(live);
+        final other = FakeCameraClient([]);
+        cubit.takeBack(other, owner: live);
+        other.simulateDisconnect();
+        await Future<void>.delayed(Duration.zero);
+      },
+      skip: 3,
+      expect: () => [
+        isA<ConnectConnected>(),
+        const ConnectFailed(ConnectCubit.disconnectedMessage),
+      ],
+    );
+
+    blocTest<ConnectCubit, ConnectState>(
+      'without a client it goes idle',
+      build: () => build((_, _) async => client),
+      act: (cubit) async {
+        await cubit.connect();
+        cubit.handOver(live);
+        expect(cubit.takeBack(null, owner: live), isFalse);
+      },
+      skip: 3,
+      expect: () => [const ConnectIdle()],
+    );
+
+    blocTest<ConnectCubit, ConnectState>(
+      'nothing to hand over or take back while idle',
+      build: () => build((_, _) async => client),
+      act: (cubit) {
+        expect(cubit.handOver(live), isNull);
+        expect(cubit.takeBack(client, owner: live), isFalse);
+      },
+      expect: () => const <ConnectState>[],
+    );
+
+    group('with the platform binder', () {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      late List<String> nativeCalls;
+      late PlatformNetworkBinder platformBinder;
+
+      setUp(() {
+        nativeCalls = [];
+        platformBinder = PlatformNetworkBinder(isAndroid: true);
+        messenger.setMockMethodCallHandler(PlatformNetworkBinder.channel, (
+          call,
+        ) async {
+          nativeCalls.add(call.method);
+          return call.method == 'bindToWifi' ? gateway : null;
+        });
+      });
+
+      tearDown(
+        () => messenger.setMockMethodCallHandler(
+          PlatformNetworkBinder.channel,
+          null,
+        ),
+      );
+
+      ConnectCubit platformCubit() => ConnectCubit(
+        connector: (_, _) async => client,
+        identity: IdentityRepository(prefs),
+        hostResolver: CameraHostResolver(
+          SettingsRepository(prefs),
+          wifiGateway: () async => null,
+        ),
+        networkBinder: platformBinder,
+      );
+
+      test('repeated Live acquires need a single release', () async {
+        final cubit = platformCubit();
+        await cubit.connect();
+        cubit.handOver(live);
+        await platformBinder.acquireBinding(live, holdNetwork: true);
+        await platformBinder.acquireBinding(live, holdNetwork: true);
+
+        await platformBinder.releaseBinding(live);
+
+        expect(nativeCalls.where((call) => call == 'unbind'), hasLength(1));
+        await cubit.close();
+      });
+
+      test('stop with the client alive keeps the Wi-Fi bound', () async {
+        final cubit = platformCubit();
+        await cubit.connect();
+        cubit.handOver(live);
+        await platformBinder.acquireBinding(live, holdNetwork: true);
+
+        cubit.takeBack(client, owner: live);
+        await platformBinder.releaseBinding(live);
+
+        expect(nativeCalls, isNot(contains('unbind')));
+        await cubit.disconnect();
+        expect(nativeCalls.where((call) => call == 'unbind'), hasLength(1));
+      });
+    });
   });
 }

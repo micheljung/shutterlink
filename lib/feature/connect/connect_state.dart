@@ -41,6 +41,11 @@ class ConnectConnected extends ConnectState {
   List<Object?> get props => [client];
 }
 
+/// Live transfer owns the camera connection and the Wi-Fi binding.
+class ConnectLiveOwned extends ConnectState {
+  const ConnectLiveOwned();
+}
+
 class ConnectPairingRequired extends ConnectState {
   const ConnectPairingRequired();
 }
