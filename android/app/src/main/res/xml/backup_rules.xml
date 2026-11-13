@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="file" path="upload_queue.json" />
+    <exclude domain="file" path="upload_history.json" />
+    <exclude domain="file" path="upload_staging/" />
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+</full-backup-content>
