@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -102,6 +103,53 @@ void main() {
       const ConnectFailed(ConnectCubit.noWifiMessage),
     ],
   );
+
+  group('releases the binding', () {
+    void verifyReleased() =>
+        verify(() => binder.releaseBinding(ConnectCubit.bindingOwner))
+            .called(1);
+
+    blocTest<ConnectCubit, ConnectState>(
+      'when the connection fails on the platform side',
+      build: () => build((_, _) => throw PlatformException(code: 'socket')),
+      act: (cubit) => cubit.connect(),
+      expect: () => [const ConnectConnecting(), const ConnectFailed('null')],
+      verify: (_) => verifyReleased(),
+    );
+
+    test('when resolving the gateway fails', () async {
+      final cubit = ConnectCubit(
+        connector: (_, _) async => client,
+        identity: IdentityRepository(prefs),
+        hostResolver: CameraHostResolver(
+          SettingsRepository(prefs),
+          wifiGateway: () => throw PlatformException(code: 'wifi'),
+        ),
+        networkBinder: binder,
+      );
+      addTearDown(cubit.close);
+      when(() => binder.acquireBinding(any())).thenAnswer((_) async => null);
+
+      await cubit.connect();
+
+      expect(cubit.state, isA<ConnectFailed>());
+      verifyReleased();
+    });
+
+    test('when the cubit closes while connecting', () async {
+      final connected = Completer<CameraClient>();
+      final cubit = build((_, _) => connected.future);
+      final connecting = cubit.connect();
+      await pumpEventQueue();
+      await cubit.close();
+
+      connected.complete(client);
+      await connecting;
+
+      expect(client.closed, isTrue);
+      verifyReleased();
+    });
+  });
 
   blocTest<ConnectCubit, ConnectState>(
     'reports a camera drop',

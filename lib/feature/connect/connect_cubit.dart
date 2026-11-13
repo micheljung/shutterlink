@@ -46,13 +46,20 @@ class ConnectCubit extends Cubit<ConnectState> {
   Future<void> connect() async {
     if (state is ConnectConnecting || state is ConnectConnected) return;
     emit(const ConnectConnecting());
+    final String? boundGateway;
+    try {
+      boundGateway = await _networkBinder.acquireBinding(bindingOwner);
+    } on PlatformException catch (error) {
+      _emitPlatformFailure(error);
+      return;
+    }
     final String? override;
     final String gateway;
     try {
-      final boundGateway = await _networkBinder.acquireBinding(bindingOwner);
       override = _hostResolver.override;
       gateway = await _hostResolver.gateway(boundGateway: boundGateway);
     } on PlatformException catch (error) {
+      await _unbind();
       _emitPlatformFailure(error);
       return;
     }
@@ -83,6 +90,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       final client = await _connector(host, await _identity.identity());
       if (isClosed) {
         await client.close();
+        await _unbind();
         return;
       }
       emit(ConnectConnected(client));
@@ -94,6 +102,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       await _unbind();
       emit(const ConnectFailed(busyMessage));
     } on PlatformException catch (error) {
+      await _unbind();
       _emitPlatformFailure(error);
     } on Exception catch (error) {
       if (onUnreachable != null &&
@@ -115,7 +124,7 @@ class ConnectCubit extends Cubit<ConnectState> {
     } finally {
       await _releaseMulticastLock();
     }
-    if (isClosed) return;
+    if (isClosed) return _unbind();
     switch (cameras) {
       case []:
         await _failUnreachable(gateway, error);
