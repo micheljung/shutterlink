@@ -540,6 +540,26 @@ void main() {
       expect(timers.active!.delay, const Duration(seconds: 5));
     });
 
+    test('no usable network waits without counting an attempt', () async {
+      server()
+        ..failUploads = 1
+        ..failure = const NoNetworkException();
+      final queue = await started();
+      await add(queue, 'IMG_0001.JPG');
+      await queue.idle;
+
+      final item = queue.snapshot.items.single;
+      expect(item.attempts, 0);
+      expect(item.state, UploadState.savedToGallery);
+      expect(item.nextAttemptAt, now.add(noNetworkRecheck));
+      expect(queue.snapshot.waiting.values, [WaitReason.network]);
+
+      now = now.add(noNetworkRecheck);
+      timers.active!.fire();
+      await queue.idle;
+      expect(server().files, hasLength(1));
+    });
+
     test('permanent errors wait for the user', () async {
       server()
         ..failUploads = 1

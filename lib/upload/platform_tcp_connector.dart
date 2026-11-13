@@ -6,13 +6,6 @@ import '../data/upload_tunnel.dart';
 import 'storage_backend.dart';
 import 'tcp_connector.dart';
 
-/// No network allowed for this upload has internet access; retrying once one
-/// appears may succeed.
-class NoNetworkException extends StorageException {
-  const NoNetworkException()
-    : super('Waiting for a network with internet access.');
-}
-
 /// Connects through the native tunnel on Android and directly elsewhere.
 NetworkTcpConnector platformTcpConnector({
   UploadTunnel tunnel = const UploadTunnel(),
