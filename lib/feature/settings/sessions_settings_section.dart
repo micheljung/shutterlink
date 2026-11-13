@@ -117,8 +117,10 @@ class _UploadStatus extends StatelessWidget {
         'Upload token rejected (unauthorized). Check the token.',
       UploadWorkerStatus.serverConfiguration =>
         'Unexpected server response (server configuration). Retrying later.',
-      UploadWorkerStatus.waitingForNetwork =>
-        'Waiting for internet (connected to the camera).',
+      UploadWorkerStatus.waitingForNetwork => 'Waiting for internet.',
+      UploadWorkerStatus.retrying =>
+        'Could not read the upload token or queue. '
+            'Retrying.',
       UploadWorkerStatus.notConfigured => 'Not configured.',
       UploadWorkerStatus.uploading => 'Uploading…',
       UploadWorkerStatus.idle => 'Ready.',

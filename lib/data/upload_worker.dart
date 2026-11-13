@@ -24,6 +24,9 @@ enum UploadWorkerStatus {
   notConfigured,
   unauthorized,
   serverConfiguration,
+
+  /// Reading the token or the queue failed; retried with backoff.
+  retrying,
 }
 
 class UploadWorker {
@@ -53,6 +56,7 @@ class UploadWorker {
   Timer? _wakeTimer;
   Future<void>? _running;
   bool _again = false;
+  int _failedSteps = 0;
   bool _unavailableDuringRequest = false;
   bool _disposed = false;
 
@@ -106,8 +110,22 @@ class UploadWorker {
   Future<void> _run() async {
     do {
       _again = false;
-      while (!_disposed && await _step()) {}
+      while (!_disposed && await _guardedStep()) {}
     } while (_again && !_disposed);
+  }
+
+  Future<bool> _guardedStep() async {
+    try {
+      final more = await _step();
+      _failedSteps = 0;
+      return more;
+    } on Object {
+      if (_disposed) return false;
+      _failedSteps++;
+      _status.value = UploadWorkerStatus.retrying;
+      _arm(_retryDelay(_failedSteps), drain);
+      return false;
+    }
   }
 
   Future<bool> _step() async {
