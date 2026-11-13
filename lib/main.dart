@@ -13,11 +13,18 @@ import 'data/download_history.dart';
 import 'data/identity_repository.dart';
 import 'data/live_service.dart';
 import 'data/network_binder.dart';
+import 'data/network_status_feed.dart';
 import 'data/photo_saver.dart';
+import 'data/session_repository.dart';
+import 'data/session_seen_store.dart';
+import 'data/sessions_credentials.dart';
+import 'data/sessions_upload_queue.dart';
 import 'data/settings_repository.dart';
+import 'data/upload_transport.dart';
 import 'data/upload_tunnel.dart';
 import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/live/ingest_coordinator.dart';
+import 'feature/sessions/sessions_dependencies.dart';
 import 'ptpip/ptpip_camera_client.dart';
 import 'upload/backend_factory.dart';
 import 'upload/media_saver.dart';
@@ -38,6 +45,14 @@ Future<void> main() async {
   final photoSaver = PlatformPhotoSaver();
   final destinations = DestinationRepository(prefs);
   final tcpConnector = platformTcpConnector();
+  final networkStatus = NetworkStatusFeed(
+    Platform.isAndroid
+        ? const UploadTunnel().networkStatus()
+        : const Stream.empty(),
+    initial: Platform.isAndroid
+        ? NetworkStatus.offline
+        : const NetworkStatus.unrestricted(),
+  );
   final uploadQueue = UploadQueue(
     repository: UploadQueueRepository.inDirectory(supportDirectory),
     stagingDirectory: Directory(
@@ -51,16 +66,14 @@ Future<void> main() async {
       connector: tcpConnector,
     ),
     destination: destinations.destination,
-    networkStatus: Platform.isAndroid
-        ? const UploadTunnel().networkStatus()
-        : null,
-    initialNetwork: Platform.isAndroid
-        ? NetworkStatus.offline
-        : const NetworkStatus.unrestricted(),
+    networkStatus: Platform.isAndroid ? networkStatus.statuses : null,
+    initialNetwork: networkStatus.value,
   );
   await uploadQueue.start();
   destinations.changes.listen(uploadQueue.setDestination);
   AppLifecycleListener(onResume: () => unawaited(uploadQueue.resume()));
+  final ingestCoordinator = IngestCoordinator();
+  File supportFile(String name) => File(p.join(supportDirectory.path, name));
 
   runApp(
     ShutterlinkApp(
@@ -79,13 +92,29 @@ Future<void> main() async {
           p.join(temporaryDirectory.path, 'downloads'),
         ),
         downloadHistory: DownloadHistoryRepository(
-          File(
-            p.join(supportDirectory.path, DownloadHistoryRepository.fileName),
+          supportFile(DownloadHistoryRepository.fileName),
+        ),
+        sessions: SessionsDependencies(
+          repository: SessionRepository(
+            supportFile(SessionRepository.fileName),
+          ),
+          seen: SessionSeenStore(supportFile(SessionSeenStore.fileName)),
+          queue: SessionsUploadQueue(supportFile(SessionsUploadQueue.fileName)),
+          credentials: SecureSessionsCredentials(settings),
+          transport: TunnelTransport(networkStatus, connector: tcpConnector),
+          settings: settings,
+          ingestCoordinator: ingestCoordinator,
+          stagedFileOf: uploadQueue.stagingFileFor,
+          uploadDirectory: Directory(
+            p.join(
+              supportDirectory.path,
+              SessionsDependencies.uploadDirectoryName,
+            ),
           ),
         ),
         destinations: destinations,
         uploadQueue: uploadQueue,
-        ingestCoordinator: IngestCoordinator(),
+        ingestCoordinator: ingestCoordinator,
         liveService: PlatformLiveService(),
         connectionTester: (destination, secrets) =>
             testDestination(destination, secrets, connector: tcpConnector),

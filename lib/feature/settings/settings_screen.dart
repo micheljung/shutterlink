@@ -11,6 +11,7 @@ import '../../data/settings_repository.dart';
 import '../../data/upload_tunnel.dart';
 import '../history/download_history_cubit.dart';
 import '../spacing.dart';
+import 'sessions_settings_section.dart';
 import 'settings_cubit.dart';
 import 'upload_settings_section.dart';
 
@@ -106,6 +107,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: cubit.setHostOverride,
           ),
           const UploadSettingsSection(),
+          const SizedBox(height: Spacing.extraLarge),
+          const SessionsSettingsSection(),
           const SizedBox(height: Spacing.extraLarge),
           Text('Download history', style: theme.textTheme.titleMedium),
           const SizedBox(height: Spacing.small),

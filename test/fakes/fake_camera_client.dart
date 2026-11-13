@@ -48,6 +48,7 @@ class FakeCameraClient implements CameraClient {
   int _chunksSent = 0;
   bool closed = false;
   DateTime? cameraTimeValue;
+  Duration? cameraLag;
 
   @override
   CameraDeviceInfo get deviceInfo => const CameraDeviceInfo(
@@ -89,7 +90,10 @@ class FakeCameraClient implements CameraClient {
   }
 
   @override
-  Future<DateTime?> cameraTime() async => cameraTimeValue;
+  Future<DateTime?> cameraTime() async {
+    final lag = cameraLag;
+    return lag == null ? cameraTimeValue : DateTime.now().subtract(lag);
+  }
 
   @override
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken}) async {

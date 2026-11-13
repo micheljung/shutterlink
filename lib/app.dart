@@ -22,6 +22,9 @@ import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
 import 'feature/live/live_screen.dart';
 import 'feature/live/live_transfer_cubit.dart';
+import 'feature/sessions/sessions_cubit.dart';
+import 'feature/sessions/sessions_dependencies.dart';
+import 'feature/sessions/sessions_upload_cubit.dart';
 import 'feature/settings/settings_cubit.dart';
 import 'feature/settings/upload_settings_cubit.dart';
 import 'feature/upload/upload_status_cubit.dart';
@@ -43,6 +46,7 @@ class AppDependencies {
     required this.ingestCoordinator,
     required this.liveService,
     required this.connectionTester,
+    required this.sessions,
   });
 
   final SettingsRepository settings;
@@ -61,6 +65,7 @@ class AppDependencies {
   final IngestCoordinator ingestCoordinator;
   final LiveService liveService;
   final ConnectionTester connectionTester;
+  final SessionsDependencies sessions;
 }
 
 class ShutterlinkApp extends StatelessWidget {
@@ -75,10 +80,16 @@ class ShutterlinkApp extends StatelessWidget {
     providers: [
       RepositoryProvider.value(value: dependencies.thumbnailCache),
       RepositoryProvider.value(value: dependencies.networkBinder),
+      RepositoryProvider.value(value: dependencies.sessions),
     ],
     child: MultiBlocProvider(
       providers: [
-        BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
+        BlocProvider(
+          create: (_) => SettingsCubit(
+            dependencies.settings,
+            credentials: dependencies.sessions.credentials,
+          )..init(),
+        ),
         BlocProvider(
           create: (_) => ConnectCubit(
             connector: dependencies.connector,
@@ -128,18 +139,76 @@ class ShutterlinkApp extends StatelessWidget {
             ),
           ),
         ),
-      ],
-      child: MaterialApp(
-        title: 'Shutterlink',
-        theme: ThemeData(colorSchemeSeed: _seedColor),
-        darkTheme: ThemeData(
-          colorSchemeSeed: _seedColor,
-          brightness: Brightness.dark,
+        BlocProvider(
+          create: (_) => SessionsCubit(
+            dependencies.sessions.repository,
+            clock: dependencies.sessions.clock,
+          ),
         ),
-        home: const _Home(),
+        BlocProvider(create: (_) => SessionsUploadCubit(dependencies.sessions)),
+      ],
+      child: _SessionsUploads(
+        child: MaterialApp(
+          title: 'Shutterlink',
+          theme: ThemeData(colorSchemeSeed: _seedColor),
+          darkTheme: ThemeData(
+            colorSchemeSeed: _seedColor,
+            brightness: Brightness.dark,
+          ),
+          home: const _Home(),
+        ),
       ),
     ),
   );
+}
+
+class _SessionsUploads extends StatefulWidget {
+  const _SessionsUploads({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_SessionsUploads> createState() => _SessionsUploadsState();
+}
+
+class _SessionsUploadsState extends State<_SessionsUploads>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final enabled = context.read<SettingsCubit>().state.sessionsEnabled;
+    if (enabled) {
+      context.read<SessionsUploadCubit>().setEnabled(enabled: enabled);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        context.read<SettingsCubit>().state.sessionsEnabled) {
+      context.read<SessionsUploadCubit>().resumed();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      BlocListener<SettingsCubit, SettingsState>(
+        listenWhen: (previous, current) =>
+            previous.sessionsEnabled != current.sessionsEnabled ||
+            previous.sessionsServerUrl != current.sessionsServerUrl ||
+            previous.sessionsConfigured != current.sessionsConfigured,
+        listener: (context, state) => context
+            .read<SessionsUploadCubit>()
+            .setEnabled(enabled: state.sessionsEnabled),
+        child: widget.child,
+      );
 }
 
 class _Home extends StatelessWidget {

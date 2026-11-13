@@ -153,6 +153,7 @@ Future<void> _pumpApp(
     File(p.join(workDirectory.path, DownloadHistoryRepository.fileName)),
   );
   final downloadedNames = downloaded.toSet();
+  final binder = NoopNetworkBinder();
   await tester.runAsync(
     () => history.record(
       cameraKeyOf(client.deviceInfo),
@@ -175,7 +176,7 @@ Future<void> _pumpApp(
             settings,
             wifiGateway: () async => null,
           ),
-          networkBinder: NoopNetworkBinder(),
+          networkBinder: binder,
           photoSaver: RecordingPhotoSaver(),
           connector: (_, _) async => client,
           thumbnailCache: _PrerenderedThumbnails(thumbnails!),
@@ -186,6 +187,11 @@ Future<void> _pumpApp(
           ingestCoordinator: upload.ingestCoordinator,
           liveService: upload.liveService,
           connectionTester: noConnectionTest,
+          sessions: testSessionsDependencies(
+            settings,
+            workDirectory,
+            upload.ingestCoordinator,
+          ),
         ),
       ),
     ),
