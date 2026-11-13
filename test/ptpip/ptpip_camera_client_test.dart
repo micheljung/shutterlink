@@ -10,6 +10,8 @@ final _eventDeadline = testPollInterval * 2;
 const _newShotHandle = 0x30;
 const _nextShotHandle = 0x31;
 const _newFolderHandle = 0x12;
+const _miscFolderHandle = 0x13;
+const _miscShotHandle = 0x32;
 const _overrunRecord = [64, 0, 0, 0, 1, 0, 0, 0];
 
 FakeObject _shot(int handle, {int parent = FakeCamera.folderHandle}) =>
@@ -501,6 +503,27 @@ void main() {
         handle: _newFolderHandle,
         format: PtpObjectFormat.association,
         filename: '101CANON',
+        parent: FakeCamera.dcimHandle,
+      ),
+      _shot(_newShotHandle, parent: _newFolderHandle),
+    ]);
+    expect(await c.newestFolderHandles(), [_newShotHandle]);
+  });
+
+  test('newestFolderHandles ignores non-DCF folders', () async {
+    final c = await start(FakeCamera());
+    camera.objects.addAll([
+      FakeObject(
+        handle: _miscFolderHandle,
+        format: PtpObjectFormat.association,
+        filename: 'CANONMSC',
+        parent: FakeCamera.dcimHandle,
+      ),
+      _shot(_miscShotHandle, parent: _miscFolderHandle),
+      FakeObject(
+        handle: _newFolderHandle,
+        format: PtpObjectFormat.association,
+        filename: '101_PANA',
         parent: FakeCamera.dcimHandle,
       ),
       _shot(_newShotHandle, parent: _newFolderHandle),

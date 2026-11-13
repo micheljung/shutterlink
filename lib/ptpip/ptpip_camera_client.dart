@@ -13,6 +13,8 @@ import 'ptp_session.dart';
 
 const _remoteModeExitTimeout = Duration(seconds: 1);
 const _dcimFolderName = 'DCIM';
+final _dcfFolderName = RegExp(r'^\d{3}[0-9A-Z_]{5}$');
+const _dcfFolderNumberLength = 3;
 
 class PtpIpCameraClient implements CameraClient {
   PtpIpCameraClient._(
@@ -179,10 +181,13 @@ class PtpIpCameraClient implements CameraClient {
       if (dcim == null) {
         continue;
       }
-      final newest = (await _folders(
-        storage,
-        dcim.handle,
-      )).sorted((a, b) => a.name.compareTo(b.name)).lastOrNull;
+      final newest = maxBy(
+        (await _folders(
+          storage,
+          dcim.handle,
+        )).where((folder) => _dcfFolderName.hasMatch(folder.name)),
+        (folder) => int.parse(folder.name.substring(0, _dcfFolderNumberLength)),
+      );
       if (newest != null) {
         handles.addAll(await _handlesIn(storage, newest.handle));
       }
