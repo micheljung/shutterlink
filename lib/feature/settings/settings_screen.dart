@@ -1,8 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/camera_host_resolver.dart';
+import '../../data/network_binder.dart';
 import '../../data/settings_repository.dart';
+import '../../data/upload_tunnel.dart';
 import '../history/download_history_cubit.dart';
 import '../spacing.dart';
 import 'settings_cubit.dart';
@@ -111,6 +117,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Clear download history'),
             ),
           ),
+          if (kDebugMode) ...[
+            const SizedBox(height: Spacing.extraLarge),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => _runTunnelTest(context),
+                child: const Text('Tunnel test'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -136,5 +152,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (confirmed ?? false) await history.clear();
+  }
+
+  Future<void> _runTunnelTest(BuildContext context) async {
+    const host = 'example.com';
+    const port = 443;
+    final stopwatch = Stopwatch()..start();
+    String report;
+    try {
+      final gateway = await const PlatformNetworkBinder().bindToWifi();
+      final tunnel = await const UploadTunnel().connect(
+        host,
+        port,
+        allowMetered: true,
+      );
+      final tunnelled = stopwatch.elapsedMilliseconds;
+      final socket = await SecureSocket.secure(tunnel.socket, host: host);
+      final secured = stopwatch.elapsedMilliseconds;
+      socket.write(
+        'GET / HTTP/1.1\r\nHost: $host\r\nConnection: close\r\n\r\n',
+      );
+      final statusLine = await socket
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .first;
+      socket.destroy();
+      report =
+          '$statusLine\n'
+          'network: ${tunnel.networkType}\n'
+          'bound gateway: $gateway\n'
+          'tunnel: $tunnelled ms, TLS: $secured ms, '
+          'total: ${stopwatch.elapsedMilliseconds} ms';
+    } catch (e) {
+      report = 'Failed after ${stopwatch.elapsedMilliseconds} ms:\n$e';
+    }
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tunnel test'),
+        content: SelectableText(report),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }

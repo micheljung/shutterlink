@@ -9,5 +9,6 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         NetworkBinder(applicationContext).register(messenger)
         RawFileSaver(applicationContext).register(messenger)
+        UploadTunnel(applicationContext).register(messenger)
     }
 }
