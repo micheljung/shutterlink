@@ -23,6 +23,28 @@ class _ScriptedClient extends FakeCameraClient {
 
   final script = <Object?>[];
   int infoCalls = 0;
+  int failingDownloads = 0;
+
+  @override
+  Future<void> download(
+    CameraObject object,
+    ChunkWriter write, {
+    int offset = 0,
+    TransferProgress? onProgress,
+    CancelToken? cancelToken,
+  }) {
+    if (failingDownloads > 0) {
+      failingDownloads--;
+      throw const FileSystemException('busy');
+    }
+    return super.download(
+      object,
+      write,
+      offset: offset,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+  }
 
   @override
   Future<CameraObject?> objectInfo(int handle) async {
@@ -68,7 +90,7 @@ void main() {
     final created = LiveIngestor(
       client: client,
       format: format,
-      baseline: baseline,
+      baseline: LiveBaseline(keys: baseline),
       history: history,
       queue: queue,
       coordinator: coordinator,
@@ -249,7 +271,7 @@ void main() {
       final created = LiveIngestor(
         client: camera,
         format: DownloadFormat.both,
-        baseline: const {},
+        baseline: LiveBaseline(keys: const {}),
         history: history,
         queue: queue,
         coordinator: coordinator,
@@ -272,12 +294,66 @@ void main() {
     expect(server.files.values.single, contentFor(jpeg));
   });
 
-  test('baseline holds the entry keys on the card', () async {
-    expect(await LiveIngestor.baselineOf(client), {
-      keyOf(old),
-      keyOf(jpeg),
-      keyOf(raw),
-    });
+  test('baseline holds the entry keys and handles on the card', () async {
+    final baseline = await LiveIngestor.baselineOf(client);
+
+    expect(baseline.keys, {keyOf(old), keyOf(jpeg), keyOf(raw)});
+    expect(baseline.resolvedHandles, {old.handle, jpeg.handle, raw.handle});
+  });
+
+  test('a failed download stays retryable', () async {
+    client.failingDownloads = 1;
+    final live = ingestor(baseline: {keyOf(old), keyOf(raw)});
+    final ingested = live.ingested.first;
+
+    client.emitAdded(jpeg.handle);
+    await settle();
+    expect(server.files, isEmpty);
+    client.emitAdded(jpeg.handle);
+
+    expect(await ingested, jpeg);
+  });
+
+  test('the rescan never asks about the baseline handles', () async {
+    final baseline = await LiveIngestor.baselineOf(client);
+    final shot = cameraObject(4, 'IMG_0002.JPG', captureDate: date);
+    LiveIngestor rescanning() {
+      final created = LiveIngestor(
+        client: client,
+        format: DownloadFormat.both,
+        baseline: baseline,
+        history: history,
+        queue: queue,
+        coordinator: coordinator,
+        rescanInterval: testRescanInterval,
+      );
+      ingestors.add(created);
+      return created..start();
+    }
+
+    final first = rescanning();
+    client.objects.add(shot);
+    await until(() => server.files.isNotEmpty);
+    await first.close();
+    rescanning();
+    await Future<void>.delayed(testRescanInterval * 3);
+
+    expect(client.infoCalls, 1);
+  });
+
+  test('close abandons the rest of a catch-up', () async {
+    final live = ingestor();
+    client.chunkGate = Completer<void>();
+    final catchUp = live.catchUp();
+    await until(() => client.requestedOffsets.isNotEmpty);
+
+    final closed = live.close();
+    client.chunkGate!.complete();
+    client.chunkGate = null;
+    await closed;
+    await catchUp;
+
+    expect(client.requestedOffsets.keys, [old.handle]);
   });
 
   test('manual download and Live of the same shot run once', () async {
