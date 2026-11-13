@@ -39,6 +39,8 @@ Optionally upload to your own WebDAV/S3/SFTP server.
 - On Android the app binds to the camera's Wi-Fi, so traffic doesn't leave over
   mobile data when the camera network has no internet.
 - A command-line probe (`bin/probe.dart`) to test the protocol from a laptop.
+- Optional [Sessions](#sessions): a private web gallery per person you
+  photograph, shared by QR code.
 
 ## Auto-upload (Android)
 
@@ -207,7 +209,8 @@ lib/
     preview/            Full-screen preview
     download/           Download planning, progress, resume
     history/            Downloaded-photo marks
-    settings/           Download format, preview quality, camera address
+    sessions/           Sessions, clock sync, attribution, QR code, upload status
+    settings/           Download format, preview quality, camera address, Sessions
 android/app/src/main/kotlin/ch/micheljung/shutterlink/
                         Wi-Fi network binding, multicast lock, CR3 saving via MediaStore
 ios/Runner/AppDelegate.swift
@@ -215,6 +218,9 @@ ios/Runner/AppDelegate.swift
 test/
   ptpip/fake_camera.dart  In-process emulated EOS camera (TCP server)
   screenshots/            Renders the README screenshots
+  e2e/                    Sessions end to end: fake camera → app → local server
+server/                 Self-hostable Sessions gallery server (Dart, shelf)
+tool/                   Wordlist generator
 docs/fdroid/            Copy of the F-Droid build recipe
 fastlane/metadata/      F-Droid store listing
 ```
@@ -224,6 +230,7 @@ fastlane/metadata/      F-Droid store listing
 ```bash
 fvm flutter test               # all tests
 fvm flutter test --coverage    # lcov report in coverage/lcov.info
+(cd server && fvm dart test)   # Sessions server
 ```
 
 The PTP/IP layer is tested against `test/ptpip/fake_camera.dart`, a real TCP
@@ -240,6 +247,51 @@ To regenerate the screenshots in `docs/screenshots/`:
 ```bash
 fvm flutter test --tags screenshots --run-skipped
 ```
+
+## Sessions
+
+Sessions mode is off by default. With it off, the app reads no credentials,
+starts no uploads and shows no Sessions UI.
+
+When it is on, you start a Session for each person you photograph. The app
+shows a QR code for `<server>/s/<code>` and a readable Session Code such as
+`apple-banana-cherry-delta`; both work offline. Photos are assigned to the
+Session that was active when they were taken, by the camera's capture time
+corrected for the camera's clock offset. Photos taken while no Session was
+active are never uploaded. The app downloads each Session's JPEGs (or the
+embedded preview of RAW-only shots) into a persistent queue and uploads them
+to your server over any network with internet access, mobile data included. The person opens the link
+to view and download their photos for 30 days.
+
+### Setup
+
+1. Run the server in [`server/`](server/README.md) behind a TLS reverse proxy
+   and give it an upload token.
+2. In the app, open Settings → Sessions, turn it on, and enter the server URL
+   (`https://`; `http://` only for `localhost`) and the upload token.
+3. Tap the QR icon on the connect or gallery screen to start a Session and show
+   its code. Tap a past Session to show its code again.
+4. On connect the app reads the camera clock. If the camera does not report its
+   time, tap **Sync clock** and take a photo, or tap **Mark now** on the
+   Sessions screen, take a photo, and confirm it on the next connect.
+
+### v1 limitations
+
+- **One global clock offset, applied retroactively.** If the camera clock
+  changes between the shoot and the next connect (manual change, DST switch on
+  the camera, battery reset), earlier photos are attributed with the new
+  offset. Connect, or do a sync shot, before changing the camera clock.
+- While the phone is connected to the camera's Wi-Fi, uploads need another
+  network with internet access, such as mobile data.
+- New photos are detected up to 30 seconds late on cameras that do not report
+  new shots, and not at all while Live transfer owns the camera; they are
+  picked up once Live hands the camera back.
+- Sessions whose server copy expired cannot be resumed; a new Session is
+  offered instead.
+- An open Session only takes photos up to 2 seconds past the phone's current
+  time. With a wrong offset, a photo whose corrected time lies in the future is
+  held back, and once that time passes it goes to whichever Session is open
+  then. The offset is refreshed on every connect.
 
 ## Where files are saved
 
@@ -276,6 +328,9 @@ fvm flutter test
   [pairing and initializing a connection](https://julianschroden.com/post/2023-05-10-pairing-and-initializing-a-ptp-ip-connection-with-a-canon-eos-camera/).
 - [petabyt/vcam](https://github.com/petabyt/vcam), a virtual PTP camera.
 - [lclevy/miniPtp](https://github.com/lclevy/miniPtp), a minimal PTP/IP client for Canon cameras.
+- Session Codes use the [EFF large wordlist](https://www.eff.org/dice) by the
+  Electronic Frontier Foundation, licensed under
+  [CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/).
 
 ## License
 
