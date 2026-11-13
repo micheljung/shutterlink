@@ -74,6 +74,18 @@ class UploadTunnel(context: Context) {
         }
     }
 
+    fun dispose() {
+        mainThread.removeCallbacks(releaseCellular)
+        synchronized(this) {
+            statusCallback?.let { connectivity.unregisterNetworkCallback(it) }
+            statusCallback = null
+            cellularCallback?.let { connectivity.unregisterNetworkCallback(it) }
+            cellularCallback = null
+            cellular.cancel(false)
+        }
+        executor.shutdownNow()
+    }
+
     private fun open(host: String, port: Int, allowMetered: Boolean): Map<String, Any> {
         val cleanup = Cleanup()
         mainThread.removeCallbacks(releaseCellular)
@@ -85,9 +97,7 @@ class UploadTunnel(context: Context) {
         }
         try {
             val network = selectNetwork(allowMetered)
-            val address = network.getAllByName(host).first()
-            val upstream = network.socketFactory.createSocket().also(cleanup::add)
-            upstream.connect(InetSocketAddress(address, port), TIMEOUT_MS)
+            val upstream = connect(network, host, port).also(cleanup::add)
             val server = ServerSocket(0, 1, InetAddress.getByName(LOOPBACK)).also(cleanup::add)
             server.soTimeout = TIMEOUT_MS
             val token = ByteArray(TOKEN_BYTES).also(random::nextBytes).toHex()
@@ -103,16 +113,36 @@ class UploadTunnel(context: Context) {
         }
     }
 
+    private fun connect(network: Network, host: String, port: Int): Socket {
+        var failure: IOException? = null
+        for (address in network.getAllByName(host)) {
+            val socket = network.socketFactory.createSocket()
+            try {
+                socket.connect(InetSocketAddress(address, port), TIMEOUT_MS)
+                return socket
+            } catch (e: IOException) {
+                socket.close()
+                failure = failure?.apply { addSuppressed(e) } ?: e
+            }
+        }
+        throw failure ?: IOException("No address for $host")
+    }
+
     private fun selectNetwork(allowMetered: Boolean): Network {
         @Suppress("DEPRECATION")
-        connectivity.allNetworks.firstOrNull { network ->
-            connectivity.getNetworkCapabilities(network)?.let {
-                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
-                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-            } == true
-        }?.let { return it }
+        val validated = connectivity.allNetworks.mapNotNull { network ->
+            connectivity.getNetworkCapabilities(network)
+                ?.takeIf {
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                        it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                }
+                ?.let { network to it }
+        }
+        validated.firstOrNull { (_, capabilities) ->
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        }?.let { return it.first }
         if (!allowMetered) throw NoNetworkException("No unmetered internet network")
+        validated.firstOrNull()?.let { return it.first }
         return try {
             holdCellular().get(TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {
