@@ -175,7 +175,11 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
       return;
     }
     _connect.takeBack(null, owner: bindingOwner);
-    await client?.close();
+    try {
+      await client?.close();
+    } on Exception {
+      // The connection is gone either way; the binding must still go.
+    }
     await _release();
   }
 
@@ -194,9 +198,12 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     final previous = _client;
     _client = client;
     if (previous != null && previous != client) unawaited(previous.close());
+    final known = _baseline;
     final LiveBaseline baseline;
     try {
-      baseline = _baseline ??= await LiveIngestor.baselineOf(client);
+      baseline = known == null
+          ? _baseline = await LiveIngestor.baselineOf(client)
+          : LiveBaseline(keys: known.keys);
     } on Exception {
       if (_client != client) return false;
       _client = null;
@@ -207,6 +214,11 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     unawaited(_ingestor?.close());
     final ingestor = _ingestor = _ingestorFactory(client, baseline);
     await _ingestedSubscription?.cancel();
+    _ingestedSubscription = null;
+    if (_client != client) {
+      unawaited(ingestor.close());
+      return false;
+    }
     _ingestedSubscription = ingestor.ingested.listen((_) {
       _emit(_withIngested(state.ingested + 1));
       _report();
@@ -283,7 +295,7 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     } finally {
       if (_reconnecting == session) _reconnecting = null;
     }
-    if (!attached) _scheduleReconnect(session);
+    if (!attached || _client == null) _scheduleReconnect(session);
   }
 
   Future<bool> _reconnect(int session) async {

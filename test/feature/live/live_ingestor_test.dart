@@ -24,6 +24,13 @@ class _ScriptedClient extends FakeCameraClient {
   final script = <Object?>[];
   int infoCalls = 0;
   int failingDownloads = 0;
+  int rescans = 0;
+
+  @override
+  Future<List<int>> newestFolderHandles() {
+    rescans++;
+    return super.newestFolderHandles();
+  }
 
   @override
   Future<void> download(
@@ -298,7 +305,7 @@ void main() {
     final baseline = await LiveIngestor.baselineOf(client);
 
     expect(baseline.keys, {keyOf(old), keyOf(jpeg), keyOf(raw)});
-    expect(baseline.resolvedHandles, {old.handle, jpeg.handle, raw.handle});
+    expect(baseline.handles, {old.handle, jpeg.handle, raw.handle});
   });
 
   test('a failed download stays retryable', () async {
@@ -335,10 +342,39 @@ void main() {
     client.objects.add(shot);
     await until(() => server.files.isNotEmpty);
     await first.close();
-    rescanning();
+    await rescanning().catchUp();
     await Future<void>.delayed(testRescanInterval * 3);
 
     expect(client.infoCalls, 1);
+  });
+
+  test('a closed ingestor never starts', () async {
+    final live = LiveIngestor(
+      client: client,
+      format: DownloadFormat.both,
+      baseline: LiveBaseline(keys: const {}),
+      history: history,
+      queue: queue,
+      coordinator: coordinator,
+      rescanInterval: testRescanInterval,
+    );
+    ingestors.add(live);
+    await live.close();
+
+    live.start();
+    await Future<void>.delayed(testRescanInterval * 3);
+
+    expect(client.rescans, 0);
+  });
+
+  test('the catch-up resolves the handles it lists', () async {
+    ingestor(
+      baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)},
+      rescanInterval: testRescanInterval,
+    ).catchUp();
+    await until(() => client.rescans > 1);
+
+    expect(client.infoCalls, 0);
   });
 
   test('close abandons the rest of a catch-up', () async {

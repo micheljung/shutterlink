@@ -9,15 +9,14 @@ import 'ingest_coordinator.dart';
 
 /// The card as it was when Live started.
 class LiveBaseline {
-  LiveBaseline({required this.keys, Iterable<int> handles = const []})
-    : resolvedHandles = {...handles};
+  const LiveBaseline({required this.keys, this.handles = const {}});
 
   /// Entry keys of the photos on the card; they are never ingested.
   final Set<String> keys;
 
-  /// Handles that need no further look; shared across reconnects so the
-  /// rescan only asks the camera about new ones.
-  final Set<int> resolvedHandles;
+  /// Handles of those photos, valid only in the PTP session that listed
+  /// them since a camera may renumber objects per session.
+  final Set<int> handles;
 }
 
 /// Turns new camera objects into gallery copies and queued uploads.
@@ -33,7 +32,7 @@ class LiveIngestor {
     this._infoRetryDelay = defaultInfoRetryDelay,
     this._rescanInterval = defaultRescanInterval,
   }) : _cameraKey = cameraKeyOf(_client.deviceInfo),
-       _resolvedHandles = _baseline.resolvedHandles;
+       _resolvedHandles = {..._baseline.handles};
 
   static const defaultInfoRetryDelay = Duration(milliseconds: 500);
   static const defaultRescanInterval = Duration(seconds: 2);
@@ -68,14 +67,14 @@ class LiveIngestor {
         for (final object in photos)
           DownloadHistoryRepository.entryKey(cameraKey, object),
       },
-      handles: photos.map((object) => object.handle),
+      handles: {for (final object in photos) object.handle},
     );
   }
 
   /// Follows the camera's object-added events, and periodically diffs the
   /// newest folder because not every body reports new shots.
   void start() {
-    if (_subscription != null) return;
+    if (_closed || _subscription != null) return;
     _subscription = _client.addedObjects.listen(
       (handle) => _enqueue(() => _onAdded(handle)),
     );
@@ -96,11 +95,12 @@ class LiveIngestor {
     });
   }
 
-  /// Ingests what was missed while the camera was unreachable.
+  /// Ingests what was missed while the camera was unreachable, and learns
+  /// this session's handles so the rescan skips them.
   Future<void> catchUp() => _enqueue(() async {
     for (final object in await _client.listPhotos()) {
       if (_closed) return;
-      await _ingest(object);
+      if (await _ingest(object)) _resolvedHandles.add(object.handle);
     }
   });
 
