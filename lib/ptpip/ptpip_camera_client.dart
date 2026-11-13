@@ -2,13 +2,17 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
+
 import 'camera_client.dart';
 import 'canon_eos.dart';
+import 'canon_events.dart';
 import 'connection.dart';
 import 'dataset.dart';
 import 'ptp_session.dart';
 
 const _remoteModeExitTimeout = Duration(seconds: 1);
+const _dcimFolderName = 'DCIM';
 
 class PtpIpCameraClient implements CameraClient {
   PtpIpCameraClient._(
@@ -27,6 +31,7 @@ class PtpIpCameraClient implements CameraClient {
   final void Function(Uint8List data)? _onEventData;
   Timer? _pollTimer;
   bool _pollInFlight = false;
+  final _addedObjects = StreamController<int>.broadcast();
 
   @override
   final CameraDeviceInfo deviceInfo;
@@ -89,6 +94,7 @@ class PtpIpCameraClient implements CameraClient {
       if (supported.contains(CanonEosOperation.getEvent)) {
         client._startPolling(eventPollInterval);
       }
+      connection.disconnected.then((_) => client._closeAddedObjects());
       return client;
     } catch (_) {
       connection.close();
@@ -98,6 +104,17 @@ class PtpIpCameraClient implements CameraClient {
 
   @override
   Future<void> get disconnected => _connection.disconnected;
+
+  /// Handles of objects the camera reports as new. Transfer requests count as
+  /// well: without capture-to-PC the shot still lands on the card.
+  @override
+  Stream<int> get addedObjects => _addedObjects.stream;
+
+  void _closeAddedObjects() {
+    if (!_addedObjects.isClosed) {
+      _addedObjects.close();
+    }
+  }
 
   void _startPolling(Duration interval) {
     _pollTimer = Timer.periodic(interval, (_) => _poll());
@@ -112,9 +129,23 @@ class PtpIpCameraClient implements CameraClient {
     try {
       final result = await _session.execute(CanonEosOperation.getEvent);
       _onEventData?.call(result.data);
+      for (final event in parseCanonEvents(result.data)) {
+        final handle = switch (event) {
+          CanonObjectAdded(:final format)
+              when format == PtpObjectFormat.association =>
+            null,
+          CanonObjectAdded(:final handle) => handle,
+          CanonTransferRequested(:final handle) => handle,
+        };
+        if (handle != null && !_addedObjects.isClosed) {
+          _addedObjects.add(handle);
+        }
+      }
     } on PtpResponseException {
       return;
     } on CameraDisconnectedException {
+      return;
+    } on PtpIpProtocolException {
       return;
     } finally {
       _pollInFlight = false;
@@ -134,19 +165,64 @@ class PtpIpCameraClient implements CameraClient {
     return photos;
   }
 
+  @override
+  Future<List<int>> newestFolderHandles() async {
+    final storages = parseU32Array(
+      (await _session.execute(PtpOperation.getStorageIds)).data,
+    );
+    final handles = <int>[];
+    for (final storage in storages) {
+      final dcim = (await _folders(
+        storage,
+        PtpHandle.root,
+      )).firstWhereOrNull((folder) => folder.name == _dcimFolderName);
+      if (dcim == null) {
+        continue;
+      }
+      final newest = (await _folders(
+        storage,
+        dcim.handle,
+      )).sorted((a, b) => a.name.compareTo(b.name)).lastOrNull;
+      if (newest != null) {
+        handles.addAll(await _handlesIn(storage, newest.handle));
+      }
+    }
+    return handles;
+  }
+
+  Future<List<int>> _handlesIn(int storage, int parent) async => parseU32Array(
+    (await _session.execute(
+      PtpOperation.getObjectHandles,
+      params: [storage, PtpHandle.anyFormat, parent],
+    )).data,
+  );
+
+  Future<List<({int handle, String name})>> _folders(
+    int storage,
+    int parent,
+  ) async {
+    final folders = <({int handle, String name})>[];
+    for (final handle in await _handlesIn(storage, parent)) {
+      final info = PtpObjectInfo.parse(
+        (await _session.execute(
+          PtpOperation.getObjectInfo,
+          params: [handle],
+        )).data,
+      );
+      if (info.objectFormat == PtpObjectFormat.association) {
+        folders.add((handle: handle, name: info.filename));
+      }
+    }
+    return folders;
+  }
+
   Future<void> _collect(
     int storage,
     int parent,
     List<CameraObject> photos,
     Set<int> visited,
   ) async {
-    final handles = parseU32Array(
-      (await _session.execute(
-        PtpOperation.getObjectHandles,
-        params: [storage, PtpHandle.anyFormat, parent],
-      )).data,
-    );
-    for (final handle in handles) {
+    for (final handle in await _handlesIn(storage, parent)) {
       if (!visited.add(handle)) {
         continue;
       }
@@ -257,6 +333,7 @@ class PtpIpCameraClient implements CameraClient {
   @override
   Future<void> close() async {
     _pollTimer?.cancel();
+    _closeAddedObjects();
     if (!_connection.isConnected) {
       return;
     }

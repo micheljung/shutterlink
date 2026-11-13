@@ -126,7 +126,12 @@ abstract interface class CameraClient {
 
   Future<void> get disconnected;
 
+  Stream<int> get addedObjects;
+
   Future<List<CameraObject>> listPhotos();
+
+  /// Handles in the newest DCIM folder of every storage, where new shots land.
+  Future<List<int>> newestFolderHandles();
 
   Future<CameraObject?> objectInfo(int handle);
 

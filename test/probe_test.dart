@@ -7,6 +7,8 @@ import 'package:shutterlink/ptpip/ptpip.dart';
 import '../bin/probe.dart';
 import 'ptpip/fake_camera.dart';
 
+const _unknownEventRecord = [12, 0, 0, 0, 0x89, 0xC1, 0, 0, 1, 2, 3, 4];
+
 void main() {
   late FakeCamera camera;
   late Directory temp;
@@ -113,16 +115,19 @@ void main() {
     '--watch-events logs event records and highlights new objects',
     () async {
       await camera.stop();
-      final records = ByteData(20)
-        ..setUint32(0, 12, Endian.little)
-        ..setUint32(4, 0xC181, Endian.little)
-        ..setUint32(8, 0xDEADBEEF, Endian.little)
-        ..setUint32(12, 8, Endian.little)
-        ..setUint32(16, 0xC186, Endian.little);
-      camera = FakeCamera(
-        pairedGuids: [pairedGuid],
-        eventRecords: records.buffer.asUint8List(),
+      final shot = FakeObject(
+        handle: 0xDEADBEEF,
+        format: PtpObjectFormat.exifJpeg,
+        filename: 'IMG_0042.JPG',
+        parent: FakeCamera.folderHandle,
+        content: Uint8List(3000),
       );
+      final records = Uint8List.fromList([
+        ...objectAddedRecord(shot),
+        ...transferRequestRecord(shot),
+        ..._unknownEventRecord,
+      ]);
+      camera = FakeCamera(pairedGuids: [pairedGuid], eventRecords: records);
       await camera.start();
       await guidFile.writeAsString(hex(pairedGuid));
       final out = StringBuffer();
@@ -136,12 +141,21 @@ void main() {
       expect(code, exitOk, reason: text);
       expect(text, contains('initial dump'));
       expect(text, contains('poll 2'));
-      expect(text, contains('>>> ObjectAddedEx >>> record 0xc181 size 12'));
+      expect(
+        text,
+        contains(
+          '>>> ObjectAdded handle 0xdeadbeef storage 0x20001 format 0x3801 '
+          'size 3000 parent 0x11 >>> record 0xc181 size 53',
+        ),
+      );
       expect(text, contains('ef be ad de'));
       expect(
         text,
-        contains('>>> RequestObjectTransfer >>> record 0xc186 size 8'),
+        contains(
+          '>>> TransferRequested handle 0xdeadbeef >>> record 0xc186 size 41',
+        ),
       );
+      expect(text, contains(' record 0xc189 size 12'));
       expect(text, isNot(contains('Thumbnail')));
     },
   );
@@ -161,7 +175,7 @@ void main() {
       watchPolls: 0,
       watchInterval: const Duration(milliseconds: 20),
     );
-    expect(out.toString(), contains('malformed record'));
+    expect(out.toString(), contains('malformed: Malformed Canon event at 0'));
   });
 
   test('a busy camera is reported', () async {

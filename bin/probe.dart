@@ -21,17 +21,6 @@ const _microsecondsPerSecond = 1000000;
 const _hexRadix = 16;
 const _hexDigitsPerByte = 2;
 const _packetTypeOffset = 4;
-const _eventHeaderSize = 8;
-const _eventTerminatorType = 0;
-const _eventObjectAddedEx = 0xC181;
-const _eventObjectAddedEx64 = 0xC1A7;
-const _eventRequestObjectTransfer = 0xC186;
-const _highlightedEvents = {
-  _eventObjectAddedEx: 'ObjectAddedEx',
-  _eventObjectAddedEx64: 'ObjectAddedEx64',
-  _eventRequestObjectTransfer: 'RequestObjectTransfer',
-};
-
 const pairingInstructions = '''
 The camera does not know this computer yet. Pair it once:
   1. On the camera open MENU > Wireless communication settings > Wi-Fi function.
@@ -262,32 +251,30 @@ class _EventWatcher {
 }
 
 void _logRecords(StringSink out, String stamp, Uint8List data) {
-  final view = ByteData.sublistView(data);
-  var offset = 0;
-  while (offset + _eventHeaderSize <= data.length) {
-    final size = view.getUint32(offset, Endian.little);
-    final type = view.getUint32(offset + 4, Endian.little);
-    if (type == _eventTerminatorType && size == _eventHeaderSize) {
-      return;
-    }
-    final end = offset + size;
-    if (size < _eventHeaderSize || end > data.length) {
-      out.writeln(
-        '$stamp malformed record at $offset (size $size):\n'
-        '${hexDump(Uint8List.sublistView(data, offset))}',
-      );
-      return;
-    }
-    final label = _highlightedEvents[type];
+  final List<CanonEventRecord> records;
+  try {
+    records = canonEventRecords(data);
+  } on PtpIpProtocolException catch (error) {
+    out.writeln('$stamp malformed: ${error.message}\n${hexDump(data)}');
+    return;
+  }
+  for (final record in records) {
+    final event = switch (parseCanonEvent(record)) {
+      final CanonObjectAdded added =>
+        '>>> ObjectAdded handle ${_hex(added.handle)} '
+            'storage ${_hex(added.storageId)} format ${_hex(added.format)} '
+            'size ${added.size} parent ${_hex(added.parent)} >>> ',
+      CanonTransferRequested(:final handle) =>
+        '>>> TransferRequested handle ${_hex(handle)} >>> ',
+      null => '',
+    };
     out
       ..writeln(
-        '$stamp ${label == null ? '' : '>>> $label >>> '}'
-        'record ${_hex(type)} size $size',
+        '$stamp ${event}record ${_hex(record.type)} size ${record.bytes.length}',
       )
       ..write(
-        hexDump(Uint8List.sublistView(data, offset + _eventHeaderSize, end)),
+        hexDump(Uint8List.sublistView(record.bytes, canonEventHeaderSize)),
       );
-    offset = end;
   }
 }
 

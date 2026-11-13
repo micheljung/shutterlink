@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:equatable/equatable.dart';
-
 import '../../data/download_history.dart';
 import '../../data/settings_repository.dart';
 import '../../ptpip/camera_client.dart';
@@ -9,31 +7,10 @@ import '../../upload/upload_queue.dart';
 import '../download/object_fetcher.dart';
 import 'ingest_coordinator.dart';
 
-/// A camera event announcing a new object.
-class AddedObject extends Equatable {
-  const AddedObject(this.handle, {this.format});
-
-  /// PTP association (folder), created alongside new directories.
-  static const associationFormat = 0x3001;
-
-  final int handle;
-
-  /// The PTP object format, when the event carries it.
-  final int? format;
-
-  @override
-  List<Object?> get props => [handle, format];
-}
-
-abstract interface class AddedObjectSource {
-  Stream<AddedObject> get addedObjects;
-}
-
 /// Turns new camera objects into gallery copies and queued uploads.
 class LiveIngestor {
   LiveIngestor({
     required this._client,
-    required this._source,
     required this._format,
     required this._baseline,
     required this._history,
@@ -41,13 +18,14 @@ class LiveIngestor {
     required this._coordinator,
     this._fetcher = const ObjectFetcher(),
     this._infoRetryDelay = defaultInfoRetryDelay,
+    this._rescanInterval = defaultRescanInterval,
   }) : _cameraKey = cameraKeyOf(_client.deviceInfo);
 
   static const defaultInfoRetryDelay = Duration(milliseconds: 500);
+  static const defaultRescanInterval = Duration(seconds: 5);
   static const infoRetries = 3;
 
   final CameraClient _client;
-  final AddedObjectSource _source;
   final DownloadFormat _format;
   final Set<String> _baseline;
   final DownloadHistoryRepository _history;
@@ -55,9 +33,13 @@ class LiveIngestor {
   final IngestCoordinator _coordinator;
   final ObjectFetcher _fetcher;
   final Duration _infoRetryDelay;
+  final Duration _rescanInterval;
   final String _cameraKey;
   final _ingested = StreamController<CameraObject>.broadcast();
-  StreamSubscription<AddedObject>? _subscription;
+  final _resolvedHandles = <int>{};
+  StreamSubscription<int>? _subscription;
+  Timer? _rescanTimer;
+  bool _rescanQueued = false;
   Future<void> _pending = Future.value();
 
   /// Objects saved to the gallery and queued for upload.
@@ -73,10 +55,27 @@ class LiveIngestor {
     };
   }
 
+  /// Follows the camera's object-added events, and periodically diffs the
+  /// newest folder because not every body reports new shots.
   void start() {
-    _subscription ??= _source.addedObjects.listen(
-      (added) => _enqueue(() => _onAdded(added)),
+    if (_subscription != null) return;
+    _subscription = _client.addedObjects.listen(
+      (handle) => _enqueue(() => _onAdded(handle)),
     );
+    final timer = Timer.periodic(_rescanInterval, (_) => _rescan());
+    _rescanTimer = timer;
+    _client.disconnected.then((_) => timer.cancel());
+  }
+
+  void _rescan() {
+    if (_rescanQueued) return;
+    _rescanQueued = true;
+    _enqueue(() async {
+      _rescanQueued = false;
+      for (final handle in await _client.newestFolderHandles()) {
+        await _onAdded(handle);
+      }
+    });
   }
 
   /// Ingests what was missed while the camera was unreachable.
@@ -87,6 +86,7 @@ class LiveIngestor {
   });
 
   Future<void> close() async {
+    _rescanTimer?.cancel();
     await _subscription?.cancel();
     await _pending;
     await _ingested.close();
@@ -98,21 +98,22 @@ class LiveIngestor {
     return next;
   }
 
-  Future<void> _onAdded(AddedObject added) async {
-    if (added.format == AddedObject.associationFormat) return;
-    final object = await _objectInfo(added.handle);
+  Future<void> _onAdded(int handle) async {
+    if (_resolvedHandles.contains(handle)) return;
+    final object = await _objectInfo(handle);
     if (object != null) await _ingest(object);
   }
 
   /// Retries while the camera is still writing the file. Gives up silently;
-  /// the reconnect catch-up picks the file up later.
+  /// the next rescan or the reconnect catch-up picks the file up later.
   Future<CameraObject?> _objectInfo(int handle) async {
     for (var attempt = 0; attempt <= infoRetries; attempt++) {
       if (attempt > 0) await Future<void>.delayed(_infoRetryDelay);
       try {
         final object = await _client.objectInfo(handle);
-        if (object == null) return null;
-        if (object.size > 0) return object;
+        if (object != null && object.size == 0) continue;
+        _resolvedHandles.add(handle);
+        return object;
       } on CameraDisconnectedException {
         return null;
       } on Exception {

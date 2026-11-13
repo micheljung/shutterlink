@@ -17,13 +17,6 @@ import 'package:shutterlink/upload/upload_queue.dart';
 import '../../fakes/fake_camera_client.dart';
 import '../../upload/upload_fakes.dart';
 
-class _Source implements AddedObjectSource {
-  final controller = StreamController<AddedObject>();
-
-  @override
-  Stream<AddedObject> get addedObjects => controller.stream;
-}
-
 /// Answers objectInfo from a script before falling back to the real objects.
 class _ScriptedClient extends FakeCameraClient {
   _ScriptedClient(super.objects);
@@ -41,6 +34,9 @@ class _ScriptedClient extends FakeCameraClient {
   }
 }
 
+const noRescan = Duration(days: 1);
+const testRescanInterval = Duration(milliseconds: 20);
+
 void main() {
   const destination = Destination(
     type: DestinationType.webdav,
@@ -57,7 +53,6 @@ void main() {
   late DownloadHistoryRepository history;
   late IngestCoordinator coordinator;
   late UploadQueue queue;
-  late _Source source;
   late _ScriptedClient client;
   late List<LiveIngestor> ingestors;
 
@@ -68,16 +63,17 @@ void main() {
   LiveIngestor ingestor({
     DownloadFormat format = DownloadFormat.both,
     Set<String> baseline = const {},
+    Duration rescanInterval = noRescan,
   }) {
     final created = LiveIngestor(
       client: client,
-      source: source,
       format: format,
       baseline: baseline,
       history: history,
       queue: queue,
       coordinator: coordinator,
       infoRetryDelay: Duration.zero,
+      rescanInterval: rescanInterval,
     );
     ingestors.add(created);
     return created..start();
@@ -104,7 +100,6 @@ void main() {
       destination: destination,
     );
     await queue.start();
-    source = _Source();
     client = _ScriptedClient([old, jpeg, raw]);
     ingestors = [];
   });
@@ -122,7 +117,7 @@ void main() {
     final live = ingestor();
     final ingested = live.ingested.first;
 
-    source.controller.add(const AddedObject(1));
+    client.emitAdded(1);
 
     expect(await ingested, jpeg);
     await settle();
@@ -132,23 +127,25 @@ void main() {
     expect(await history.contains(cameraKey, jpeg), isTrue);
   });
 
-  test('skips folders, the baseline, history, filtered kinds', () async {
-    await history.record(cameraKey, [raw]);
-    client.objects.add(cameraObject(4, 'IMG_0002.CR3'));
-    ingestor(format: DownloadFormat.raw, baseline: {keyOf(old)});
+  test(
+    'skips the baseline, history, filtered kinds, unknown handles',
+    () async {
+      await history.record(cameraKey, [raw]);
+      client.objects.add(cameraObject(4, 'IMG_0002.CR3'));
+      ingestor(format: DownloadFormat.raw, baseline: {keyOf(old)});
 
-    source.controller
-      ..add(const AddedObject(9, format: AddedObject.associationFormat))
-      ..add(const AddedObject(3))
-      ..add(const AddedObject(1))
-      ..add(const AddedObject(2))
-      ..add(const AddedObject(99));
-    await settle();
+      client
+        ..emitAdded(3)
+        ..emitAdded(1)
+        ..emitAdded(2)
+        ..emitAdded(99);
+      await settle();
 
-    expect(server.files, isEmpty);
-    expect(client.requestedOffsets, isEmpty);
-    expect(client.infoCalls, 4);
-  });
+      expect(server.files, isEmpty);
+      expect(client.requestedOffsets, isEmpty);
+      expect(client.infoCalls, 4);
+    },
+  );
 
   test('waits while the camera is still writing the file', () async {
     client.script.addAll([
@@ -157,7 +154,7 @@ void main() {
     ]);
     ingestor();
 
-    source.controller.add(const AddedObject(1));
+    client.emitAdded(1);
     await until(() => server.files.isNotEmpty);
 
     expect(client.infoCalls, 3);
@@ -169,7 +166,7 @@ void main() {
     );
     final live = ingestor(baseline: {keyOf(old)});
 
-    source.controller.add(const AddedObject(1));
+    client.emitAdded(1);
     await settle();
     expect(server.files, isEmpty);
     expect(client.infoCalls, LiveIngestor.infoRetries + 1);
@@ -186,7 +183,7 @@ void main() {
     client.script.add(const CameraDisconnectedException());
     final live = ingestor(baseline: {keyOf(old), keyOf(raw)});
 
-    source.controller.add(const AddedObject(1));
+    client.emitAdded(1);
     await settle();
     expect(client.infoCalls, 1);
 
@@ -195,16 +192,68 @@ void main() {
     expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
   });
 
+  test('the rescan finds shots the camera never announced', () async {
+    final shot = cameraObject(4, 'IMG_0002.JPG', captureDate: date);
+    ingestor(
+      baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)},
+      rescanInterval: testRescanInterval,
+    );
+
+    client.objects.add(shot);
+    await until(() => server.files.isNotEmpty);
+
+    expect(server.files.keys, ['2026-11-13/IMG_0002.JPG']);
+    expect(client.requestedOffsets.keys, [shot.handle]);
+  });
+
+  test('the rescan asks for each handle once', () async {
+    ingestor(
+      baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)},
+      rescanInterval: testRescanInterval,
+    );
+    await until(() => client.infoCalls == client.objects.length);
+    await Future<void>.delayed(testRescanInterval * 3);
+
+    client.emitAdded(jpeg.handle);
+    await settle();
+
+    expect(client.infoCalls, client.objects.length);
+    expect(server.files, isEmpty);
+  });
+
+  test('the rescan retries a handle an event gave up on', () async {
+    client.script.addAll(
+      List.filled(LiveIngestor.infoRetries + 1, Exception('busy')),
+    );
+    ingestor(
+      baseline: {keyOf(old), keyOf(raw)},
+      rescanInterval: testRescanInterval,
+    );
+
+    client.emitAdded(jpeg.handle);
+    await until(() => server.files.isNotEmpty);
+
+    expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
+  });
+
+  test('the rescan stops once the camera disconnects', () async {
+    ingestor(rescanInterval: testRescanInterval);
+    client.simulateDisconnect();
+    await Future<void>.delayed(testRescanInterval * 3);
+
+    expect(client.infoCalls, 0);
+  });
+
   test('an interrupted download resumes in the catch-up', () async {
     LiveIngestor direct(CameraClient camera) {
       final created = LiveIngestor(
         client: camera,
-        source: source,
         format: DownloadFormat.both,
         baseline: const {},
         history: history,
         queue: queue,
         coordinator: coordinator,
+        rescanInterval: noRescan,
       );
       ingestors.add(created);
       return created;
@@ -242,7 +291,7 @@ void main() {
       uploadQueue: queue,
     );
     ingestor(format: DownloadFormat.jpeg);
-    source.controller.add(const AddedObject(1));
+    client.emitAdded(1);
     await until(() => coordinator.isInFlight(keyOf(jpeg)));
 
     final manual = cubit.start(

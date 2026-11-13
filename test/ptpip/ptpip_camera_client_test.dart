@@ -6,6 +6,20 @@ import 'package:shutterlink/ptpip/ptpip.dart';
 import 'fake_camera.dart';
 
 const _detectionDeadline = Duration(seconds: 5);
+final _eventDeadline = testPollInterval * 2;
+const _newShotHandle = 0x30;
+const _nextShotHandle = 0x31;
+const _newFolderHandle = 0x12;
+const _overrunRecord = [64, 0, 0, 0, 1, 0, 0, 0];
+
+FakeObject _shot(int handle, {int parent = FakeCamera.folderHandle}) =>
+    FakeObject(
+      handle: handle,
+      format: PtpObjectFormat.exifJpeg,
+      filename: 'IMG_${handle.toRadixString(16)}.JPG',
+      parent: parent,
+      content: patternBytes(10, seed: handle),
+    );
 
 void main() {
   late FakeCamera camera;
@@ -395,5 +409,107 @@ void main() {
     expect(await listing, hasLength(4));
     expect(builder.takeBytes(), contentOf(FakeCamera.largeJpegHandle));
     expect(camera.maxConcurrentRequests, 1);
+  });
+
+  test('a new object on the camera is announced within two polls', () async {
+    final c = await start(FakeCamera());
+    final added = c.addedObjects.first.timeout(_eventDeadline);
+
+    camera.addObject(_shot(_newShotHandle));
+
+    expect(await added, _newShotHandle);
+  });
+
+  test(
+    '64-bit adds and transfer requests are announced, folders not',
+    () async {
+      final c = await start(FakeCamera());
+      final handles = <int>[];
+      c.addedObjects.listen(handles.add);
+
+      camera
+        ..addObject(
+          FakeObject(
+            handle: _newFolderHandle,
+            format: PtpObjectFormat.association,
+            filename: '101CANON',
+            parent: FakeCamera.dcimHandle,
+          ),
+        )
+        ..addObject(_shot(_newShotHandle), sixtyFourBit: true)
+        ..queueEventRecord(transferRequestRecord(_shot(_nextShotHandle)));
+      await Future<void>.delayed(_eventDeadline);
+
+      expect(handles, [_newShotHandle, _nextShotHandle]);
+    },
+  );
+
+  test('the initial event dump is not announced', () async {
+    final c = await start(
+      FakeCamera(initialDump: objectAddedRecord(_shot(FakeCamera.jpegHandle))),
+    );
+    final handles = <int>[];
+    c.addedObjects.listen(handles.add);
+    await Future<void>.delayed(_eventDeadline);
+
+    expect(camera.getEventCount, greaterThan(1));
+    expect(handles, isEmpty);
+  });
+
+  test('malformed event data is dropped and polling goes on', () async {
+    final c = await start(
+      FakeCamera(eventDataOverride: Uint8List.fromList(_overrunRecord)),
+    );
+    final handles = <int>[];
+    c.addedObjects.listen(handles.add);
+    camera.queueEventRecord(objectAddedRecord(_shot(_newShotHandle)));
+    final polls = camera.getEventCount;
+    await Future<void>.delayed(_eventDeadline);
+
+    expect(camera.getEventCount, greaterThan(polls));
+    expect(handles, isEmpty);
+    expect(await c.listPhotos(), isNotEmpty);
+
+    camera.eventDataOverride = null;
+    await Future<void>.delayed(_eventDeadline);
+    expect(handles, [_newShotHandle]);
+  });
+
+  test('addedObjects closes on disconnect and on close', () async {
+    final c = await start(FakeCamera());
+    final dropped = expectLater(c.addedObjects, emitsDone);
+    camera.dropConnection();
+    await dropped;
+
+    final other = await connectTo(camera);
+    final closed = expectLater(other.addedObjects, emitsDone);
+    await other.close();
+    await closed;
+  });
+
+  test('newestFolderHandles lists the newest DCIM folder', () async {
+    final c = await start(FakeCamera());
+    expect(await c.newestFolderHandles(), [
+      FakeCamera.jpegHandle,
+      FakeCamera.rawHandle,
+      FakeCamera.videoHandle,
+      FakeCamera.largeJpegHandle,
+    ]);
+
+    camera.objects.addAll([
+      FakeObject(
+        handle: _newFolderHandle,
+        format: PtpObjectFormat.association,
+        filename: '101CANON',
+        parent: FakeCamera.dcimHandle,
+      ),
+      _shot(_newShotHandle, parent: _newFolderHandle),
+    ]);
+    expect(await c.newestFolderHandles(), [_newShotHandle]);
+  });
+
+  test('newestFolderHandles is empty without a DCIM folder', () async {
+    final c = await start(FakeCamera(objects: [_shot(_newShotHandle)]));
+    expect(await c.newestFolderHandles(), isEmpty);
   });
 }
