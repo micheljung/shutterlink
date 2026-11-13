@@ -2,7 +2,6 @@ package ch.micheljung.shutterlink
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import io.flutter.plugin.common.BinaryMessenger
@@ -16,6 +15,11 @@ class LiveService(private val context: Context) {
 
     fun register(messenger: BinaryMessenger) {
         channel = MethodChannel(messenger, CHANNEL).apply { setMethodCallHandler(::handle) }
+    }
+
+    fun dispose() {
+        channel = null
+        pendingPermission = null
     }
 
     fun notifyStopRequested(): Boolean {
@@ -35,13 +39,7 @@ class LiveService(private val context: Context) {
     private fun handle(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "start" -> {
-                LiveTransferService.status = statusOf(call)
-                val intent = Intent(context, LiveTransferService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
-                }
+                LiveTransferService.start(context, statusOf(call))
                 result.success(null)
             }
             "updateStatus" -> {
@@ -49,7 +47,7 @@ class LiveService(private val context: Context) {
                 result.success(null)
             }
             "stop" -> {
-                context.stopService(Intent(context, LiveTransferService::class.java))
+                LiveTransferService.stop(context)
                 result.success(null)
             }
             "requestNotificationPermission" -> requestNotificationPermission(result)
@@ -77,12 +75,8 @@ class LiveService(private val context: Context) {
         )
     }
 
-    private fun statusOf(call: MethodCall) = LiveTransferService.Status(
-        count = call.argument<Int>("count") ?: 0,
-        uploaded = call.argument<Int>("uploaded") ?: 0,
-        pending = call.argument<Int>("pending") ?: 0,
-        text = call.argument<String>("text").orEmpty(),
-    )
+    private fun statusOf(call: MethodCall) =
+        LiveTransferService.Status(text = call.argument<String>("text").orEmpty())
 
     private companion object {
         const val CHANNEL = "ch.micheljung.shutterlink/live"
