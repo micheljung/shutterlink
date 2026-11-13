@@ -1,0 +1,39 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/upload/http_support.dart';
+
+void main() {
+  test('statusException maps statuses to readable messages', () {
+    expect(statusException(401, 'x').message, 'Wrong username or password.');
+    expect(
+      statusException(403, 'x', detail: 'Quota').message,
+      'Access denied (Quota).',
+    );
+    expect(statusException(404, 'Bucket b').message, 'Bucket b was not found.');
+    expect(statusException(503, 'x').retryable, isTrue);
+    expect(statusException(429, 'x').retryable, isTrue);
+    expect(statusException(400, 'x').retryable, isFalse);
+    expect(statusException(400, 'x').message, contains('400'));
+  });
+
+  test('networkException distinguishes DNS failures', () {
+    expect(
+      networkException(
+        const SocketException(
+          'Failed host lookup',
+          osError: OSError('No address associated with hostname', 7),
+        ),
+        'dav.example',
+      ).message,
+      startsWith('Server dav.example not found'),
+    );
+    expect(
+      networkException(
+        const SocketException('x', osError: OSError('Connection refused', 111)),
+        'dav.example',
+      ).message,
+      'Connection to dav.example failed: Connection refused',
+    );
+  });
+}
