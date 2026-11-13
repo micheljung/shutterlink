@@ -130,8 +130,16 @@ class SettingsCubit extends Cubit<SettingsState> {
         credentials != null &&
         _repository.sessionsEnabled &&
         isValidSessionsServerUrl(_repository.sessionsServerUrl) &&
-        (await credentials.token())?.isNotEmpty == true;
+        (await _tokenOf(credentials))?.isNotEmpty == true;
     if (isClosed) return;
     emit(state.copyWith(sessionsConfigured: configured));
+  }
+
+  static Future<String?> _tokenOf(SessionsCredentials credentials) async {
+    try {
+      return await credentials.token();
+    } on Object {
+      return null;
+    }
   }
 }

@@ -5,10 +5,12 @@ class FakeSessionsCredentials implements SessionsCredentials {
 
   String? _token;
   int reads = 0;
+  Object? readError;
 
   @override
   Future<String?> token() async {
     reads++;
+    if (readError case final error?) throw error;
     return _token;
   }
 
