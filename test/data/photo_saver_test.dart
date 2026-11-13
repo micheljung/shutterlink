@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/data/photo_saver.dart';
+import 'package:shutterlink/ptpip/camera_client.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -124,5 +125,40 @@ void main() {
     final put = galCalls.singleWhere((call) => call.method == 'putImage');
     expect(put.arguments, {'path': jpeg.path, 'album': null});
     expect(jpeg.existsSync() || raw.existsSync(), isFalse);
+  });
+
+  test('deleteSources false keeps files and reports the native URI', () async {
+    rawHandler = (_) async => 'content://media/7';
+    final jpeg = await tempFile('IMG_0001.JPG');
+    final raw = await tempFile('IMG_0001.CR3');
+
+    final saved = await saver(SaverPlatform.android)
+        .save(jpeg: jpeg, raw: raw, deleteSources: false);
+
+    expect(saved, [
+      const SavedMedia(CameraObjectKind.jpeg),
+      const SavedMedia(CameraObjectKind.raw, 'content://media/7'),
+    ]);
+    expect(jpeg.existsSync() && raw.existsSync(), isTrue);
+  });
+
+  test('iOS reports both kinds of a paired native save', () async {
+    final jpeg = await tempFile('IMG_0001.JPG');
+    final raw = await tempFile('IMG_0001.CR3');
+
+    final saved = await saver(SaverPlatform.ios).save(jpeg: jpeg, raw: raw);
+
+    expect(saved.map((media) => media.kind), [
+      CameraObjectKind.jpeg,
+      CameraObjectKind.raw,
+    ]);
+  });
+
+  test('other platforms report the copied RAW path', () async {
+    final raw = await tempFile('IMG_0001.CR3');
+
+    final saved = await saver(SaverPlatform.other).save(raw: raw);
+
+    expect(saved.single.uri, '${documents.path}/IMG_0001.CR3');
   });
 }
