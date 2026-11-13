@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="upload_queue.json" />
+        <exclude domain="file" path="upload_history.json" />
+        <exclude domain="file" path="upload_staging/" />
+        <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="upload_queue.json" />
+        <exclude domain="file" path="upload_history.json" />
+        <exclude domain="file" path="upload_staging/" />
+        <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+    </device-transfer>
+</data-extraction-rules>
