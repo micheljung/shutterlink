@@ -118,10 +118,16 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
   bool _unreachable = false;
   int _uploadedBefore = 0;
   int _session = 0;
+  int? _reconnecting;
+  Future<void>? _stopping;
   LiveStatus? _reported;
 
+  static String photosText(int count) =>
+      count == 1 ? '1 new photo' : '$count new photos';
+
   Future<void> start() async {
-    if (state is! LiveIdle) return;
+    await _stopping;
+    if (state is! LiveIdle || isClosed) return;
     final session = ++_session;
     emit(const LiveConnecting());
     final permitted = await _notificationsPermitted();
@@ -145,14 +151,20 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     } on PlatformException {
       gateway = null;
     }
+    if (!_isCurrent(session)) return _releaseStale();
     _cameraHost = await _hostResolver.resolve(boundGateway: gateway);
     if (!_isCurrent(session)) return;
     if (!await _attach(client, catchUp: false)) _scheduleReconnect(session);
   }
 
   /// Ends Live. A connected camera goes back to the gallery.
-  Future<void> stop() async {
-    if (state is LiveIdle || isClosed) return;
+  Future<void> stop() {
+    if (isClosed) return Future.value();
+    return _stopping ??= _stop().whenComplete(() => _stopping = null);
+  }
+
+  Future<void> _stop() async {
+    if (state is LiveIdle) return _guard(_service.stop);
     _session++;
     final client = _client;
     _client = null;
@@ -177,21 +189,22 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     }
   }
 
+  /// Live owns [client] until a disconnect, Stop or close takes it.
   Future<bool> _attach(CameraClient client, {required bool catchUp}) async {
-    final session = _session;
+    final previous = _client;
+    _client = client;
+    if (previous != null && previous != client) unawaited(previous.close());
     final LiveBaseline baseline;
     try {
       baseline = _baseline ??= await LiveIngestor.baselineOf(client);
     } on Exception {
-      if (_client == client) _client = null;
+      if (_client != client) return false;
+      _client = null;
       await client.close();
       return false;
     }
-    if (!_isCurrent(session)) {
-      await client.close();
-      return false;
-    }
-    _client = client;
+    if (_client != client) return false;
+    unawaited(_ingestor?.close());
     final ingestor = _ingestor = _ingestorFactory(client, baseline);
     await _ingestedSubscription?.cancel();
     _ingestedSubscription = ingestor.ingested.listen((_) {
@@ -231,7 +244,11 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
   }
 
   void _scheduleReconnect(int session) {
-    if (!_isCurrent(session)) return;
+    if (!_isCurrent(session) ||
+        _reconnecting == session ||
+        (_retryTimer?.isActive ?? false)) {
+      return;
+    }
     final now = _clock();
     final failingSince = _failingSince ??= now;
     if (now.difference(failingSince) >= unreachableAfter) _unreachable = true;
@@ -258,29 +275,44 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
   }
 
   Future<void> _tryReconnect(int session) async {
-    if (!_isCurrent(session)) return;
+    if (!_isCurrent(session) || _reconnecting == session) return;
+    _reconnecting = session;
+    final bool attached;
+    try {
+      attached = await _reconnect(session);
+    } finally {
+      if (_reconnecting == session) _reconnecting = null;
+    }
+    if (!attached) _scheduleReconnect(session);
+  }
+
+  Future<bool> _reconnect(int session) async {
     String? host;
     try {
       final gateway = await _networkBinder.acquireBinding(
         bindingOwner,
         holdNetwork: true,
       );
+      if (!_isCurrent(session)) {
+        await _releaseStale();
+        return false;
+      }
       host = await _hostResolver.resolve(boundGateway: gateway);
       final client = await _connector(host, await _identity.identity());
       if (!_isCurrent(session)) {
         await client.close();
-        return;
+        return false;
       }
       _cameraHost ??= host;
-      if (await _attach(client, catchUp: true)) return;
+      if (await _attach(client, catchUp: true)) return true;
     } on Exception {
-      if (!_isCurrent(session)) return;
+      if (!_isCurrent(session)) return false;
     }
     final cameraHost = _cameraHost;
     if (host != null && cameraHost != null && host != cameraHost) {
       _unreachable = true;
     }
-    _scheduleReconnect(session);
+    return false;
   }
 
   LiveTransferState _withIngested(int ingested) => switch (state) {
@@ -316,12 +348,18 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
         unreachableText,
       ),
     };
+    final uploaded = snapshot.completed - _uploadedBefore;
+    final pending = snapshot.items
+        .where((item) => !item.state.isUploaded)
+        .length;
     return LiveStatus(
       count: state.ingested,
-      uploaded: snapshot.completed - _uploadedBefore,
-      pending: snapshot.items.where((item) => !item.state.isUploaded).length,
+      uploaded: uploaded,
+      pending: pending,
       state: serviceState,
-      text: text,
+      text:
+          '$text · ${photosText(state.ingested)} · '
+          '$uploaded uploaded · $pending waiting',
     );
   }
 
@@ -359,6 +397,13 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     _failingSince = null;
     _unreachable = false;
     _reported = null;
+  }
+
+  /// Drops a binding acquired after Live ended, once Stop handed the
+  /// camera's binding back.
+  Future<void> _releaseStale() async {
+    await _stopping;
+    if (isClosed || state is LiveIdle) await _release();
   }
 
   Future<void> _release() async {

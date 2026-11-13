@@ -45,7 +45,7 @@ class LiveScreen extends StatelessWidget {
                     child: CircularProgressIndicator(),
                   ),
             title: Text(statusText(state)),
-            subtitle: Text('${state.ingested} new photos'),
+            subtitle: Text(LiveTransferCubit.photosText(state.ingested)),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,

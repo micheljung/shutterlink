@@ -109,6 +109,12 @@ void main() {
       expect(find.text('2 waiting · 3 uploaded'), findsOneWidget);
     });
 
+    testWidgets('counts a single new photo', (tester) async {
+      await pump(tester, const LiveTransferring(ingested: 1));
+
+      expect(find.text('1 new photo'), findsOneWidget);
+    });
+
     testWidgets('shows an unreachable camera and stops', (tester) async {
       await pump(tester, const LiveReconnecting(unreachable: true));
 

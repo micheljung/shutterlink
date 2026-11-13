@@ -29,6 +29,21 @@ const unreachable = CameraDisconnectedException(
   SocketException('Connection refused'),
 );
 
+class GatedCameraClient extends FakeCameraClient {
+  GatedCameraClient(super.objects);
+
+  Completer<void>? listGate;
+  int listCalls = 0;
+
+  @override
+  Future<List<CameraObject>> listPhotos() async {
+    listCalls++;
+    await listGate?.future;
+    if (closed) throw const CameraDisconnectedException();
+    return super.listPhotos();
+  }
+}
+
 class FakeLiveService implements LiveService {
   final calls = <String>[];
   final statuses = <LiveStatus>[];
@@ -62,6 +77,7 @@ class RecordingBinder implements NetworkBinder {
   final owners = <String>{};
   final lost = StreamController<void>.broadcast();
   Object? Function() gateway = () => cameraGateway;
+  Completer<void>? acquireGate;
 
   @override
   Future<String?> acquireBinding(
@@ -69,6 +85,7 @@ class RecordingBinder implements NetworkBinder {
     bool holdNetwork = false,
   }) async {
     calls.add('acquire $owner${holdNetwork ? ' hold' : ''}');
+    await acquireGate?.future;
     final result = gateway();
     if (result is Exception) throw result;
     owners.add(owner);
@@ -117,7 +134,7 @@ void main() {
   late RecordingBinder binder;
   late FakeTimers timers;
   late DateTime now;
-  late FakeCameraClient first;
+  late GatedCameraClient first;
   late List<Object> connections;
   late List<String> hosts;
   late ConnectCubit connect;
@@ -177,7 +194,7 @@ void main() {
     binder = RecordingBinder();
     timers = FakeTimers();
     now = DateTime(2026, 11, 13, 12);
-    first = FakeCameraClient([old]);
+    first = GatedCameraClient([old]);
     connections = [first];
     hosts = [];
     identity = IdentityRepository(prefs);
@@ -304,7 +321,10 @@ void main() {
 
     expect(timers.active!.delay, LiveTransferCubit.unreachableReconnectDelay);
     expect(live.state, const LiveReconnecting(unreachable: true));
-    expect(service.statuses.last.text, LiveTransferCubit.unreachableText);
+    expect(
+      service.statuses.last.text,
+      'Camera not reachable · 0 new photos · 0 uploaded · 0 waiting',
+    );
     expect(service.statuses.last.state, LiveServiceState.unreachable);
   });
 
@@ -359,6 +379,88 @@ void main() {
     expect(binder.calls.last, 'release live');
     expect(binder.owners, isEmpty);
     expect(timers.active, isNull);
+  });
+
+  test('a second stop during teardown still hands the camera back', () async {
+    await live.start();
+    first
+      ..chunkGate = Completer<void>()
+      ..objects.add(shot)
+      ..emitAdded(shot.handle);
+    await until(() => first.requestedOffsets.isNotEmpty);
+
+    final stopping = live.stop();
+    final again = live.stop();
+    first.chunkGate!.complete();
+    first.chunkGate = null;
+    await Future.wait([stopping, again]);
+
+    expect(connect.state, ConnectConnected(first));
+    expect(first.closed, isFalse);
+    expect(binder.owners, {ConnectCubit.bindingOwner});
+  });
+
+  test('a stop request while idle still stops the service', () async {
+    service.stopController.add(null);
+    await pumpEventQueue();
+
+    expect(service.calls, ['stop']);
+  });
+
+  test('stop while reading the card hands the camera back open', () async {
+    first.listGate = Completer<void>();
+    final starting = live.start();
+    await until(() => first.listCalls > 0);
+
+    await live.stop();
+    first.listGate!.complete();
+    await starting;
+
+    expect(connect.state, ConnectConnected(first));
+    expect(first.closed, isFalse);
+  });
+
+  test('a lost binding while starting schedules one reconnect', () async {
+    first.listGate = Completer<void>();
+    final starting = live.start();
+    await until(() => first.listCalls > 0);
+
+    binder.lost.add(null);
+    await pumpEventQueue();
+    first.listGate!.complete();
+    await starting;
+
+    expect(timers.all.where((timer) => timer.isActive), hasLength(1));
+    expect(live.state, const LiveReconnecting());
+  });
+
+  test('stop while binding drops the late live binding', () async {
+    binder.acquireGate = Completer<void>();
+    final starting = live.start();
+    await until(() => binder.calls.contains('acquire live hold'));
+
+    await live.stop();
+    binder.acquireGate!.complete();
+    await starting;
+
+    expect(connect.state, ConnectConnected(first));
+    expect(binder.owners, {ConnectCubit.bindingOwner});
+  });
+
+  test('stop while reconnecting drops the late live binding', () async {
+    connections.add(unreachable);
+    await live.start();
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    binder.acquireGate = Completer<void>();
+    timers.active!.fire();
+    await pumpEventQueue();
+
+    await live.stop();
+    binder.acquireGate!.complete();
+    await pumpEventQueue();
+
+    expect(binder.owners, isEmpty);
   });
 
   test('closing mid-reconnect releases the binding', () async {
@@ -442,7 +544,6 @@ void main() {
       'text': text,
     };
     const transferring = LiveServiceState.transferring;
-    const transferringText = LiveTransferCubit.transferringText;
     expect(calls.map((call) => call.method), [
       'requestNotificationPermission',
       'start',
@@ -455,18 +556,42 @@ void main() {
         0,
         0,
         LiveServiceState.connecting,
-        LiveTransferCubit.connectingText,
+        'Connecting to the camera · 0 new photos · 0 uploaded · 0 waiting',
       ),
-      payload(0, 0, 0, transferring, transferringText),
-      payload(0, 0, 1, transferring, transferringText),
-      payload(1, 0, 1, transferring, transferringText),
-      payload(1, 1, 0, transferring, transferringText),
+      payload(
+        0,
+        0,
+        0,
+        transferring,
+        'Live transfer · 0 new photos · 0 uploaded · 0 waiting',
+      ),
+      payload(
+        0,
+        0,
+        1,
+        transferring,
+        'Live transfer · 0 new photos · 0 uploaded · 1 waiting',
+      ),
+      payload(
+        1,
+        0,
+        1,
+        transferring,
+        'Live transfer · 1 new photo · 0 uploaded · 1 waiting',
+      ),
+      payload(
+        1,
+        1,
+        0,
+        transferring,
+        'Live transfer · 1 new photo · 1 uploaded · 0 waiting',
+      ),
       payload(
         1,
         1,
         0,
         LiveServiceState.reconnecting,
-        LiveTransferCubit.reconnectingText,
+        'Reconnecting to the camera · 1 new photo · 1 uploaded · 0 waiting',
       ),
     ]);
     expect(channelLive.state, const LiveIdle());
