@@ -1,0 +1,167 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:path/path.dart' as p;
+import 'package:shutterlink/data/sessions_upload_queue.dart';
+import 'package:shutterlink/data/upload_client.dart';
+import 'package:shutterlink/upload/storage_backend.dart';
+
+void main() {
+  const code = 'apple-bread-cider-dough';
+  const html = '<html><body>413 Request Entity Too Large</body></html>';
+  final expiresAt = DateTime.utc(2026, 12, 13, 10);
+  final expiresJson = '{"expiresAt":"${expiresAt.toIso8601String()}"}';
+
+  group('classify', () {
+    test('2xx with expiresAt is done', () {
+      for (final status in [HttpStatus.ok, HttpStatus.created]) {
+        final result = UploadClient.classify(status, expiresJson);
+        expect(result, isA<UploadDone>());
+        expect((result as UploadDone).expiresAt, expiresAt);
+      }
+    });
+
+    for (final (description, status, body, type) in [
+      ('2xx without JSON', 200, 'OK', isA<UploadMisconfigured>()),
+      ('410 expired', 410, '{"error":"expired"}', isA<UploadExpired>()),
+      ('bare 410', 410, '', isA<UploadMisconfigured>()),
+      ('401', 401, '{"error":"unauthorized"}', isA<UploadUnauthorized>()),
+      ('bare 401', 401, '', isA<UploadUnauthorized>()),
+      (
+        '400 sha_mismatch',
+        400,
+        '{"error":"sha_mismatch"}',
+        isA<UploadRejected>(),
+      ),
+      ('400 bad_code', 400, '{"error":"bad_code"}', isA<UploadRejected>()),
+      ('400 bad_key', 400, '{"error":"bad_key"}', isA<UploadRejected>()),
+      ('413 too_large', 413, '{"error":"too_large"}', isA<UploadRejected>()),
+      (
+        '413 session_full',
+        413,
+        '{"error":"session_full"}',
+        isA<UploadRejected>(),
+      ),
+      ('bare nginx 413', 413, html, isA<UploadMisconfigured>()),
+      (
+        '400 unknown error',
+        400,
+        '{"error":"nope"}',
+        isA<UploadMisconfigured>(),
+      ),
+      ('408', 408, '', isA<UploadRetry>()),
+      ('429', 429, '', isA<UploadRetry>()),
+      ('500', 500, '', isA<UploadRetry>()),
+      ('503', 503, html, isA<UploadRetry>()),
+      ('301', 301, '', isA<UploadMisconfigured>()),
+      ('403', 403, '', isA<UploadMisconfigured>()),
+      ('404', 404, '', isA<UploadMisconfigured>()),
+      ('418', 418, '', isA<UploadMisconfigured>()),
+    ]) {
+      test(description, () {
+        expect(UploadClient.classify(status, body), type);
+      });
+    }
+  });
+
+  test('builds the photo URL under a path prefix', () {
+    expect(
+      UploadClient.photoUrl(
+        Uri.parse('https://example.com/shutterlink/'),
+        code,
+        'ab',
+      ).toString(),
+      'https://example.com/shutterlink/api/sessions/$code/photos/ab',
+    );
+  });
+
+  group('upload', () {
+    late Directory root;
+    late UploadItem item;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('upload_client');
+      final file = File(p.join(root.path, 'a.jpg'))
+        ..writeAsBytesSync([1, 2, 3]);
+      item = UploadItem(
+        photoKey: await SessionsUploadQueue.photoKeyOf(file),
+        sessionCode: code,
+        filePath: file.path,
+        enqueuedAt: expiresAt,
+        nextAttemptAt: expiresAt,
+      );
+    });
+
+    tearDown(() => root.delete(recursive: true));
+
+    test('PUTs the file with the bearer token', () async {
+      late http.Request received;
+      final client = MockClient((request) async {
+        received = request;
+        return http.Response(expiresJson, HttpStatus.created);
+      });
+
+      final result = await const UploadClient().upload(
+        client,
+        serverUrl: Uri.parse('https://example.com'),
+        token: 'secret',
+        item: item,
+      );
+
+      expect(result, isA<UploadDone>());
+      expect(received.method, 'PUT');
+      expect(
+        received.url.toString(),
+        'https://example.com/api/sessions/$code/photos/${item.photoKey}',
+      );
+      expect(received.headers['authorization'], 'Bearer secret');
+      expect(received.bodyBytes, [1, 2, 3]);
+    });
+
+    test('a socket error is retried', () async {
+      final result = await const UploadClient().upload(
+        MockClient((_) => throw const SocketException('unreachable')),
+        serverUrl: Uri.parse('https://example.com'),
+        token: 'secret',
+        item: item,
+      );
+
+      expect(result, isA<UploadRetry>());
+    });
+
+    for (final (description, error, type) in [
+      ('no network is retried', const NoNetworkException(), isA<UploadRetry>()),
+      (
+        'an untrusted certificate needs the server fixed',
+        const UntrustedCertificateException('ab'),
+        isA<UploadMisconfigured>(),
+      ),
+    ]) {
+      test(description, () async {
+        final result = await const UploadClient().upload(
+          MockClient((_) => throw error),
+          serverUrl: Uri.parse('https://example.com'),
+          token: 'secret',
+          item: item,
+        );
+
+        expect(result, type);
+      });
+    }
+
+    test('a missing file is rejected', () async {
+      File(item.filePath).deleteSync();
+
+      final result = await const UploadClient().upload(
+        MockClient((_) async => http.Response(expiresJson, HttpStatus.ok)),
+        serverUrl: Uri.parse('https://example.com'),
+        token: 'secret',
+        item: item,
+      );
+
+      expect(result, isA<UploadRejected>());
+    });
+  });
+}
