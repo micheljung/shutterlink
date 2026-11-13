@@ -24,6 +24,7 @@ class _LoggingClient extends FakeCameraClient {
   _LoggingClient() : super([]);
 
   final log = <String>[];
+  Object? failNextDownload;
 
   @override
   Future<void> download(
@@ -33,6 +34,10 @@ class _LoggingClient extends FakeCameraClient {
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   }) async {
+    if (failNextDownload case final error?) {
+      failNextDownload = null;
+      throw error;
+    }
     log.add('start ${object.handle}');
     await super.download(
       object,
@@ -469,5 +474,21 @@ void main() {
     await rescan;
     expect(client.log, ['start 1', 'end 1']);
     expect(timers.last.delay, collectorAddedDelay);
+  });
+
+  test('an error in a pass is survived and the next pass retries', () async {
+    await sessions.start();
+    client.objects.add(shot(1, t0.add(second * 10)));
+    now = t0.add(second * 20);
+    final collecting = collector(await resolvedClock());
+    client.failNextDownload = StateError('broken pipe');
+
+    await collecting.rescan();
+    expect(await queue.items(), isEmpty);
+    expect(timers.last.isActive, isTrue);
+
+    await collecting.rescan();
+    expect(client.log, ['start 1', 'end 1']);
+    expect(await queue.items(), hasLength(1));
   });
 }

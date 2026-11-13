@@ -4,12 +4,14 @@ import 'dart:math';
 
 import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/data/session_repository.dart';
+import 'package:shutterlink/data/sessions_credentials.dart';
 import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_transport.dart';
@@ -29,6 +31,21 @@ class _FakeTransport implements UploadTransport {
 
   @override
   http.Client client() => _client;
+}
+
+class _FlakyCredentials extends FakeSessionsCredentials {
+  _FlakyCredentials(super.token, this.failures);
+
+  int failures;
+
+  @override
+  Future<String?> token() async {
+    if (failures > 0) {
+      failures--;
+      throw PlatformException(code: 'keystore');
+    }
+    return super.token();
+  }
 }
 
 class _FakeTimer implements Timer {
@@ -78,12 +95,15 @@ void main() {
   late String code;
   var photoCount = 0;
 
-  UploadWorker worker(UploadTransport transport) => UploadWorker(
+  UploadWorker worker(
+    UploadTransport transport, {
+    SessionsCredentials? credentials,
+  }) => UploadWorker(
     queue: queue,
     transport: transport,
     sessions: sessions,
     settings: settings,
-    credentials: FakeSessionsCredentials(token),
+    credentials: credentials ?? FakeSessionsCredentials(token),
     clock: Clock(() => now),
     random: Random(1),
     timer: (delay, callback) {
@@ -129,6 +149,30 @@ void main() {
   });
 
   tearDown(() => root.delete(recursive: true));
+
+  test('an unreadable token backs off and retries', () async {
+    final uploads = worker(
+      _FakeTransport(client),
+      credentials: _FlakyCredentials(token, 2),
+    );
+    await enqueue();
+
+    await uploads.drain();
+    expect(uploads.status.value, UploadWorkerStatus.retrying);
+    final first = timers.last;
+    expect(first.delay, greaterThan(initialRetryDelay * (1 - retryJitter)));
+
+    first.fire();
+    await pumpEventQueue();
+    expect(timers.last.delay, greaterThan(first.delay));
+    expect(requests, isEmpty);
+
+    timers.last.fire();
+    await uploads.drain();
+    expect(requests, hasLength(1));
+    expect(await queue.items(), isEmpty);
+    await uploads.dispose();
+  });
 
   test('uploads, records expiresAt and removes the item', () async {
     final uploads = worker(_FakeTransport(client));

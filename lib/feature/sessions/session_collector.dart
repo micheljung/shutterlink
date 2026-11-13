@@ -100,7 +100,7 @@ class SessionCollector {
       if (!_isBusy()) {
         await onGroups(groupPhotos(await _client.listPhotos()));
       }
-    } on Exception {
+    } on Object {
       return;
     } finally {
       _rescanning = false;
@@ -142,15 +142,19 @@ class SessionCollector {
       _again = true;
       return running;
     }
-    return _running = _run().whenComplete(() => _running = null);
+    return _running = _run().whenComplete(() {
+      _running = null;
+      if (_again) unawaited(_collect());
+    });
   }
 
+  /// A failed pass is not repeated until something new triggers one.
   Future<void> _run() async {
     do {
       _again = false;
       try {
         await _pass();
-      } on Exception {
+      } on Object {
         return;
       }
     } while (_again && !_disposed);
