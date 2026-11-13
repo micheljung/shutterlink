@@ -78,6 +78,21 @@ void main() {
       expect(sessionsCubit.state.sessionsConfigured, isFalse);
     });
 
+    test(
+      'an invalid URL keeps the saved one, an empty one clears it',
+      () async {
+        await sessionsCubit.setSessionsServerUrl(url);
+
+        await sessionsCubit.setSessionsServerUrl('http://photos.example.com');
+        expect(sessionsCubit.state.sessionsServerUrl, url);
+        expect(settings.sessionsServerUrl, url);
+
+        await sessionsCubit.setSessionsServerUrl(' ');
+        expect(sessionsCubit.state.sessionsServerUrl, isNull);
+        expect(settings.sessionsServerUrl, isNull);
+      },
+    );
+
     test('every saved token counts as a new revision', () async {
       await sessionsCubit.setSessionsToken('fixed');
       await sessionsCubit.setSessionsToken('fixed');

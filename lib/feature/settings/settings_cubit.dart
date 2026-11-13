@@ -104,10 +104,11 @@ class SettingsCubit extends Cubit<SettingsState> {
     await _refreshSessionsConfigured();
   }
 
+  /// An invalid URL keeps the saved one; the form shows the error.
   Future<void> setSessionsServerUrl(String? url) async {
-    await _repository.setSessionsServerUrl(
-      isValidSessionsServerUrl(url) ? url : null,
-    );
+    final cleared = url == null || url.trim().isEmpty;
+    if (!cleared && !isValidSessionsServerUrl(url)) return;
+    await _repository.setSessionsServerUrl(cleared ? null : url);
     emit(
       state.copyWith(sessionsServerUrl: () => _repository.sessionsServerUrl),
     );
