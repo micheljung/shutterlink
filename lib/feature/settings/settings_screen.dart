@@ -160,7 +160,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final stopwatch = Stopwatch()..start();
     String report;
     try {
-      final gateway = await const PlatformNetworkBinder().bindToWifi();
+      final gateway = await PlatformNetworkBinder().acquireBinding(
+        'tunnel_test',
+      );
       final tunnel = await const UploadTunnel().connect(
         host,
         port,

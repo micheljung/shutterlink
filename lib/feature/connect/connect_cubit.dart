@@ -28,6 +28,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   }) : _discovery = discovery ?? const SsdpDiscovery().discover,
        super(const ConnectIdle());
 
+  static const bindingOwner = 'connect';
   static const noWifiCode = 'no_wifi';
   static const noWifiMessage =
       "Not connected to Wi-Fi. Join the camera's Wi-Fi network first.";
@@ -47,7 +48,7 @@ class ConnectCubit extends Cubit<ConnectState> {
     final String? override;
     final String gateway;
     try {
-      final boundGateway = await _networkBinder.bindToWifi();
+      final boundGateway = await _networkBinder.acquireBinding(bindingOwner);
       override = _hostResolver.override;
       gateway = await _hostResolver.gateway(boundGateway: boundGateway);
     } on PlatformException catch (error) {
@@ -156,7 +157,7 @@ class ConnectCubit extends Cubit<ConnectState> {
 
   Future<void> _unbind() async {
     try {
-      await _networkBinder.unbind();
+      await _networkBinder.releaseBinding(bindingOwner);
     } on PlatformException {
       return;
     }

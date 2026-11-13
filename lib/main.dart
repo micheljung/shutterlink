@@ -32,7 +32,7 @@ Future<void> main() async {
         settings: settings,
         identity: IdentityRepository(prefs),
         hostResolver: CameraHostResolver(settings),
-        networkBinder: const PlatformNetworkBinder(),
+        networkBinder: PlatformNetworkBinder(),
         photoSaver: PlatformPhotoSaver(),
         connector: (host, identity) =>
             PtpIpCameraClient.connect(host: host, identity: identity),
