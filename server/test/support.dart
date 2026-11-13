@@ -83,6 +83,7 @@ class TestApp {
     int maxSessionBytes = 1 << 20,
     int zipConcurrency = 2,
     Duration zipQueueTimeout = const Duration(seconds: 5),
+    Duration zipIdleTimeout = const Duration(seconds: 5),
   }) async {
     final dataDir = await tempDataDir();
     final now = MutableClockSource(t0);
@@ -95,6 +96,7 @@ class TestApp {
       maxSessionBytes: maxSessionBytes,
       zipConcurrency: zipConcurrency,
       zipQueueTimeout: zipQueueTimeout,
+      zipIdleTimeout: zipIdleTimeout,
     );
     return TestApp._(dataDir, now, app);
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -191,6 +192,27 @@ void main() {
         await bodyBytes(held.last);
       },
     );
+  });
+
+  test('a stalled zip download frees its slot and its Session', () async {
+    const idle = Duration(milliseconds: 300);
+    server = await TestApp.open(
+      zipConcurrency: 1,
+      zipQueueTimeout: idle ~/ 6,
+      zipIdleTimeout: idle,
+    );
+    await server.upload(codeA, photoBytes(1));
+    await server.upload(codeB, photoBytes(2));
+
+    final stalled = await server.get('/s/$codeA/all.zip');
+    expect(stalled.statusCode, 200);
+    expect((await server.get('/s/$codeB/all.zip')).statusCode, 503);
+    await Future<void>.delayed(idle * 2);
+
+    final next = await server.get('/s/$codeA/all.zip');
+    expect(next.statusCode, 200);
+    await bodyBytes(next);
+    await expectLater(bodyBytes(stalled), throwsA(isA<TimeoutException>()));
   });
 
   test('rejects javascript: and other non-http tips', () async {

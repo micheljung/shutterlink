@@ -10,3 +10,6 @@ const Duration tombstoneRetention = Duration(days: 60);
 
 const int zipConcurrency = 2;
 const Duration zipQueueTimeout = Duration(seconds: 30);
+
+/// How long a zip download may go without the client taking more data.
+const Duration zipIdleTimeout = Duration(seconds: 60);

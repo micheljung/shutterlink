@@ -36,6 +36,7 @@ class ShutterlinkApp {
     this._tips,
     this._zipSlots,
     this._zipQueueTimeout,
+    this._zipIdleTimeout,
   );
 
   static Future<ShutterlinkApp> open({
@@ -48,6 +49,7 @@ class ShutterlinkApp {
     int maxSessionBytes = limits.maxSessionBytes,
     int zipConcurrency = limits.zipConcurrency,
     Duration zipQueueTimeout = limits.zipQueueTimeout,
+    Duration zipIdleTimeout = limits.zipIdleTimeout,
   }) async {
     if (uploadToken.isEmpty) {
       throw ArgumentError.value(
@@ -69,6 +71,7 @@ class ShutterlinkApp {
       List.unmodifiable(tips),
       Semaphore(zipConcurrency),
       zipQueueTimeout,
+      zipIdleTimeout,
     );
   }
 
@@ -77,6 +80,7 @@ class ShutterlinkApp {
   final List<Tip> _tips;
   final Semaphore _zipSlots;
   final Duration _zipQueueTimeout;
+  final Duration _zipIdleTimeout;
 
   late final Handler handler = const Pipeline()
       .addMiddleware(_addSecurityHeaders)
@@ -213,6 +217,7 @@ class ShutterlinkApp {
         final snapshot = await store.snapshot(normalized);
         if (snapshot == null) return _onTheirWay();
         final body = _releasing(
+          _zipIdleTimeout,
           storeZip([
             for (final photo in snapshot.photos)
               ZipEntry(
@@ -251,14 +256,58 @@ class ShutterlinkApp {
     },
   );
 
+  /// Runs [release] once the body ends, the client goes away, or the client
+  /// stops taking data for [idleTimeout], so a stalled download cannot hold
+  /// a zip slot.
   static Stream<List<int>> _releasing(
+    Duration idleTimeout,
     Stream<List<int>> source,
     void Function() release,
-  ) async* {
-    try {
-      yield* source;
-    } finally {
+  ) {
+    var released = false;
+    void releaseOnce() {
+      if (released) return;
+      released = true;
       release();
     }
+
+    late final StreamController<List<int>> controller;
+    StreamSubscription<List<int>>? subscription;
+    Timer? idle;
+    void arm() {
+      idle?.cancel();
+      idle = Timer(idleTimeout, () async {
+        await subscription?.cancel();
+        releaseOnce();
+        controller.addError(TimeoutException('Zip download stalled'));
+        await controller.close();
+      });
+    }
+
+    controller = StreamController(
+      onListen: () {
+        subscription = source.listen(
+          (chunk) {
+            arm();
+            controller.add(chunk);
+          },
+          onError: controller.addError,
+          onDone: () {
+            idle?.cancel();
+            releaseOnce();
+            controller.close();
+          },
+        );
+      },
+      onPause: () => subscription?.pause(),
+      onResume: () => subscription?.resume(),
+      onCancel: () async {
+        idle?.cancel();
+        await subscription?.cancel();
+        releaseOnce();
+      },
+    );
+    arm();
+    return controller.stream;
   }
 }
