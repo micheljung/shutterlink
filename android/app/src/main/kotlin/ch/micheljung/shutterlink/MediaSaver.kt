@@ -43,6 +43,12 @@ class MediaSaver(private val context: Context) {
         MethodChannel(messenger, MEDIA_CHANNEL).setMethodCallHandler(::handle)
     }
 
+    /** Lets queued saves finish, so no reservation is left half written. */
+    fun dispose() {
+        pendingDeleteRequest = null
+        executor.shutdown()
+    }
+
     fun onActivityResult(requestCode: Int, resultCode: Int) {
         if (requestCode != DELETE_REQUEST_CODE) return
         pendingDeleteRequest?.success(resultCode == Activity.RESULT_OK)

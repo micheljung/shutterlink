@@ -13,6 +13,8 @@ import io.flutter.embedding.engine.FlutterEngineCache
 object AppEngine {
     private const val ENGINE_ID = "shutterlink"
 
+    private var networkBinder: NetworkBinder? = null
+    private var uploadTunnel: UploadTunnel? = null
     var mediaSaver: MediaSaver? = null
         private set
     var liveService: LiveService? = null
@@ -25,8 +27,8 @@ object AppEngine {
         val appContext = context.applicationContext
         val engine = FlutterEngine(appContext)
         val messenger = engine.dartExecutor.binaryMessenger
-        NetworkBinder(appContext).register(messenger)
-        UploadTunnel(appContext).register(messenger)
+        networkBinder = NetworkBinder(appContext).also { it.register(messenger) }
+        uploadTunnel = UploadTunnel(appContext).also { it.register(messenger) }
         mediaSaver = MediaSaver(appContext).also { it.register(messenger) }
         liveService = LiveService(appContext).also { it.register(messenger) }
         FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
@@ -41,9 +43,18 @@ object AppEngine {
         if (this.activity === activity) this.activity = null
     }
 
-    /** Uncaches the engine after its host destroyed it. */
+    /**
+     * Uncaches the engine after its host destroyed it and releases what its
+     * channels held, since destroying an engine does not cancel its streams.
+     */
     fun forget() {
         FlutterEngineCache.getInstance().remove(ENGINE_ID)
+        networkBinder?.dispose()
+        uploadTunnel?.dispose()
+        mediaSaver?.dispose()
+        liveService?.dispose()
+        networkBinder = null
+        uploadTunnel = null
         mediaSaver = null
         liveService = null
     }
