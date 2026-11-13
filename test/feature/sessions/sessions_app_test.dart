@@ -39,6 +39,10 @@ final sessionsServerUrl = find.descendant(
   of: find.byType(SessionsSettingsSection),
   matching: find.text('Server URL'),
 );
+final sessionsServerUrlField = find.descendant(
+  of: find.byType(SessionsSettingsSection),
+  matching: find.widgetWithText(TextField, 'Server URL'),
+);
 final sessionsSwitch = find.descendant(
   of: find.byType(SessionsSettingsSection),
   matching: find.byType(Switch),
@@ -169,6 +173,7 @@ void main() {
       ),
       _serverUrl,
     );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.enterText(
       find.widgetWithText(TextField, 'Upload token'),
       'token',
@@ -227,6 +232,60 @@ void main() {
         .setSessionsToken('corrected');
     await pumpUntil(tester, () => sessions.requests.length == 2);
     expect(sessions.requests.last.headers['authorization'], 'Bearer corrected');
+    await tester.pumpWidget(const SizedBox());
+    await pumpUntil(tester, () => uploads.isClosed);
+  });
+
+  testWidgets('the server URL is saved only when submitted', (tester) async {
+    const typed = 'https://other.example.com';
+    await pumpApp(
+      tester,
+      prefs: {
+        SettingsRepository.sessionsEnabledKey: true,
+        SettingsRepository.sessionsServerUrlKey: _serverUrl,
+      },
+      token: 'token',
+    );
+    await pumpUntil(tester, () => sessions.workers == 1);
+    var enqueued = false;
+    unawaited(() async {
+      final session = await sessions.repository.start();
+      final photo = File(p.join(sessions.uploadDirectory.path, 'a.jpg'));
+      await photo.create(recursive: true);
+      await photo.writeAsBytes([1, 2, 3]);
+      await sessions.queue.enqueue(sessionCode: session.code, file: photo);
+      enqueued = true;
+    }());
+    await pumpUntil(tester, () => enqueued);
+    await pumpUntil(tester, () => sessions.requests.length == 1);
+    final uploads = tester
+        .element(find.byType(ConnectScreen))
+        .read<SessionsUploadCubit>();
+    await pumpUntil(
+      tester,
+      () => uploads.state.status == UploadWorkerStatus.serverConfiguration,
+    );
+    await openSessionsSettings(tester);
+    await tester.ensureVisible(sessionsServerUrlField);
+    final settings = tester
+        .element(find.byType(SettingsScreen))
+        .read<SettingsCubit>();
+
+    for (var length = 'https://o'.length; length <= typed.length; length++) {
+      await tester.enterText(
+        sessionsServerUrlField,
+        typed.substring(0, length),
+      );
+      await tester.runAsync(() => Future<void>.delayed(_pollInterval));
+      await tester.pump();
+    }
+    expect(settings.state.sessionsServerUrl, _serverUrl);
+    expect(sessions.requests, hasLength(1));
+
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await pumpUntil(tester, () => sessions.requests.length == 2);
+    expect(settings.state.sessionsServerUrl, typed);
+    expect(sessions.requests.last.url.host, Uri.parse(typed).host);
     await tester.pumpWidget(const SizedBox());
     await pumpUntil(tester, () => uploads.isClosed);
   });

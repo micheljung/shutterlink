@@ -66,8 +66,13 @@ class _SessionsSettingsSectionState extends State<SessionsSettingsSection> {
                         isValidSessionsServerUrl(value.text)
                     ? null
                     : 'Use https:// (http:// only for localhost)',
+                suffixIcon: IconButton(
+                  tooltip: 'Save server URL',
+                  icon: const Icon(Icons.check),
+                  onPressed: _saveServerUrl,
+                ),
               ),
-              onChanged: cubit.setSessionsServerUrl,
+              onSubmitted: (_) => _saveServerUrl(),
             ),
           ),
           const SizedBox(height: Spacing.medium),
@@ -92,6 +97,9 @@ class _SessionsSettingsSectionState extends State<SessionsSettingsSection> {
       ],
     );
   }
+
+  Future<void> _saveServerUrl() =>
+      context.read<SettingsCubit>().setSessionsServerUrl(_urlController.text);
 
   Future<void> _saveToken() async {
     final token = _tokenController.text;
