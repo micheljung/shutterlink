@@ -83,7 +83,7 @@ class SessionsUploadQueue {
     File manifest, {
     this._uploadDirectory,
     this._clock = const Clock(),
-  }) : _file = JsonFile(manifest);
+  }) : _file = JsonFile(manifest, clock: _clock);
 
   /// A file the collector is still downloading is younger than this, so it
   /// is never swept as an orphan.

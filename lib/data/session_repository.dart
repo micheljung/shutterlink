@@ -23,7 +23,7 @@ class SessionRepository {
     this._clock = const Clock(),
     SessionCodeGenerator? codes,
     this._uuid = const Uuid(),
-  }) : _file = JsonFile(file),
+  }) : _file = JsonFile(file, clock: _clock),
        _codes = codes ?? SessionCodeGenerator();
 
   static const fileName = 'sessions.json';
