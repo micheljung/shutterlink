@@ -199,6 +199,7 @@ class UploadWorker {
 
   void _arm(Duration delay, Future<void> Function() action) {
     _wakeTimer?.cancel();
+    if (_disposed) return;
     _wakeTimer = _timer(delay, () => unawaited(action()));
   }
 }

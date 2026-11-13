@@ -78,6 +78,13 @@ void main() {
       expect(sessionsCubit.state.sessionsConfigured, isFalse);
     });
 
+    test('every saved token counts as a new revision', () async {
+      await sessionsCubit.setSessionsToken('fixed');
+      await sessionsCubit.setSessionsToken('fixed');
+
+      expect(sessionsCubit.state.sessionsTokenRevision, 2);
+    });
+
     test('init restores the configured state', () async {
       await settings.setSessionsEnabled(true);
       await settings.setSessionsServerUrl(url);

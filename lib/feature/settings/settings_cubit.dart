@@ -21,6 +21,7 @@ class SettingsState extends Equatable {
     this.sessionsEnabled = false,
     this.sessionsServerUrl,
     this.sessionsConfigured = false,
+    this.sessionsTokenRevision = 0,
   });
 
   final DownloadFormat format;
@@ -30,6 +31,9 @@ class SettingsState extends Equatable {
   final String? sessionsServerUrl;
   final bool sessionsConfigured;
 
+  /// Counts saved tokens, so a corrected token wakes a paused upload worker.
+  final int sessionsTokenRevision;
+
   SettingsState copyWith({
     DownloadFormat? format,
     PreviewQuality? previewQuality,
@@ -37,6 +41,7 @@ class SettingsState extends Equatable {
     bool? sessionsEnabled,
     String? Function()? sessionsServerUrl,
     bool? sessionsConfigured,
+    int? sessionsTokenRevision,
   }) => SettingsState(
     format: format ?? this.format,
     previewQuality: previewQuality ?? this.previewQuality,
@@ -46,6 +51,7 @@ class SettingsState extends Equatable {
         ? sessionsServerUrl()
         : this.sessionsServerUrl,
     sessionsConfigured: sessionsConfigured ?? this.sessionsConfigured,
+    sessionsTokenRevision: sessionsTokenRevision ?? this.sessionsTokenRevision,
   );
 
   @override
@@ -56,6 +62,7 @@ class SettingsState extends Equatable {
     sessionsEnabled,
     sessionsServerUrl,
     sessionsConfigured,
+    sessionsTokenRevision,
   ];
 }
 
@@ -109,6 +116,10 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   Future<void> setSessionsToken(String? token) async {
     await _credentials?.setToken(token);
+    if (isClosed) return;
+    emit(
+      state.copyWith(sessionsTokenRevision: state.sessionsTokenRevision + 1),
+    );
     await _refreshSessionsConfigured();
   }
 
