@@ -167,18 +167,17 @@ void main() {
       });
       final bytes = bytesOf(10, seed: 1);
       final b = backend();
-      final resolved = await resolveRemoteName(
+      final index = await freeNameIndex(
         b,
         directory: '2026-11-13',
         filename: 'IMG_0001.JPG',
         size: bytes.length,
         sha256: sha256Of(bytes),
       );
-      expect(resolved.target.name, 'IMG_0001_1.JPG');
+      final name = candidateName('IMG_0001.JPG', index!);
+      expect(name, 'IMG_0001_1.JPG');
       expect(
-        await b.upload(
-          await uploadRequest(tmp, bytes, name: resolved.target.name),
-        ),
+        await b.upload(await uploadRequest(tmp, bytes, name: name)),
         UploadResult.uploaded,
       );
       expect(objects()['camera/2026-11-13/IMG_0001_1.JPG']!.bytes, bytes);

@@ -34,14 +34,15 @@ class _Backend implements StorageBackend {
 }
 
 void main() {
-  test('remoteDirectoryFor uses the local capture day', () {
-    expect(remoteDirectoryFor(DateTime(2026, 1, 5, 23, 59)), '2026-01-05');
+  test('captureDayOf uses the local capture day', () {
+    expect(captureDayOf(DateTime(2026, 1, 5, 23, 59)), '2026-01-05');
     final utc = DateTime.utc(2026, 11, 13, 12);
-    expect(remoteDirectoryFor(utc), () {
-      final l = utc.toLocal();
-      return '${l.year}-${l.month.toString().padLeft(2, '0')}-'
-          '${l.day.toString().padLeft(2, '0')}';
-    }());
+    final l = utc.toLocal();
+    expect(
+      captureDayOf(utc),
+      '${l.year}-${l.month.toString().padLeft(2, '0')}-'
+      '${l.day.toString().padLeft(2, '0')}',
+    );
   });
 
   test('candidateName suffixes the stem', () {
@@ -51,11 +52,15 @@ void main() {
     expect(candidateName('README', 2), 'README_2');
   });
 
-  test('tempNameFor hides the file and is unique', () {
-    final a = tempNameFor('IMG_0001.JPG');
-    expect(a, matches(RegExp(r'^\.IMG_0001\.JPG\.tmp-[0-9a-f-]{36}$')));
-    expect(a, isNot(endsWith('.part')));
-    expect(tempNameFor('IMG_0001.JPG'), isNot(a));
+  test('candidateIndexOf inverts candidateName, unknown names are 0', () {
+    expect(candidateIndexOf('IMG_0001.JPG', 'IMG_0001_7.JPG'), 7);
+    expect(candidateIndexOf('IMG_0001.JPG', 'IMG_0001.JPG'), 0);
+    expect(candidateIndexOf('IMG_0001.JPG', 'other.JPG'), 0);
+  });
+
+  test('tempNameFor hides the file', () {
+    expect(tempNameFor('IMG_0001.JPG', 'u1'), '.IMG_0001.JPG.tmp-u1');
+    expect(tempNameFor('IMG_0001.JPG', 'u1'), isNot(endsWith('.part')));
   });
 
   test('pathSegments drops empty and dot segments', () {
@@ -63,24 +68,18 @@ void main() {
     expect(pathSegments(''), isEmpty);
   });
 
-  group('resolveRemoteName', () {
-    Future<ResolvedName> resolve(_Backend backend, {int startIndex = 0}) =>
-        resolveRemoteName(
-          backend,
-          directory: '2026-11-13',
-          filename: 'IMG_0001.JPG',
-          size: 1,
-          sha256: 'x',
-          startIndex: startIndex,
-        );
+  group('freeNameIndex', () {
+    Future<int?> free(_Backend backend, {int from = 0}) => freeNameIndex(
+      backend,
+      directory: '2026-11-13',
+      filename: 'IMG_0001.JPG',
+      size: 1,
+      sha256: 'x',
+      from: from,
+    );
 
     test('takes the original name when free', () async {
-      final r = await resolve(_Backend({}));
-      expect(
-        r.target,
-        const RemoteTarget(directory: '2026-11-13', name: 'IMG_0001.JPG'),
-      );
-      expect(r.alreadyPresent, isFalse);
+      expect(await free(_Backend({})), 0);
     });
 
     test('skips names holding different content', () async {
@@ -88,30 +87,29 @@ void main() {
         'IMG_0001.JPG': ProbeResult.different,
         'IMG_0001_1.JPG': ProbeResult.different,
       });
-      final r = await resolve(backend);
-      expect(r.target.name, 'IMG_0001_2.JPG');
+      expect(await free(backend), 2);
       expect(backend.probed, hasLength(3));
     });
 
-    test('stops at an identical file', () async {
-      final r = await resolve(
-        _Backend({
-          'IMG_0001.JPG': ProbeResult.different,
-          'IMG_0001_1.JPG': ProbeResult.identical,
-        }),
+    test('is null at an identical file', () async {
+      expect(
+        await free(
+          _Backend({
+            'IMG_0001.JPG': ProbeResult.different,
+            'IMG_0001_1.JPG': ProbeResult.identical,
+          }),
+        ),
+        isNull,
       );
-      expect(r.target.name, 'IMG_0001_1.JPG');
-      expect(r.alreadyPresent, isTrue);
     });
 
     test('can continue after a name taken during upload', () async {
-      final r = await resolve(_Backend({}), startIndex: 2);
-      expect(r.target.name, 'IMG_0001_2.JPG');
+      expect(await free(_Backend({}), from: 2), 2);
     });
 
     test('gives up after maxNameCandidates', () async {
       await expectLater(
-        resolve(_Backend({}), startIndex: maxNameCandidates),
+        free(_Backend({}), from: maxNameCandidates),
         throwsA(
           isA<StorageException>().having(
             (e) => e.retryable,
