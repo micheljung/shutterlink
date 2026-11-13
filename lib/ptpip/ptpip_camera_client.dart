@@ -291,6 +291,29 @@ class PtpIpCameraClient implements CameraClient {
     return kind == null ? null : _toCameraObject(handle, info, kind);
   }
 
+  @override
+  Future<DateTime?> cameraTime() async {
+    if (!ptpDeviceInfo.operationsSupported.contains(
+          PtpOperation.getDevicePropValue,
+        ) ||
+        !ptpDeviceInfo.devicePropertiesSupported.contains(
+          PtpDeviceProperty.dateTime,
+        )) {
+      return null;
+    }
+    try {
+      final result = await _session.execute(
+        PtpOperation.getDevicePropValue,
+        params: const [PtpDeviceProperty.dateTime],
+      );
+      return parsePtpDateTime(PtpDataReader(result.data).string());
+    } on PtpResponseException {
+      return null;
+    } on FormatException {
+      return null;
+    }
+  }
+
   static CameraObjectKind? _kindOf(int format) => switch (format) {
     PtpObjectFormat.exifJpeg || PtpObjectFormat.jfif => CameraObjectKind.jpeg,
     PtpObjectFormat.canonCr3 => CameraObjectKind.raw,

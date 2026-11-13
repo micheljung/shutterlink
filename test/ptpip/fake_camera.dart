@@ -145,7 +145,10 @@ class FakeCamera {
     this.eventRecords,
     this.initialDump,
     this.eventDataOverride,
-  }) : objects = objects ?? defaultObjects();
+    Map<int, Uint8List>? devicePropertyValues,
+    this.devicePropValueCode = PtpResponseCode.ok,
+  }) : objects = objects ?? defaultObjects(),
+       devicePropertyValues = devicePropertyValues ?? {};
 
   static const defaultOperations = [
     PtpOperation.getDeviceInfo,
@@ -156,6 +159,7 @@ class FakeCamera {
     PtpOperation.getObjectInfo,
     PtpOperation.getThumb,
     PtpOperation.getPartialObject,
+    PtpOperation.getDevicePropValue,
     CanonEosOperation.setRemoteMode,
     CanonEosOperation.setEventMode,
     CanonEosOperation.getEvent,
@@ -228,6 +232,8 @@ class FakeCamera {
 
   final List<Uint8List>? pairedGuids;
   final List<FakeObject> objects;
+  final Map<int, Uint8List> devicePropertyValues;
+  final int devicePropValueCode;
   final int? maxFragmentSize;
   final int dataPacketSize;
   final Duration responseDelay;
@@ -454,6 +460,15 @@ class FakeCamera {
           PtpResponseCode.ok,
           Uint8List.sublistView(o.content, start, end),
         );
+      case PtpOperation.getDevicePropValue:
+        final value = devicePropertyValues[p[0]];
+        if (value == null) {
+          respond(PtpResponseCode.devicePropNotSupported);
+        } else if (devicePropValueCode != PtpResponseCode.ok) {
+          respond(devicePropValueCode);
+        } else {
+          respond(PtpResponseCode.ok, value);
+        }
       case CanonEosOperation.getEvent:
         respond(PtpResponseCode.ok, _eventData());
       case PtpOperation.closeSession ||
@@ -519,7 +534,7 @@ class FakeCamera {
     functionalMode: 0,
     operationsSupported: supportedOperations,
     eventsSupported: const [],
-    devicePropertiesSupported: const [],
+    devicePropertiesSupported: devicePropertyValues.keys.toList(),
     captureFormats: const [],
     imageFormats: const [PtpObjectFormat.exifJpeg, PtpObjectFormat.canonCr3],
     manufacturer: 'Canon Inc.',
@@ -531,6 +546,9 @@ class FakeCamera {
   static Uint8List _u32Array(List<int> values) =>
       (PtpDataWriter()..u32Array(values)).toBytes();
 }
+
+Uint8List ptpStringValue(String value) =>
+    (PtpDataWriter()..string(value)).toBytes();
 
 final pairedGuid = Uint8List.fromList(
   List.generate(ptpIpGuidSize, (i) => 0xA0 + i),

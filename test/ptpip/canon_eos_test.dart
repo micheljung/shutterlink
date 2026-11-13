@@ -15,5 +15,8 @@ void main() {
     expect(CanonEosEvent.requestObjectTransfer, 0xC186);
     expect(CanonEosEvent.objectAddedEx64, 0xC1A7);
     expect(CanonEosEvent.requestObjectTransfer64, 0xC1A9);
+    expect(PtpOperation.getDevicePropValue, 0x1015);
+    expect(PtpDeviceProperty.dateTime, 0x5011);
+    expect(PtpResponseCode.devicePropNotSupported, 0x200A);
   });
 }

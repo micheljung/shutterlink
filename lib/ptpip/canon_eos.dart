@@ -6,7 +6,12 @@ abstract final class PtpOperation {
   static const getObjectHandles = 0x1007;
   static const getObjectInfo = 0x1008;
   static const getThumb = 0x100A;
+  static const getDevicePropValue = 0x1015;
   static const getPartialObject = 0x101B;
+}
+
+abstract final class PtpDeviceProperty {
+  static const dateTime = 0x5011;
 }
 
 abstract final class CanonEosOperation {
@@ -34,6 +39,7 @@ abstract final class PtpResponseCode {
   static const generalError = 0x2002;
   static const operationNotSupported = 0x2005;
   static const invalidObjectHandle = 0x2009;
+  static const devicePropNotSupported = 0x200A;
   static const noThumbnailPresent = 0x2010;
   static const deviceBusy = 0x2019;
   static const sessionAlreadyOpen = 0x201E;

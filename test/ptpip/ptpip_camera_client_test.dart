@@ -178,6 +178,77 @@ void main() {
     expect(photos.map((p) => p.handle), [2]);
   });
 
+  group('cameraTime', () {
+    Map<int, Uint8List> clock(String value) => {
+      PtpDeviceProperty.dateTime: ptpStringValue(value),
+    };
+
+    test('reads a local wall-clock time without a zone', () async {
+      final c = await start(
+        FakeCamera(devicePropertyValues: clock('20261113T095830.5')),
+      );
+      expect(await c.cameraTime(), DateTime(2026, 11, 13, 9, 58, 30, 500));
+      final request = camera.receivedRequests.last;
+      expect(request.opcode, PtpOperation.getDevicePropValue);
+      expect(request.params, [PtpDeviceProperty.dateTime]);
+    });
+
+    test('reads a time with a zone as UTC', () async {
+      final c = await start(
+        FakeCamera(devicePropertyValues: clock('20261113T105830+0100')),
+      );
+      expect(await c.cameraTime(), DateTime.utc(2026, 11, 13, 9, 58, 30));
+    });
+
+    test('is null without GetDevicePropValue support', () async {
+      final c = await start(
+        FakeCamera(
+          devicePropertyValues: clock('20261113T095830'),
+          supportedOperations: FakeCamera.defaultOperations
+              .where((op) => op != PtpOperation.getDevicePropValue)
+              .toList(),
+        ),
+      );
+      expect(await c.cameraTime(), isNull);
+      expect(
+        camera.receivedOpcodes,
+        isNot(contains(PtpOperation.getDevicePropValue)),
+      );
+    });
+
+    test('is null without the DateTime property', () async {
+      final c = await start(FakeCamera());
+      expect(await c.cameraTime(), isNull);
+      expect(
+        camera.receivedOpcodes,
+        isNot(contains(PtpOperation.getDevicePropValue)),
+      );
+    });
+
+    test('is null when the camera answers with an error', () async {
+      final c = await start(
+        FakeCamera(
+          devicePropertyValues: clock('20261113T095830'),
+          devicePropValueCode: PtpResponseCode.deviceBusy,
+        ),
+      );
+      expect(await c.cameraTime(), isNull);
+    });
+
+    test('is null for a truncated or unparseable value', () async {
+      final c = await start(
+        FakeCamera(
+          devicePropertyValues: {PtpDeviceProperty.dateTime: Uint8List(0)},
+        ),
+      );
+      expect(await c.cameraTime(), isNull);
+      camera.devicePropertyValues[PtpDeviceProperty.dateTime] = ptpStringValue(
+        'garbage',
+      );
+      expect(await c.cameraTime(), isNull);
+    });
+  });
+
   test('thumbnail returns bytes, or null without one', () async {
     final c = await start(FakeCamera());
     final thumb = await c.thumbnail(FakeCamera.jpegHandle);
