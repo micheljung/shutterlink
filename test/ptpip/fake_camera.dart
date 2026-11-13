@@ -68,6 +68,7 @@ class FakeCamera {
     this.initFailReason = fakeInitFailReason,
     this.initAckDelay = Duration.zero,
     this.trickleDelay,
+    this.eventRecords,
   }) : objects = objects ?? defaultObjects();
 
   static const defaultOperations = [
@@ -162,6 +163,7 @@ class FakeCamera {
   final int initFailReason;
   final Duration initAckDelay;
   final Duration? trickleDelay;
+  final Uint8List? eventRecords;
 
   final receivedOpcodes = <int>[];
   final receivedRequests = <CommandRequest>[];
@@ -361,10 +363,15 @@ class FakeCamera {
           Uint8List.sublistView(o.content, start, end),
         );
       case CanonEosOperation.getEvent:
-        final terminator = PtpDataWriter()
+        final events = PtpDataWriter();
+        final records = eventRecords;
+        if (records != null) {
+          events.bytes(records);
+        }
+        events
           ..u32(_canonEventTerminatorSize)
           ..u32(_canonEventTerminatorType);
-        respond(PtpResponseCode.ok, terminator.toBytes());
+        respond(PtpResponseCode.ok, events.toBytes());
       case PtpOperation.closeSession ||
           CanonEosOperation.setRemoteMode ||
           CanonEosOperation.setEventMode:

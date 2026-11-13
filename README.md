@@ -110,6 +110,7 @@ fvm dart run bin/probe.dart --host 192.168.1.2 --dump packets.txt
 | Option | Default | Meaning |
 |---|---|---|
 | `--host` | (required) | Camera IP, usually the Wi-Fi gateway address |
+| `--watch-events` | off | Skip download; log Canon GetEvent records (type, size, hex) every second until Ctrl-C |
 | `--port` | `15740` | PTP/IP port |
 | `--name` | `Shutterlink` | Name shown on the camera when pairing |
 | `--guid-file` | `~/.shutterlink_guid` | Where the client GUID is stored |
