@@ -1,7 +1,8 @@
 # Shutterlink
 
 Download JPEG and CR3 photos from a Canon EOS R to your phone over the
-camera's own Wi-Fi. No cloud, no Canon app, just PTP/IP written in pure Dart.
+camera's own Wi-Fi. No cloud of ours, no Canon app, just PTP/IP written in pure Dart.
+Optionally upload to your own WebDAV/S3/SFTP server.
 
 [![CI](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml/badge.svg)](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -38,6 +39,24 @@ camera's own Wi-Fi. No cloud, no Canon app, just PTP/IP written in pure Dart.
 - On Android the app binds to the camera's Wi-Fi, so traffic doesn't leave over
   mobile data when the camera network has no internet.
 - A command-line probe (`bin/probe.dart`) to test the protocol from a laptop.
+
+## Auto-upload (Android)
+
+Photos can be uploaded to your own server. Nothing is sent anywhere unless you
+add a destination in Settings.
+
+- **Destinations:** WebDAV, S3-compatible storage or SFTP. Credentials are
+  kept in secure storage.
+- **Live transfer:** a toggle in the gallery. While on, new photos are uploaded
+  in the background, and the connection to the camera is kept and restored
+  after drops.
+- **Network policy:** uploads over mobile data are `off`, `jpeg` only, or
+  `all`. Wi-Fi is always allowed.
+- **Trust on first use:** the first time you connect to an SFTP host or a
+  self-signed HTTPS certificate, you confirm its fingerprint. It is pinned, and
+  a later change blocks uploads to that server.
+- **Keep local copy:** per destination. When off, the saved file is removed
+  after a successful upload (Android may ask for confirmation).
 
 ## Status
 
@@ -211,6 +230,10 @@ The PTP/IP layer is tested against `test/ptpip/fake_camera.dart`, a real TCP
 server that emulates the camera: pairing and `InitFail`, listing, chunked
 downloads, packets split across TCP segments, and dropped connections. CI
 requires at least 90% line coverage for `lib/ptpip/`.
+
+The SFTP tests start a local OpenSSH `sshd` and are skipped by default. CI runs
+them with `--tags "sftp || sftp-root" --run-skipped`; `lib/upload/` must reach
+90% line coverage across both runs (`tool/check_coverage.sh`).
 
 To regenerate the screenshots in `docs/screenshots/`:
 

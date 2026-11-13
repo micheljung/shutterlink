@@ -1,0 +1,2 @@
+* Auto-upload (Android): send photos to your own WebDAV, S3 or SFTP server
+* Live transfer keeps uploading new photos in the background
