@@ -178,6 +178,34 @@ void main() {
     expect(out.toString(), contains('malformed: Malformed Canon event at 0'));
   });
 
+  test('--clock prints device properties and the camera time', () async {
+    await camera.stop();
+    camera = FakeCamera(
+      pairedGuids: [pairedGuid],
+      devicePropertyValues: {
+        PtpDeviceProperty.dateTime: ptpStringValue('20261113T095830Z'),
+      },
+    );
+    await camera.start();
+    await guidFile.writeAsString(hex(pairedGuid));
+    final out = StringBuffer();
+    expect(await runProbe([...baseArgs(), '--clock'], output: out), exitOk);
+    expect(out.toString(), contains('Properties:   0x5011'));
+    expect(out.toString(), contains('Camera time:  2026-11-13T09:58:30.000Z'));
+    expect(out.toString(), contains('Phone time:'));
+    expect(
+      camera.receivedOpcodes,
+      isNot(contains(PtpOperation.getPartialObject)),
+    );
+  });
+
+  test('--clock without clock support prints none', () async {
+    await guidFile.writeAsString(hex(pairedGuid));
+    final out = StringBuffer();
+    expect(await runProbe([...baseArgs(), '--clock'], output: out), exitOk);
+    expect(out.toString(), contains('Camera time:  none'));
+  });
+
   test('a busy camera is reported', () async {
     await camera.stop();
     camera = FakeCamera(

@@ -49,6 +49,11 @@ ArgParser _parser() => ArgParser()
     negatable: false,
     help: 'Log Canon GetEvent records every second until Ctrl-C (no download).',
   )
+  ..addFlag(
+    'clock',
+    negatable: false,
+    help: 'Print the device properties and camera clock, then exit.',
+  )
   ..addFlag('help', abbr: 'h', negatable: false);
 
 Future<void> main(List<String> args) async {
@@ -101,6 +106,7 @@ Future<int> runProbe(
       identity: CameraIdentity(guid: guid, name: name),
       downloadDir: Directory(options.option('download-dir')!),
       index: index,
+      clockOnly: options.flag('clock'),
       pairingTimeout: Duration(seconds: pairSeconds),
       watch: options.flag('watch-events'),
       watchPolls: watchPolls,
@@ -133,6 +139,7 @@ Future<int> _probe(
   required CameraIdentity identity,
   required Directory downloadDir,
   required int? index,
+  required bool clockOnly,
   required Duration pairingTimeout,
   required bool watch,
   required int? watchPolls,
@@ -160,6 +167,15 @@ Future<int> _probe(
       ..writeln(
         'Operations:   ${info.operationsSupported.map(_hex).join(' ')}',
       );
+    if (clockOnly) {
+      final properties = client.ptpDeviceInfo.devicePropertiesSupported;
+      final cameraTime = await client.cameraTime();
+      out
+        ..writeln('Properties:   ${properties.map(_hex).join(' ')}')
+        ..writeln('Camera time:  ${cameraTime?.toIso8601String() ?? 'none'}')
+        ..writeln('Phone time:   ${DateTime.now().toIso8601String()}');
+      return exitOk;
+    }
 
     if (events != null) {
       out.writeln('Watching GetEvent; press Ctrl-C to stop.');
