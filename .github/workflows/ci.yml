@@ -25,6 +25,8 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: flutter analyze
       - run: flutter test --coverage
+      - run: dart test
+        working-directory: server
       - name: Check lib/ptpip coverage
         run: tool/check_coverage.sh ptpip "$PTPIP_MIN_COVERAGE" coverage/lcov.info
       - name: Install OpenSSH server
