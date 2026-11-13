@@ -31,8 +31,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     prefs = await SharedPreferences.getInstance();
     binder = _MockNetworkBinder();
-    when(binder.bindToWifi).thenAnswer((_) async => gateway);
-    when(binder.unbind).thenAnswer((_) async {});
+    when(() => binder.acquireBinding(any())).thenAnswer((_) async => gateway);
+    when(() => binder.releaseBinding(any())).thenAnswer((_) async {});
     when(binder.acquireMulticastLock).thenAnswer((_) async {});
     when(binder.releaseMulticastLock).thenAnswer((_) async {});
     client = FakeCameraClient([]);
@@ -71,7 +71,9 @@ void main() {
     build: () => build((_, _) => throw const PairingRequiredException(1)),
     act: (cubit) => cubit.connect(),
     expect: () => [const ConnectConnecting(), const ConnectPairingRequired()],
-    verify: (_) => verify(binder.unbind).called(1),
+    verify: (_) =>
+        verify(() => binder.releaseBinding(ConnectCubit.bindingOwner))
+            .called(1),
   );
 
   blocTest<ConnectCubit, ConnectState>(
@@ -82,13 +84,15 @@ void main() {
       const ConnectConnecting(),
       const ConnectFailed(ConnectCubit.busyMessage),
     ],
-    verify: (_) => verify(binder.unbind).called(1),
+    verify: (_) =>
+        verify(() => binder.releaseBinding(ConnectCubit.bindingOwner))
+            .called(1),
   );
 
   blocTest<ConnectCubit, ConnectState>(
     'reports missing Wi-Fi',
     setUp: () =>
-        when(binder.bindToWifi)
+        when(() => binder.acquireBinding(any()))
             .thenThrow(PlatformException(code: ConnectCubit.noWifiCode)),
     build: () => build((_, _) async => client),
     act: (cubit) => cubit.connect(),
@@ -180,7 +184,8 @@ void main() {
       ],
       verify: (_) {
         verifyLockReleased();
-        verify(binder.unbind).called(1);
+        verify(() => binder.releaseBinding(ConnectCubit.bindingOwner))
+            .called(1);
       },
     );
 
@@ -224,7 +229,7 @@ void main() {
       ],
       verify: (_) {
         verifyLockReleased();
-        verifyNever(binder.unbind);
+        verifyNever(() => binder.releaseBinding(any()));
       },
     );
 
@@ -254,7 +259,9 @@ void main() {
       },
       skip: 2,
       expect: () => [const ConnectIdle()],
-      verify: (_) => verify(binder.unbind).called(1),
+      verify: (_) =>
+          verify(() => binder.releaseBinding(ConnectCubit.bindingOwner))
+              .called(1),
     );
 
     blocTest<ConnectCubit, ConnectState>(

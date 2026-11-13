@@ -15,10 +15,19 @@ import 'fake_camera_client.dart';
 
 class NoopNetworkBinder implements NetworkBinder {
   @override
-  Future<String?> bindToWifi() async => null;
+  Future<String?> acquireBinding(
+    String owner, {
+    bool holdNetwork = false,
+  }) async => null;
 
   @override
-  Future<void> unbind() async {}
+  Future<void> releaseBinding(String owner) async {}
+
+  @override
+  void transferBinding(String from, String to) {}
+
+  @override
+  Stream<void> get bindingLost => const Stream.empty();
 
   @override
   Future<void> acquireMulticastLock() async {}
