@@ -93,6 +93,18 @@ void main() {
       },
     );
 
+    test('an unreadable token counts as not configured', () async {
+      await settings.setSessionsEnabled(true);
+      await settings.setSessionsServerUrl(url);
+      credentials.readError = Exception('keystore unavailable');
+      final restored = SettingsCubit(settings, credentials: credentials);
+      addTearDown(restored.close);
+
+      await restored.init();
+
+      expect(restored.state.sessionsConfigured, isFalse);
+    });
+
     test('every saved token counts as a new revision', () async {
       await sessionsCubit.setSessionsToken('fixed');
       await sessionsCubit.setSessionsToken('fixed');
