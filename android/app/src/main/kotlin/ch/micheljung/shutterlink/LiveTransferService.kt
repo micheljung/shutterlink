@@ -18,7 +18,7 @@ import android.os.PowerManager
  * Dart keeps transferring with the screen off or the app swiped away.
  */
 class LiveTransferService : Service() {
-    data class Status(val count: Int, val uploaded: Int, val pending: Int, val text: String)
+    data class Status(val text: String)
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -27,7 +27,6 @@ class LiveTransferService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, LOCK_TAG)
             .apply {
@@ -55,6 +54,12 @@ class LiveTransferService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        isRunning = true
+        inForeground = true
+        if (stopPending) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP && AppEngine.liveService?.notifyStopRequested() != true) {
             stopSelf()
         }
@@ -63,6 +68,7 @@ class LiveTransferService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        inForeground = false
         wifiLock?.takeIf { it.isHeld }?.release()
         wakeLock?.takeIf { it.isHeld }?.release()
         super.onDestroy()
@@ -89,8 +95,39 @@ class LiveTransferService : Service() {
         var isRunning = false
             private set
 
-        @Volatile
-        var status = Status(count = 0, uploaded = 0, pending = 0, text = "")
+        private var status = Status(text = "")
+        private var inForeground = false
+        private var stopPending = false
+
+        /**
+         * Counts as running from the request on, so a swipe-away before the
+         * service is created keeps the engine.
+         */
+        fun start(context: Context, status: Status) {
+            this.status = status
+            stopPending = false
+            isRunning = true
+            val intent = Intent(context, LiveTransferService::class.java)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: RuntimeException) {
+                isRunning = false
+                throw e
+            }
+        }
+
+        /** A service stopped before it called startForeground crashes the app. */
+        fun stop(context: Context) {
+            if (inForeground || !isRunning) {
+                context.stopService(Intent(context, LiveTransferService::class.java))
+            } else {
+                stopPending = true
+            }
+        }
 
         fun update(context: Context, status: Status) {
             this.status = status
@@ -126,10 +163,8 @@ class LiveTransferService : Service() {
             }
             return builder
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
-                .setContentTitle(status.text.ifEmpty { CHANNEL_NAME })
-                .setContentText(
-                    "${status.count} photos · ${status.uploaded} uploaded · ${status.pending} pending",
-                )
+                .setContentTitle(context.applicationInfo.loadLabel(context.packageManager))
+                .setContentText(status.text)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(open)
