@@ -11,5 +11,9 @@ void main() {
     expect(PtpObjectFormat.canonCr3, 0xB108);
     expect(PtpObjectFormat.exifJpeg, 0x3801);
     expect(PtpResponseCode.ok, 0x2001);
+    expect(CanonEosEvent.objectAddedEx, 0xC181);
+    expect(CanonEosEvent.requestObjectTransfer, 0xC186);
+    expect(CanonEosEvent.objectAddedEx64, 0xC1A7);
+    expect(CanonEosEvent.requestObjectTransfer64, 0xC1A9);
   });
 }
