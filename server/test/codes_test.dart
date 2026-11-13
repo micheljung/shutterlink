@@ -7,6 +7,10 @@ void main() {
       normalizeCode('  Apple-Banana-Cherry-Delta '),
       'apple-banana-cherry-delta',
     );
+    expect(
+      normalizeCode('apple  banana\tcherry \n delta'),
+      'apple-banana-cherry-delta',
+    );
     expect(normalizeCode('apple-banana-cherry'), isNull);
     expect(normalizeCode('../../etc-passwd-x-y'), isNull);
     expect(normalizeCode('apple-banana-cherry-delta-echo'), isNull);
