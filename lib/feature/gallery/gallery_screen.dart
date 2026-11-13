@@ -11,6 +11,7 @@ import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
 import '../live/live_transfer_cubit.dart';
+import '../sessions/active_session_indicator.dart';
 import '../sessions/clock_sync_banner.dart';
 import '../sessions/sessions_connection.dart';
 import '../sessions/sessions_screen.dart';
@@ -143,6 +144,7 @@ class _GalleryView extends StatelessWidget {
       ? Column(
           children: [
             ClockSyncBanner(client: client),
+            const ActiveSessionIndicator(),
             Expanded(child: body),
           ],
         )
