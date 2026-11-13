@@ -22,6 +22,7 @@ class NetworkBinder(context: Context) {
     private var events: EventChannel.EventSink? = null
     private var boundNetwork: Network? = null
     private var heldRequest: ConnectivityManager.NetworkCallback? = null
+    private var lossWatch: ConnectivityManager.NetworkCallback? = null
 
     fun register(messenger: BinaryMessenger) {
         EventChannel(messenger, EVENTS_CHANNEL).setStreamHandler(object : EventChannel.StreamHandler {
@@ -36,10 +37,11 @@ class NetworkBinder(context: Context) {
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "bindToWifi" -> {
-                    val network = findWifiNetwork()
+                    val current = currentBinding()
+                    val network = current ?: findWifiNetwork()
                     if (network == null) {
                         result.error(NO_WIFI, "No Wi-Fi network available", null)
-                    } else if (!connectivity.bindProcessToNetwork(network)) {
+                    } else if (current == null && !connectivity.bindProcessToNetwork(network)) {
                         result.error(BIND_FAILED, "Could not bind to Wi-Fi", null)
                     } else {
                         boundNetwork = network
@@ -48,9 +50,7 @@ class NetworkBinder(context: Context) {
                     }
                 }
                 "unbind" -> {
-                    connectivity.bindProcessToNetwork(null)
-                    boundNetwork = null
-                    releaseWifi()
+                    unbind()
                     result.success(null)
                 }
                 "acquireMulticastLock" -> {
@@ -66,30 +66,58 @@ class NetworkBinder(context: Context) {
         }
     }
 
+    fun dispose() {
+        events = null
+        if (boundNetwork != null) unbind()
+        if (multicastLock.isHeld) multicastLock.release()
+    }
+
+    private fun unbind() {
+        connectivity.bindProcessToNetwork(null)
+        boundNetwork = null
+        releaseWifi()
+    }
+
+    /**
+     * Keeps the Wi-Fi this process is bound to, which on devices connected to
+     * several Wi-Fis may not be the first one found.
+     */
+    private fun currentBinding(): Network? = boundNetwork?.takeIf {
+        it == connectivity.boundNetworkForProcess &&
+            connectivity.getNetworkCapabilities(it)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    }
+
     /**
      * Without a request of its own, the system may tear down a Wi-Fi without
      * internet once mobile data is requested or the screen turns off.
      */
     private fun holdWifi() {
         if (heldRequest != null) return
-        val callback = object : ConnectivityManager.NetworkCallback() {
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        val held = object : ConnectivityManager.NetworkCallback() {}
+        connectivity.requestNetwork(request, held)
+        heldRequest = held
+        // A request only reports the Wi-Fi it was matched to, which need not be the bound one.
+        val watch = object : ConnectivityManager.NetworkCallback() {
             override fun onLost(network: Network) {
                 mainThread.post {
                     if (network == boundNetwork) events?.success(LOST)
                 }
             }
         }
-        val request = NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        connectivity.requestNetwork(request, callback)
-        heldRequest = callback
+        connectivity.registerNetworkCallback(request, watch)
+        lossWatch = watch
     }
 
     private fun releaseWifi() {
         heldRequest?.let { connectivity.unregisterNetworkCallback(it) }
         heldRequest = null
+        lossWatch?.let { connectivity.unregisterNetworkCallback(it) }
+        lossWatch = null
     }
 
     @Suppress("DEPRECATION")
