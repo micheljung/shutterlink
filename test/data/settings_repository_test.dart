@@ -41,6 +41,21 @@ void main() {
     expect(settings.hostOverride, isNull);
   });
 
+  test('Sessions are off by default and persist changes', () async {
+    expect(settings.sessionsEnabled, isFalse);
+    expect(settings.sessionsServerUrl, isNull);
+
+    await settings.setSessionsEnabled(true);
+    await settings.setSessionsServerUrl(' https://photos.example.com ');
+
+    final reloaded = SettingsRepository(await SharedPreferences.getInstance());
+    expect(reloaded.sessionsEnabled, isTrue);
+    expect(reloaded.sessionsServerUrl, 'https://photos.example.com');
+
+    await settings.setSessionsServerUrl('  ');
+    expect(settings.sessionsServerUrl, isNull);
+  });
+
   group('CameraHostResolver', () {
     test('prefers the override', () async {
       await settings.setHostOverride('10.0.0.9');
