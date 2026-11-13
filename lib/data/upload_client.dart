@@ -8,7 +8,8 @@ import '../feature/sessions/session.dart';
 import '../upload/storage_backend.dart';
 import 'sessions_upload_queue.dart';
 
-const requestTimeout = Duration(minutes: 2);
+/// How long an upload may go without sending or receiving anything.
+const uploadIdleTimeout = Duration(seconds: 30);
 
 sealed class UploadResult {
   const UploadResult(this.status);
@@ -43,7 +44,9 @@ class UploadMisconfigured extends UploadResult {
 }
 
 class UploadClient {
-  const UploadClient();
+  const UploadClient({this._idleTimeout = uploadIdleTimeout});
+
+  final Duration _idleTimeout;
 
   static const _expiredError = 'expired';
   static const _droppingErrors = {
@@ -80,35 +83,77 @@ class UploadClient {
     } on FileSystemException {
       return const UploadRejected(_missingFile);
     }
+    final abort = Completer<void>();
+    var readFailed = false;
+    Timer? idle;
+    void progress() {
+      idle?.cancel();
+      idle = Timer(_idleTimeout, () {
+        if (!abort.isCompleted) abort.complete();
+      });
+    }
+
+    Future<T> guarded<T>(Future<T> future) => Future.any([
+      future,
+      abort.future.then<T>((_) => throw TimeoutException(null)),
+    ]);
+
     final request =
-        http.StreamedRequest(
+        http.AbortableStreamedRequest(
             'PUT',
             photoUrl(serverUrl, item.sessionCode, item.photoKey),
+            abortTrigger: abort.future,
           )
           ..contentLength = length
           ..headers[HttpHeaders.authorizationHeader] = 'Bearer $token'
           ..headers[HttpHeaders.contentTypeHeader] = 'image/jpeg';
+    progress();
     try {
-      final response = await () async {
-        final sending = client.send(request);
-        unawaited(file.openRead().pipe(request.sink).catchError((Object _) {}));
-        return http.Response.fromStream(await sending);
-      }().timeout(requestTimeout);
+      final sending = client.send(request);
+      unawaited(
+        request.sink
+            .addStream(
+              file
+                  .openRead()
+                  .map((chunk) {
+                    progress();
+                    return chunk;
+                  })
+                  .handleError((Object _) {
+                    readFailed = true;
+                    if (!abort.isCompleted) abort.complete();
+                  }),
+            )
+            .whenComplete(request.sink.close),
+      );
+      final response = await guarded(
+        sending.then((streamed) {
+          progress();
+          return http.Response.fromStream(streamed);
+        }),
+      );
+      if (readFailed) return const UploadRejected(_missingFile);
       return classify(response.statusCode, response.body);
-    } on SocketException catch (error) {
-      return UploadRetry('socket: ${error.message}');
-    } on TimeoutException {
-      return const UploadRetry('timeout');
-    } on http.ClientException catch (error) {
-      return UploadRetry('client: ${error.message}');
-    } on HttpException catch (error) {
-      return UploadRetry('http: ${error.message}');
-    } on FileSystemException {
-      return const UploadRejected(_missingFile);
-    } on StorageException catch (error) {
-      return error.retryable
-          ? UploadRetry('network: ${error.message}')
-          : UploadMisconfigured('network: ${error.message}');
+    } on Exception catch (error) {
+      if (readFailed) return const UploadRejected(_missingFile);
+      return switch (error) {
+        SocketException(:final message) => UploadRetry('socket: $message'),
+        TimeoutException() ||
+        http.RequestAbortedException() => const UploadRetry('timeout'),
+        http.ClientException(:final message) => UploadRetry('client: $message'),
+        HttpException(:final message) => UploadRetry('http: $message'),
+        FileSystemException() => const UploadRejected(_missingFile),
+        StorageException(:final message, retryable: true) => UploadRetry(
+          'network: $message',
+        ),
+        StorageException(:final message) => UploadMisconfigured(
+          'network: $message',
+        ),
+        _ => throw error,
+      };
+    } finally {
+      idle?.cancel();
+      if (!abort.isCompleted) abort.complete();
     }
   }
 

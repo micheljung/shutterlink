@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +9,10 @@ import 'package:path/path.dart' as p;
 import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/data/upload_client.dart';
 import 'package:shutterlink/upload/storage_backend.dart';
+
+const _idle = Duration(milliseconds: 200);
+const _chunkSize = 64 * 1024;
+const _chunks = 8;
 
 void main() {
   const code = 'apple-bread-cider-dough';
@@ -162,6 +168,78 @@ void main() {
       );
 
       expect(result, isA<UploadRejected>());
+    });
+
+    test('a server that stops answering times out', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) => request.drain<void>());
+      final client = http.Client();
+      addTearDown(() async {
+        client.close();
+        await server.close(force: true);
+      });
+
+      final result = await const UploadClient(idleTimeout: _idle).upload(
+        client,
+        serverUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+        token: 'secret',
+        item: item,
+      );
+
+      expect(result, isA<UploadRetry>());
+      expect(result.status, 'timeout');
+    });
+
+    test('an upload that keeps sending outlasts the idle timeout', () async {
+      final chunk = List.filled(_chunkSize, 1);
+      final file = File(item.filePath)
+        ..writeAsBytesSync([for (var i = 0; i < _chunks; i++) ...chunk]);
+      final big = UploadItem(
+        photoKey: await SessionsUploadQueue.photoKeyOf(file),
+        sessionCode: code,
+        filePath: file.path,
+        enqueuedAt: expiresAt,
+        nextAttemptAt: expiresAt,
+      );
+      final client = MockClient.streaming((request, body) async {
+        await for (final _ in body) {
+          await Future<void>.delayed(_idle ~/ 2);
+        }
+        return http.StreamedResponse(
+          Stream.value(utf8.encode(expiresJson)),
+          HttpStatus.created,
+        );
+      });
+
+      final result = await const UploadClient(idleTimeout: _idle).upload(
+        client,
+        serverUrl: Uri.parse('https://example.com'),
+        token: 'secret',
+        item: big,
+      );
+
+      expect(result, isA<UploadDone>());
+    });
+
+    test('a file that cannot be read is rejected, not timed out', () async {
+      final file = File(item.filePath);
+      await Process.run('chmod', ['000', file.path]);
+      addTearDown(() => Process.run('chmod', ['600', file.path]));
+      final result = await const UploadClient(idleTimeout: _idle).upload(
+        MockClient.streaming((request, body) async {
+          await body.drain<void>();
+          return http.StreamedResponse(
+            Stream.value(utf8.encode(expiresJson)),
+            HttpStatus.created,
+          );
+        }),
+        serverUrl: Uri.parse('https://example.com'),
+        token: 'secret',
+        item: item,
+      );
+
+      expect(result, isA<UploadRejected>());
+      expect(result.status, 'missing_file');
     });
   });
 }
