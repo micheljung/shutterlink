@@ -171,15 +171,13 @@ class ClockSyncCubit extends Cubit<ClockState> {
     DateTime missedAt,
     DateTime foundAt,
   ) async {
-    for (final group in added) {
-      await _exclude(group);
-    }
     if (foundAt.difference(missedAt) > syncShotTolerance * 2) {
       return _failSync(ClockSyncFailure.windowTooLong);
     }
     final shot = added.reduce(
       (a, b) => a.newestHandle <= b.newestHandle ? a : b,
     );
+    await _exclude(shot);
     final stored = await _sessions.clockOffset();
     final offset = _midpoint(
       missedAt,
