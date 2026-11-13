@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,6 +21,16 @@ const _microsecondsPerSecond = 1000000;
 const _hexRadix = 16;
 const _hexDigitsPerByte = 2;
 const _packetTypeOffset = 4;
+const _eventHeaderSize = 8;
+const _eventTerminatorType = 0;
+const _eventObjectAddedEx = 0xC181;
+const _eventObjectAddedEx64 = 0xC1A7;
+const _eventRequestObjectTransfer = 0xC186;
+const _highlightedEvents = {
+  _eventObjectAddedEx: 'ObjectAddedEx',
+  _eventObjectAddedEx64: 'ObjectAddedEx64',
+  _eventRequestObjectTransfer: 'RequestObjectTransfer',
+};
 
 const pairingInstructions = '''
 The camera does not know this computer yet. Pair it once:
@@ -44,13 +55,23 @@ ArgParser _parser() => ArgParser()
     defaultsTo: '${ptpIpDefaultPairingTimeout.inSeconds}',
     help: 'Seconds to wait while pairing is confirmed on the camera.',
   )
+  ..addFlag(
+    'watch-events',
+    negatable: false,
+    help: 'Log Canon GetEvent records every second until Ctrl-C (no download).',
+  )
   ..addFlag('help', abbr: 'h', negatable: false);
 
 Future<void> main(List<String> args) async {
   exitCode = await runProbe(args);
 }
 
-Future<int> runProbe(List<String> args, {StringSink? output}) async {
+Future<int> runProbe(
+  List<String> args, {
+  StringSink? output,
+  int? watchPolls,
+  Duration watchInterval = PtpIpCameraClient.defaultEventPollInterval,
+}) async {
   final out = output ?? stdout;
   final parser = _parser();
   final ArgResults options;
@@ -92,6 +113,9 @@ Future<int> runProbe(List<String> args, {StringSink? output}) async {
       downloadDir: Directory(options.option('download-dir')!),
       index: index,
       pairingTimeout: Duration(seconds: pairSeconds),
+      watch: options.flag('watch-events'),
+      watchPolls: watchPolls,
+      watchInterval: watchInterval,
       tap: dump == null ? null : (c, d, f) => _dumpPacket(dump, c, d, f),
     );
   } on PairingRequiredException catch (error) {
@@ -121,15 +145,21 @@ Future<int> _probe(
   required Directory downloadDir,
   required int? index,
   required Duration pairingTimeout,
+  required bool watch,
+  required int? watchPolls,
+  required Duration watchInterval,
   required PacketTap? tap,
 }) async {
   out.writeln('Connecting to $host:$port as "${identity.name}"...');
+  final events = watch ? _EventWatcher(out, watchPolls) : null;
   final client = await PtpIpCameraClient.connect(
     host: host,
     port: port,
     identity: identity,
     pairingTimeout: pairingTimeout,
     packetTap: tap,
+    eventPollInterval: watchInterval,
+    onEventData: events?.onData,
   );
   try {
     final info = client.deviceInfo;
@@ -141,6 +171,12 @@ Future<int> _probe(
       ..writeln(
         'Operations:   ${info.operationsSupported.map(_hex).join(' ')}',
       );
+
+    if (events != null) {
+      out.writeln('Watching GetEvent; press Ctrl-C to stop.');
+      await events.done;
+      return exitOk;
+    }
 
     final photos = (await client.listPhotos()).sorted(_newestFirst);
     for (final kind in CameraObjectKind.values) {
@@ -187,6 +223,71 @@ Future<int> _probe(
     return exitOk;
   } finally {
     await client.close();
+  }
+}
+
+class _EventWatcher {
+  _EventWatcher(this._out, this._maxPolls);
+
+  final StringSink _out;
+  final int? _maxPolls;
+  final _done = Completer<void>();
+  var _batches = 0;
+
+  Future<void> get done {
+    final subscription = ProcessSignal.sigint.watch().listen((_) => _finish());
+    return _done.future.whenComplete(subscription.cancel);
+  }
+
+  void onData(Uint8List data) {
+    final stamp = DateTime.now().toIso8601String();
+    _out.writeln(
+      _batches == 0
+          ? '$stamp initial dump (${data.length} bytes)'
+          : '$stamp poll $_batches (${data.length} bytes)',
+    );
+    _logRecords(_out, stamp, data);
+    final limit = _maxPolls;
+    if (limit != null && _batches >= limit) {
+      _finish();
+    }
+    _batches++;
+  }
+
+  void _finish() {
+    if (!_done.isCompleted) {
+      _done.complete();
+    }
+  }
+}
+
+void _logRecords(StringSink out, String stamp, Uint8List data) {
+  final view = ByteData.sublistView(data);
+  var offset = 0;
+  while (offset + _eventHeaderSize <= data.length) {
+    final size = view.getUint32(offset, Endian.little);
+    final type = view.getUint32(offset + 4, Endian.little);
+    if (type == _eventTerminatorType && size == _eventHeaderSize) {
+      return;
+    }
+    final end = offset + size;
+    if (size < _eventHeaderSize || end > data.length) {
+      out.writeln(
+        '$stamp malformed record at $offset (size $size):\n'
+        '${hexDump(Uint8List.sublistView(data, offset))}',
+      );
+      return;
+    }
+    final label = _highlightedEvents[type];
+    out
+      ..writeln(
+        '$stamp ${label == null ? '' : '>>> $label >>> '}'
+        'record ${_hex(type)} size $size',
+      )
+      ..write(
+        hexDump(Uint8List.sublistView(data, offset + _eventHeaderSize, end)),
+      );
+    offset = end;
   }
 }
 

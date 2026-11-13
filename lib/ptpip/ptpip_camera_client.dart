@@ -16,6 +16,7 @@ class PtpIpCameraClient implements CameraClient {
     this._session,
     this.deviceInfo,
     this.ptpDeviceInfo,
+    this._onEventData,
   );
 
   static const defaultEventPollInterval = Duration(seconds: 1);
@@ -23,6 +24,7 @@ class PtpIpCameraClient implements CameraClient {
 
   final PtpIpConnection _connection;
   final PtpSession _session;
+  final void Function(Uint8List data)? _onEventData;
   Timer? _pollTimer;
   bool _pollInFlight = false;
 
@@ -40,6 +42,7 @@ class PtpIpCameraClient implements CameraClient {
     Duration responseTimeout = ptpDefaultResponseTimeout,
     Duration eventPollInterval = defaultEventPollInterval,
     PacketTap? packetTap,
+    void Function(Uint8List data)? onEventData,
   }) async {
     final connection = await PtpIpConnection.open(
       host: host,
@@ -66,7 +69,10 @@ class PtpIpCameraClient implements CameraClient {
       await runIfSupported(CanonEosOperation.setEventMode, const [
         CanonEosMode.eventModeOn,
       ]);
-      await runIfSupported(CanonEosOperation.getEvent);
+      if (supported.contains(CanonEosOperation.getEvent)) {
+        final initial = await session.execute(CanonEosOperation.getEvent);
+        onEventData?.call(initial.data);
+      }
       final client = PtpIpCameraClient._(
         connection,
         session,
@@ -78,6 +84,7 @@ class PtpIpCameraClient implements CameraClient {
           operationsSupported: info.operationsSupported,
         ),
         info,
+        onEventData,
       );
       if (supported.contains(CanonEosOperation.getEvent)) {
         client._startPolling(eventPollInterval);
@@ -103,7 +110,8 @@ class PtpIpCameraClient implements CameraClient {
     }
     _pollInFlight = true;
     try {
-      await _session.execute(CanonEosOperation.getEvent);
+      final result = await _session.execute(CanonEosOperation.getEvent);
+      _onEventData?.call(result.data);
     } on PtpResponseException {
       return;
     } on CameraDisconnectedException {

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/ptpip/ptpip.dart';
@@ -106,6 +107,61 @@ void main() {
       await runProbe([...baseArgs(), '--index', '9'], output: out),
       exitUsage,
     );
+  });
+
+  test(
+    '--watch-events logs event records and highlights new objects',
+    () async {
+      await camera.stop();
+      final records = ByteData(20)
+        ..setUint32(0, 12, Endian.little)
+        ..setUint32(4, 0xC181, Endian.little)
+        ..setUint32(8, 0xDEADBEEF, Endian.little)
+        ..setUint32(12, 8, Endian.little)
+        ..setUint32(16, 0xC186, Endian.little);
+      camera = FakeCamera(
+        pairedGuids: [pairedGuid],
+        eventRecords: records.buffer.asUint8List(),
+      );
+      await camera.start();
+      await guidFile.writeAsString(hex(pairedGuid));
+      final out = StringBuffer();
+      final code = await runProbe(
+        [...baseArgs(), '--watch-events'],
+        output: out,
+        watchPolls: 2,
+        watchInterval: const Duration(milliseconds: 20),
+      );
+      final text = out.toString();
+      expect(code, exitOk, reason: text);
+      expect(text, contains('initial dump'));
+      expect(text, contains('poll 2'));
+      expect(text, contains('>>> ObjectAddedEx >>> record 0xc181 size 12'));
+      expect(text, contains('ef be ad de'));
+      expect(
+        text,
+        contains('>>> RequestObjectTransfer >>> record 0xc186 size 8'),
+      );
+      expect(text, isNot(contains('Thumbnail')));
+    },
+  );
+
+  test('--watch-events reports a malformed record', () async {
+    await camera.stop();
+    camera = FakeCamera(
+      pairedGuids: [pairedGuid],
+      eventRecords: Uint8List.fromList([64, 0, 0, 0, 1, 0, 0, 0]),
+    );
+    await camera.start();
+    await guidFile.writeAsString(hex(pairedGuid));
+    final out = StringBuffer();
+    await runProbe(
+      [...baseArgs(), '--watch-events'],
+      output: out,
+      watchPolls: 0,
+      watchInterval: const Duration(milliseconds: 20),
+    );
+    expect(out.toString(), contains('malformed record'));
   });
 
   test('a busy camera is reported', () async {
