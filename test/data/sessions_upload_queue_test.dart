@@ -5,6 +5,7 @@ import 'package:clock/clock.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:shutterlink/data/json_file.dart';
 import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/feature/sessions/sessions_config.dart';
 
@@ -142,7 +143,7 @@ void main() {
     await manifest.writeAsString('[1, 2');
 
     expect(await queue().items(), isEmpty);
-    expect(await File('${manifest.path}.corrupt').readAsString(), '[1, 2');
+    expect(await JsonFile(manifest).corruptFileAt(now).readAsString(), '[1, 2');
     expect(await manifest.exists(), isFalse);
   });
 

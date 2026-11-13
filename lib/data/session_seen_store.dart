@@ -12,7 +12,7 @@ enum SeenState { queued, excluded }
 
 class SessionSeenStore {
   SessionSeenStore(File file, {this._clock = const Clock()})
-    : _file = JsonFile(file);
+    : _file = JsonFile(file, clock: _clock);
 
   static const fileName = 'sessions_seen.json';
 

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:clock/clock.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:shutterlink/data/json_file.dart';
 import 'package:shutterlink/data/session_seen_store.dart';
 import 'package:shutterlink/feature/sessions/sessions_config.dart';
 
@@ -103,6 +104,9 @@ void main() {
     await file.writeAsString('{"entries": 5}');
 
     expect(await store().states(), isEmpty);
-    expect(await File('${file.path}.corrupt').readAsString(), '{"entries": 5}');
+    expect(
+      await JsonFile(file).corruptFileAt(now).readAsString(),
+      '{"entries": 5}',
+    );
   });
 }

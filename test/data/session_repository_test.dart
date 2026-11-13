@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:clock/clock.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:shutterlink/data/json_file.dart';
 import 'package:shutterlink/data/session_repository.dart';
 import 'package:shutterlink/feature/sessions/session.dart';
 import 'package:shutterlink/feature/sessions/session_code.dart';
@@ -150,11 +151,14 @@ void main() {
     await file.writeAsString(json);
 
     expect(await repository().all(), isEmpty);
-    expect(await File('${file.path}.corrupt').readAsString(), json);
+    final firstCorruption = now;
 
+    now = now.add(minute);
     await file.writeAsString('{not json');
     expect(await repository().all(), isEmpty);
-    expect(await File('${file.path}.corrupt').readAsString(), '{not json');
+    final corrupt = JsonFile(file);
+    expect(await corrupt.corruptFileAt(firstCorruption).readAsString(), json);
+    expect(await corrupt.corruptFileAt(now).readAsString(), '{not json');
     expect(jsonDecode(json), isA<Map<String, Object?>>());
   });
 
@@ -163,7 +167,7 @@ void main() {
 
     await repository().start();
 
-    expect(await File('${file.path}.corrupt').readAsString(), '{not json');
+    expect(await JsonFile(file).corruptFileAt(now).readAsString(), '{not json');
     expect(await repository().all(), hasLength(1));
   });
 
