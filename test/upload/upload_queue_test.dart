@@ -818,6 +818,36 @@ void main() {
     expect(item.sha256, sha256.convert(bytesOf('IMG_0001.JPG')).toString());
   });
 
+  test('a backend that fails to close does not fail the upload', () async {
+    server().failClose = true;
+    final queue = await started();
+    await add(queue, 'IMG_0001.JPG');
+    await queue.idle;
+
+    expect(server().files, hasLength(1));
+    expect(queue.snapshot.items, isEmpty);
+    expect(queue.snapshot.completed, 1);
+  });
+
+  test('snapshots compare by value', () {
+    const waiting = UploadQueueSnapshot(
+      waiting: {'a': WaitReason.network},
+      sentBytes: 1,
+      totalBytes: 2,
+    );
+
+    expect(
+      waiting,
+      const UploadQueueSnapshot(
+        waiting: {'a': WaitReason.network},
+        sentBytes: 1,
+        totalBytes: 2,
+      ),
+    );
+    expect(waiting, isNot(const UploadQueueSnapshot(activeId: 'a')));
+    expect(waiting.hasPendingUploads, isFalse);
+  });
+
   test('reports upload progress', () async {
     final release = Completer<void>();
     server().beforeCommit = (_) => release.future;

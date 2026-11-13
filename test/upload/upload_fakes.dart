@@ -24,6 +24,9 @@ class FakeStorageServer {
   int failUploads = 0;
   StorageException failure = const StorageException('Connection reset');
 
+  /// Makes closing a backend fail.
+  bool failClose = false;
+
   StorageBackend backend({bool allowMetered = false}) {
     connections.add(allowMetered);
     return _FakeBackend(this);
@@ -84,7 +87,9 @@ class _FakeBackend implements StorageBackend {
   Future<void> testConnection() async {}
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    if (_server.failClose) throw const SocketException('Broken pipe');
+  }
 }
 
 class MediaRow {
