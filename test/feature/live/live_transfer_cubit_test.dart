@@ -44,6 +44,16 @@ class GatedCameraClient extends FakeCameraClient {
   }
 }
 
+class FailingCloseClient extends FakeCameraClient {
+  FailingCloseClient(super.objects);
+
+  @override
+  Future<void> close() async {
+    await super.close();
+    throw const SocketException('close failed');
+  }
+}
+
 class FakeLiveService implements LiveService {
   final calls = <String>[];
   final statuses = <LiveStatus>[];
@@ -143,6 +153,7 @@ void main() {
   late List<LiveTransferState> liveStates;
   late IdentityRepository identity;
   late CameraConnector connector;
+  void Function(CameraClient client)? onIngestor;
 
   CameraHostResolver resolver() => CameraHostResolver(
     SettingsRepository(prefs),
@@ -159,16 +170,19 @@ void main() {
       networkBinder: binder,
       service: liveService,
       queue: queue,
-      ingestorFactory: (client, baseline) => LiveIngestor(
-        client: client,
-        format: DownloadFormat.jpeg,
-        baseline: baseline,
-        history: history,
-        queue: queue,
-        coordinator: coordinator,
-        infoRetryDelay: Duration.zero,
-        rescanInterval: const Duration(days: 1),
-      ),
+      ingestorFactory: (client, baseline) {
+        onIngestor?.call(client);
+        return LiveIngestor(
+          client: client,
+          format: DownloadFormat.jpeg,
+          baseline: baseline,
+          history: history,
+          queue: queue,
+          coordinator: coordinator,
+          infoRetryDelay: Duration.zero,
+          rescanInterval: const Duration(days: 1),
+        );
+      },
       clock: () => now,
       timerFactory: timers.create,
     );
@@ -197,6 +211,7 @@ void main() {
     first = GatedCameraClient([old]);
     connections = [first];
     hosts = [];
+    onIngestor = null;
     identity = IdentityRepository(prefs);
     connector = (String host, CameraIdentity _) async {
       hosts.add(host);
@@ -461,6 +476,60 @@ void main() {
     await pumpEventQueue();
 
     expect(binder.owners, isEmpty);
+  });
+
+  test('a lost binding while attaching a reconnect retries', () async {
+    final second = FakeCameraClient([old]);
+    connections.addAll([
+      second,
+      FakeCameraClient([old]),
+    ]);
+    await live.start();
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    onIngestor = (client) {
+      if (client == second) binder.lost.add(null);
+    };
+
+    await fire();
+
+    expect(second.closed, isTrue);
+    expect(live.state, isA<LiveReconnecting>());
+    await fire();
+    expect(live.state, isA<LiveTransferring>());
+  });
+
+  test('a renumbered new shot after a reconnect is ingested', () async {
+    final renumbered = cameraObject(7, 'IMG_0001.JPG', captureDate: date);
+    final moved = cameraObject(old.handle, 'IMG_0002.JPG', captureDate: date);
+    final second = FakeCameraClient([renumbered]);
+    connections.add(second);
+    await live.start();
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    await fire();
+    await pumpEventQueue();
+
+    second
+      ..objects.add(moved)
+      ..emitAdded(moved.handle);
+    await until(() => server.files.isNotEmpty);
+
+    expect(server.files.keys, ['2026-11-13/IMG_0002.JPG']);
+  });
+
+  test('a camera that fails to close still releases on stop', () async {
+    await connect.disconnect();
+    connections.add(FailingCloseClient([old]));
+    await live.start();
+
+    final stopping = live.stop();
+    final restarting = live.start();
+    await stopping;
+    connections.add(FakeCameraClient([old]));
+    await restarting;
+
+    expect(live.state, isA<LiveTransferring>());
   });
 
   test('closing mid-reconnect releases the binding', () async {
