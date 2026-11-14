@@ -73,6 +73,10 @@ void main() {
     expect(c.ptpDeviceInfo.vendorExtensionDesc, isNotEmpty);
   });
 
+  test('an EOS is driven by the Canon profile', () async {
+    expect((await start(FakeCamera())).profileId, 'canon-eos');
+  });
+
   test('polls GetEvent and never sends CloseSession', () async {
     final c = await start(FakeCamera());
     await Future<void>.delayed(testPollInterval * 5);

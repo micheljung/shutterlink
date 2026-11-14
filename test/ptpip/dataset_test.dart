@@ -76,7 +76,7 @@ void main() {
   test('ObjectInfo round-trips and tolerates missing keywords', () {
     const info = PtpObjectInfo(
       storageId: 0x20001,
-      objectFormat: PtpObjectFormat.canonCr3,
+      objectFormat: CanonObjectFormat.cr3,
       protectionStatus: 1,
       compressedSize: 31000000,
       thumbFormat: PtpObjectFormat.exifJpeg,
@@ -98,7 +98,7 @@ void main() {
     final bytes = info.encode();
     final parsed = PtpObjectInfo.parse(bytes);
     expect(parsed.storageId, 0x20001);
-    expect(parsed.objectFormat, PtpObjectFormat.canonCr3);
+    expect(parsed.objectFormat, CanonObjectFormat.cr3);
     expect(parsed.protectionStatus, 1);
     expect(parsed.compressedSize, 31000000);
     expect(parsed.thumbFormat, PtpObjectFormat.exifJpeg);

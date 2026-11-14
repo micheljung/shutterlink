@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'camera_client.dart';
-import 'canon_eos.dart';
+import '../ptp/camera_client.dart';
+import '../ptp/ptp_constants.dart';
+import '../ptp/ptp_protocol_exception.dart';
 import 'packet.dart';
 import 'packet_reader.dart';
 
@@ -27,10 +28,8 @@ typedef PacketTap = void Function(
   Uint8List frame,
 );
 
-class PtpIpProtocolException implements Exception {
-  const PtpIpProtocolException(this.message);
-
-  final String message;
+class PtpIpProtocolException extends PtpProtocolException {
+  const PtpIpProtocolException(super.message);
 
   @override
   String toString() => 'PtpIpProtocolException: $message';

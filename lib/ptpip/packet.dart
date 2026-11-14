@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'dataset.dart';
+import '../ptp/dataset.dart';
 
 abstract final class PtpIpPacketType {
   static const initCommandRequest = 1;

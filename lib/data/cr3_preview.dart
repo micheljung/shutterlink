@@ -1,8 +1,8 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../ptp/ptp_camera_client.dart';
 import '../ptpip/camera_client.dart';
-import '../ptpip/ptpip_camera_client.dart';
 
 const cr3PreviewReadCap = 4 * 1024 * 1024;
 
@@ -105,7 +105,7 @@ Future<Uint8List?> readCr3Preview(
   CameraClient client,
   CameraObject object, {
   CancelToken? cancelToken,
-  int step = PtpIpCameraClient.downloadChunkSize,
+  int step = ptpDownloadChunkSize,
   int cap = cr3PreviewReadCap,
 }) async {
   final limit = min(cap, object.size);
