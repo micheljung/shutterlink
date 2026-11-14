@@ -122,6 +122,27 @@ Uint8List objectRemovedRecord(int handle) {
   return record.buffer.asUint8List();
 }
 
+/// A Canon PropValueChanged record with a single u32 value.
+Uint8List propertyChangedRecord(int property, int value) {
+  const size = _recordHandleAt + 8;
+  final record = ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_recordTypeAt, CanonEosEvent.propValueChanged, Endian.little)
+    ..setUint32(_recordHandleAt, property, Endian.little)
+    ..setUint32(_recordHandleAt + 4, value, Endian.little);
+  return record.buffer.asUint8List();
+}
+
+/// A Canon StorageInfoChanged record, as the EOS R sends it per shot.
+Uint8List storageChangedRecord(int storageId) {
+  const size = _recordHandleAt + 4;
+  final record = ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_recordTypeAt, CanonEosEvent.storageInfoChanged, Endian.little)
+    ..setUint32(_recordHandleAt, storageId, Endian.little);
+  return record.buffer.asUint8List();
+}
+
 Uint8List patternBytes(int length, {int seed = 1}) {
   final random = Random(seed);
   return Uint8List.fromList(List.generate(length, (_) => random.nextInt(256)));

@@ -235,6 +235,82 @@ void main() {
       expect(await c.cameraTime(), isNull);
     });
 
+    group('Canon camera-time property', () {
+      // 2026-11-14 12:53:45 on the camera's clock, as the EOS R reports it.
+      const seconds = 0x6af859d9;
+      final reported = DateTime(2026, 11, 14, 12, 53, 45);
+
+      test('is read from the initial event dump', () async {
+        final c = await start(
+          FakeCamera(
+            initialDump: propertyChangedRecord(
+              CanonEosProperty.cameraTime,
+              seconds,
+            ),
+          ),
+        );
+        final time = (await c.cameraTime())!;
+        expect(time.isUtc, isFalse);
+        expect(time.difference(reported), greaterThanOrEqualTo(Duration.zero));
+        expect(time.difference(reported), lessThan(_detectionDeadline));
+      });
+
+      test('advances with time since it arrived', () async {
+        final c = await start(
+          FakeCamera(
+            initialDump: propertyChangedRecord(
+              CanonEosProperty.cameraTime,
+              seconds,
+            ),
+          ),
+        );
+        final first = (await c.cameraTime())!;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        final second = (await c.cameraTime())!;
+        expect(
+          second.difference(first),
+          greaterThanOrEqualTo(const Duration(milliseconds: 50)),
+        );
+      });
+
+      test('follows a later change from polling', () async {
+        final c = await start(FakeCamera());
+        expect(await c.cameraTime(), isNull);
+        camera.queueEventRecord(
+          propertyChangedRecord(CanonEosProperty.cameraTime, seconds),
+        );
+        final deadline = DateTime.now().add(_detectionDeadline);
+        while (await c.cameraTime() == null &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(testPollInterval);
+        }
+        expect(
+          (await c.cameraTime())!.difference(reported),
+          lessThan(_detectionDeadline),
+        );
+      });
+
+      test('is not used when the DateTime property answers', () async {
+        final c = await start(
+          FakeCamera(
+            devicePropertyValues: clock('20261113T095830'),
+            initialDump: propertyChangedRecord(
+              CanonEosProperty.cameraTime,
+              seconds,
+            ),
+          ),
+        );
+        expect(await c.cameraTime(), DateTime(2026, 11, 13, 9, 58, 30));
+      });
+
+      test('ignores other properties', () async {
+        final c = await start(
+          FakeCamera(initialDump: propertyChangedRecord(0xD11B, seconds)),
+        );
+        expect(await c.cameraTime(), isNull);
+      });
+    });
+
     test('is null for a truncated or unparseable value', () async {
       final c = await start(
         FakeCamera(
