@@ -51,12 +51,13 @@ class _CollectorState extends State<_Collector> {
   void initState() {
     super.initState();
     final downloads = context.read<DownloadCubit>();
+    final gallery = context.read<GalleryCubit>();
     _collector = context.read<SessionsDependencies>().createCollector(
       widget.client,
       context.read<ClockSyncCubit>(),
-      isBusy: () => downloads.state.isActive,
+      isBusy: () => downloads.state.isActive || gallery.state.deleting,
     )..start();
-    _onGallery(context.read<GalleryCubit>().state);
+    _onGallery(gallery.state);
   }
 
   @override

@@ -30,6 +30,9 @@ Optionally upload to your own WebDAV/S3/SFTP server.
   Swipe between photos and select from there. Settings choose between the
   thumbnail (instant) and full resolution (the JPEG, or the CR3's embedded
   preview).
+- Delete selected photos, or the one in the preview, from the camera after a
+  confirmation that counts those not downloaded yet. A RAW+JPEG pair loses
+  both files. Hidden on cameras that don't offer PTP DeleteObject.
 - Per-file and overall progress. Cancel stops within one chunk.
 - Interrupted downloads resume from the last received byte after reconnecting.
 - Files are saved byte-identical to the originals: JPEGs to the gallery, CR3
@@ -178,6 +181,10 @@ Flutter dependency.
   and `GetThumb`.
 - **Downloads** use `GetPartialObject` in 1 MiB chunks, which is also what makes
   resuming possible. libgphoto2 notes that the EOS R rejects larger blocks.
+- **Deleting** uses standard `DeleteObject` (0x100B), once per file, and only
+  when the camera lists it in `DeviceInfo`. A protected file or a locked card
+  is refused with `Object_WriteProtected`, `Store_Read_Only` or
+  `Access_Denied`, reported, not retried. Not yet tried on a real EOS R.
 - **Never `CloseSession`.** libgphoto2 flags the EOS R as failing later
   operations after it, so the client restores remote mode and closes the
   sockets instead.

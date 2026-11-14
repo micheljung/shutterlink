@@ -106,6 +106,16 @@ class PtpResponseException implements Exception {
       'code: 0x${responseCode.toRadixString(16)})';
 }
 
+class DeleteDeniedException implements Exception {
+  const DeleteDeniedException(this.responseCode);
+
+  final int responseCode;
+
+  @override
+  String toString() =>
+      'DeleteDeniedException(code: 0x${responseCode.toRadixString(16)})';
+}
+
 class TransferCancelledException implements Exception {
   const TransferCancelledException();
 }
@@ -150,6 +160,12 @@ abstract interface class CameraClient {
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   });
+
+  bool get canDelete;
+
+  /// Removes the file from the card. A handle that is already gone counts as
+  /// deleted.
+  Future<void> delete(int handle);
 
   Future<void> close();
 }

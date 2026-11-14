@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/download_history.dart';
+import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/download/download_cubit.dart';
+import 'package:shutterlink/feature/download/download_state.dart';
+import 'package:shutterlink/feature/gallery/gallery_cubit.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
 import 'package:shutterlink/feature/history/download_history_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
@@ -37,9 +43,10 @@ void main() {
   Future<FakeCameraClient> pumpGallery(
     WidgetTester tester, {
     List<CameraObject> downloaded = const [],
+    bool canDelete = true,
     void Function(AppDependencies dependencies)? onDependencies,
   }) async {
-    final client = FakeCameraClient(objects);
+    final client = FakeCameraClient(objects, canDelete: canDelete);
     final dependencies = await testDependencies((_, _) async => client);
     onDependencies?.call(dependencies);
     await tester.runAsync(
@@ -108,6 +115,160 @@ void main() {
   Finder tileOf(String baseName) => find.byWidgetPredicate(
     (widget) => widget is ThumbnailTile && widget.group.baseName == baseName,
   );
+
+  group('delete', () {
+    final deleteAction = find.byTooltip('Delete from camera');
+
+    Future<void> select(WidgetTester tester, List<String> baseNames) async {
+      await tester.longPress(tileOf(baseNames.first));
+      for (final name in baseNames.skip(1)) {
+        await tester.tap(tileOf(name));
+      }
+      await tester.pump();
+    }
+
+    testWidgets('appears with a selection on a camera that can delete', (
+      tester,
+    ) async {
+      await pumpGallery(tester);
+      expect(deleteAction, findsNothing);
+
+      await select(tester, ['IMG_0002']);
+
+      expect(deleteAction, findsOneWidget);
+    });
+
+    testWidgets('is hidden on a camera without DeleteObject', (tester) async {
+      await pumpGallery(tester, canDelete: false);
+
+      await select(tester, ['IMG_0002']);
+
+      expect(deleteAction, findsNothing);
+    });
+
+    testWidgets('deletes the selected shots after confirmation', (
+      tester,
+    ) async {
+      final client = await pumpGallery(tester, downloaded: [objects[2]]);
+      await select(tester, ['IMG_0001', 'IMG_0002']);
+
+      await tester.tap(deleteAction);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete 2 photos from the camera?'), findsOneWidget);
+      expect(
+        find.text(
+          'RAW+JPEG shots lose both files.\n'
+          'Not downloaded: 1.\n'
+          "This can't be undone.",
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(client.deleted, unorderedEquals([1, 2, 3]));
+      expect(find.byType(ThumbnailTile), findsOneWidget);
+      expect(tileOf('IMG_0003'), findsOneWidget);
+      expect(find.text('Photos (1)'), findsOneWidget);
+      expect(find.text('Deleted 2 photos.'), findsOneWidget);
+    });
+
+    testWidgets('cancelling deletes nothing', (tester) async {
+      final client = await pumpGallery(tester);
+      await select(tester, ['IMG_0002']);
+
+      await tester.tap(deleteAction);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(client.deleted, isEmpty);
+      expect(find.byType(ThumbnailTile), findsNWidgets(3));
+      expect(find.text('1 selected'), findsOneWidget);
+    });
+
+    testWidgets('reports protected shots and keeps them selected', (
+      tester,
+    ) async {
+      final client = await pumpGallery(tester)
+        ..deleteDenied = {3};
+      await select(tester, ['IMG_0002', 'IMG_0003']);
+
+      await tester.tap(deleteAction);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(client.deleted, [4]);
+      expect(
+        find.text(
+          'Could not delete 1 photo. They are protected or the card is locked.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('1 selected'), findsOneWidget);
+      expect(tileOf('IMG_0002'), findsOneWidget);
+    });
+
+    testWidgets('disables Download while it runs', (tester) async {
+      final client = await pumpGallery(tester)
+        ..deleteGate = Completer<void>();
+      await select(tester, ['IMG_0002', 'IMG_0003']);
+      await tester.tap(deleteAction);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.ancestor(
+                of: find.text('Download (2)'),
+                matching: find.byWidgetPredicate((w) => w is FilledButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      client.deleteGate!.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Deleted 2 photos.'), findsOneWidget);
+    });
+
+    testWidgets('is disabled while a download runs', (tester) async {
+      final client = await pumpGallery(tester)
+        ..chunkGate = Completer<void>();
+      final context = tester.element(tileOf('IMG_0002'));
+      final download = context.read<DownloadCubit>();
+      unawaited(
+        download.start(
+          client,
+          context.read<GalleryCubit>().state.groups,
+          DownloadFormat.both,
+        ),
+      );
+      await pumpUntil(
+        tester,
+        () => download.state.status == DownloadStatus.running,
+      );
+      await select(tester, ['IMG_0003']);
+
+      expect(
+        tester
+            .widget<IconButton>(
+              find.ancestor(
+                of: deleteAction,
+                matching: find.byType(IconButton),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      client.chunkGate!.complete();
+    });
+  });
 
   testWidgets('badges shots whose files for the format are downloaded', (
     tester,

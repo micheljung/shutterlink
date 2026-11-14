@@ -76,4 +76,58 @@ class GalleryCubit extends Cubit<GalleryState> {
   }
 
   void clearSelection() => emit(state.copyWith(selected: const {}));
+
+  /// Groups that keep a file stay in the grid and in the selection.
+  Future<DeleteOutcome> delete(List<PhotoGroup> groups) async {
+    emit(state.copyWith(deleting: true));
+    final deleted = <int>{};
+    var denied = 0;
+    var failed = 0;
+    var disconnected = false;
+    try {
+      for (final (index, group) in groups.indexed) {
+        try {
+          for (final file in [?group.jpeg, ?group.raw]) {
+            await _client.delete(file.handle);
+            deleted.add(file.handle);
+          }
+        } on CameraDisconnectedException {
+          failed += groups.length - index;
+          disconnected = true;
+          break;
+        } on DeleteDeniedException {
+          denied++;
+        } on Exception {
+          failed++;
+        }
+      }
+    } finally {
+      if (!isClosed) _dropFiles(deleted);
+    }
+    return (denied: denied, failed: failed, disconnected: disconnected);
+  }
+
+  void _dropFiles(Set<int> handles) {
+    bool kept(CameraObject? file) =>
+        file != null && !handles.contains(file.handle);
+    final remaining = [
+      for (final group in state.groups)
+        if (kept(group.jpeg) || kept(group.raw))
+          PhotoGroup(
+            key: group.key,
+            jpeg: kept(group.jpeg) ? group.jpeg : null,
+            raw: kept(group.raw) ? group.raw : null,
+          ),
+    ];
+    final keys = remaining.map((group) => group.key).toSet();
+    emit(
+      state.copyWith(
+        groups: remaining,
+        selected: state.selected.intersection(keys),
+        deleting: false,
+      ),
+    );
+  }
 }
+
+typedef DeleteOutcome = ({int denied, int failed, bool disconnected});

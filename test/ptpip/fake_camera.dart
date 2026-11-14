@@ -169,6 +169,8 @@ class FakeCamera {
     this.eventDataOverride,
     Map<int, Uint8List>? devicePropertyValues,
     this.devicePropValueCode = PtpResponseCode.ok,
+    this.deleteDeniedCode,
+    this.deleteBusyResponses = 0,
   }) : objects = objects ?? defaultObjects(),
        devicePropertyValues = devicePropertyValues ?? {};
 
@@ -180,6 +182,7 @@ class FakeCamera {
     PtpOperation.getObjectHandles,
     PtpOperation.getObjectInfo,
     PtpOperation.getThumb,
+    PtpOperation.deleteObject,
     PtpOperation.getPartialObject,
     PtpOperation.getDevicePropValue,
     CanonEosOperation.setRemoteMode,
@@ -256,6 +259,8 @@ class FakeCamera {
   final List<FakeObject> objects;
   final Map<int, Uint8List> devicePropertyValues;
   final int devicePropValueCode;
+  final int? deleteDeniedCode;
+  int deleteBusyResponses;
   final int? maxFragmentSize;
   final int dataPacketSize;
   final Duration responseDelay;
@@ -472,6 +477,20 @@ class FakeCamera {
         thumb == null
             ? respond(PtpResponseCode.noThumbnailPresent)
             : respond(PtpResponseCode.ok, thumb);
+      case PtpOperation.deleteObject:
+        final o = object(p[0]);
+        final denied = deleteDeniedCode;
+        if (o == null) {
+          respond(PtpResponseCode.invalidObjectHandle);
+        } else if (deleteBusyResponses > 0) {
+          deleteBusyResponses--;
+          respond(PtpResponseCode.deviceBusy);
+        } else if (denied != null) {
+          respond(denied);
+        } else {
+          objects.remove(o);
+          respond(PtpResponseCode.ok);
+        }
       case PtpOperation.getPartialObject:
         final o = object(p[0]);
         if (o == null) {

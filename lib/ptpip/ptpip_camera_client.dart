@@ -12,6 +12,8 @@ import 'dataset.dart';
 import 'ptp_session.dart';
 
 const _remoteModeExitTimeout = Duration(seconds: 1);
+const _deleteBusyAttempts = 3;
+const _deleteBusyDelay = Duration(milliseconds: 200);
 const _dcimFolderName = 'DCIM';
 final _dcfFolderName = RegExp(r'^(\d{3})[0-9A-Z_]{5}$');
 
@@ -432,6 +434,43 @@ class PtpIpCameraClient implements CameraClient {
       release();
     }
   }
+
+  @override
+  bool get canDelete =>
+      ptpDeviceInfo.operationsSupported.contains(PtpOperation.deleteObject);
+
+  /// The EOS answers busy while it updates its catalog after a removal.
+  @override
+  Future<void> delete(int handle) async {
+    PtpTransactionResult result;
+    for (var attempt = 1; ; attempt++) {
+      result = await _session.execute(
+        PtpOperation.deleteObject,
+        params: [handle, PtpHandle.anyFormat],
+        acceptedCodes: const {
+          PtpResponseCode.ok,
+          PtpResponseCode.invalidObjectHandle,
+          PtpResponseCode.deviceBusy,
+          ..._deleteDeniedCodes,
+        },
+      );
+      if (result.code != PtpResponseCode.deviceBusy) break;
+      if (attempt == _deleteBusyAttempts) {
+        throw PtpResponseException(PtpOperation.deleteObject, result.code);
+      }
+      await Future<void>.delayed(_deleteBusyDelay);
+    }
+    _objectInfoCache.remove(handle);
+    if (_deleteDeniedCodes.contains(result.code)) {
+      throw DeleteDeniedException(result.code);
+    }
+  }
+
+  static const _deleteDeniedCodes = {
+    PtpResponseCode.objectWriteProtected,
+    PtpResponseCode.storeReadOnly,
+    PtpResponseCode.accessDenied,
+  };
 
   @override
   Future<void> close() async {

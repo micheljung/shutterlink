@@ -20,6 +20,7 @@ import '../settings/settings_screen.dart';
 import '../settings/upload_settings_cubit.dart';
 import '../spacing.dart';
 import '../upload/upload_status_sheet.dart';
+import 'delete_photos.dart';
 import 'gallery_cubit.dart';
 import 'gallery_grid.dart';
 import 'gallery_state.dart';
@@ -63,6 +64,7 @@ class _GalleryView extends StatelessWidget {
     final sessionsConfigured = context.select<SettingsCubit, bool>(
       (cubit) => cubit.state.sessionsConfigured,
     );
+    final deletable = canDeleteNow(context, client);
     bool isDownloaded(PhotoGroup group) =>
         history.isDownloaded(cameraKey, group.filesFor(format));
     return Scaffold(
@@ -78,7 +80,9 @@ class _GalleryView extends StatelessWidget {
               IconButton(
                 tooltip: 'Start Live transfer',
                 icon: const Icon(Icons.sensors),
-                onPressed: context.read<LiveTransferCubit>().start,
+                onPressed: state.deleting
+                    ? null
+                    : context.read<LiveTransferCubit>().start,
               ),
             IconButton(
               tooltip: 'Uploads',
@@ -86,6 +90,14 @@ class _GalleryView extends StatelessWidget {
               onPressed: () => UploadStatusSheet.show(context),
             ),
           ],
+          if (client.canDelete && state.selected.isNotEmpty)
+            IconButton(
+              tooltip: 'Delete from camera',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: deletable
+                  ? () => confirmDelete(context, client, state.selectedGroups)
+                  : null,
+            ),
           IconButton(
             tooltip: 'Select new',
             icon: const Icon(Icons.fiber_new_outlined),
@@ -110,7 +122,9 @@ class _GalleryView extends StatelessWidget {
           IconButton(
             tooltip: 'Disconnect',
             icon: const Icon(Icons.link_off),
-            onPressed: context.read<ConnectCubit>().disconnect,
+            onPressed: state.deleting
+                ? null
+                : context.read<ConnectCubit>().disconnect,
           ),
         ],
       ),
@@ -161,6 +175,9 @@ class _DownloadBar extends StatelessWidget {
     final selected = context.select<GalleryCubit, int>(
       (cubit) => cubit.state.selected.length,
     );
+    final deleting = context.select<GalleryCubit, bool>(
+      (cubit) => cubit.state.deleting,
+    );
     final download = context.watch<DownloadCubit>().state;
     return SafeArea(
       child: Padding(
@@ -183,7 +200,9 @@ class _DownloadBar extends StatelessWidget {
           _ => FilledButton.icon(
             icon: const Icon(Icons.download),
             label: Text('Download ($selected)'),
-            onPressed: selected == 0 ? null : () => _download(context),
+            onPressed: selected == 0 || deleting
+                ? null
+                : () => _download(context),
           ),
         },
       ),

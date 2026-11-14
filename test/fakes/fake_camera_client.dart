@@ -6,6 +6,7 @@ import 'package:collection/collection.dart';
 import 'package:shutterlink/data/photo_saver.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/ptpip/canon_eos.dart';
 
 const fakeChunkSize = 4;
 
@@ -31,9 +32,18 @@ Uint8List contentFor(CameraObject object) => Uint8List.fromList(
 );
 
 class FakeCameraClient implements CameraClient {
-  FakeCameraClient(this.objects, {this.disconnectAfterChunks});
+  FakeCameraClient(
+    List<CameraObject> objects, {
+    this.disconnectAfterChunks,
+    this.canDelete = true,
+  }) : objects = [...objects];
 
   final List<CameraObject> objects;
+  @override
+  final bool canDelete;
+  final deleted = <int>[];
+  Set<int> deleteDenied = {};
+  Completer<void>? deleteGate;
   final int? disconnectAfterChunks;
   final requestedOffsets = <int, List<int>>{};
   final thumbnailRequests = <int>[];
@@ -138,6 +148,16 @@ class FakeCameraClient implements CameraClient {
       final gate = chunkGate;
       if (gate != null) await gate.future;
     }
+  }
+
+  @override
+  Future<void> delete(int handle) async {
+    await deleteGate?.future;
+    if (deleteDenied.contains(handle)) {
+      throw const DeleteDeniedException(PtpResponseCode.objectWriteProtected);
+    }
+    objects.removeWhere((object) => object.handle == handle);
+    deleted.add(handle);
   }
 
   @override
