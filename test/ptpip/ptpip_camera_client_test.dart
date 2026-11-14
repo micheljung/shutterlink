@@ -687,6 +687,18 @@ void main() {
     },
   );
 
+  test('a storage change is announced without a handle', () async {
+    final c = await start(FakeCamera());
+    final handles = <int>[];
+    c.addedObjects.listen(handles.add);
+    final changed = c.storageChanged.first.timeout(_eventDeadline);
+
+    camera.queueEventRecord(storageChangedRecord(0x00020001));
+
+    await changed;
+    expect(handles, isEmpty);
+  });
+
   test('the initial event dump is not announced', () async {
     final c = await start(
       FakeCamera(initialDump: objectAddedRecord(_shot(FakeCamera.jpegHandle))),
@@ -721,8 +733,10 @@ void main() {
   test('addedObjects closes on disconnect and on close', () async {
     final c = await start(FakeCamera());
     final dropped = expectLater(c.addedObjects, emitsDone);
+    final storageDropped = expectLater(c.storageChanged, emitsDone);
     camera.dropConnection();
     await dropped;
+    await storageDropped;
 
     final other = await connectTo(camera);
     final closed = expectLater(other.addedObjects, emitsDone);
