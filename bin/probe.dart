@@ -25,9 +25,11 @@ const pairingInstructions = '''
 The camera does not know this computer yet. Pair it once:
   1. On the camera open MENU > Wireless communication settings > Wi-Fi function.
   2. Choose "Remote control (EOS Utility)".
-  3. Add a device and pick "Camera access point mode" (Easy connection).
-  4. Join this computer to the Wi-Fi network the camera shows.
-  5. Run this probe again; when the camera shows the name
+  3. Either add a device and pick "Camera access point mode" (Easy
+     connection), then join this computer to the Wi-Fi network the camera
+     shows; or, with the camera on your Wi-Fi network, select the saved
+     connection and press OK at "Start pairing devices".
+  4. Run this probe again; when the camera shows the name
      "{name}", confirm it on the camera.
 ''';
 
