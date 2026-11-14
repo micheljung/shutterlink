@@ -26,6 +26,9 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
   private var fallbackIds: [ObjectIdentifier: String] = [:]
   private var openCamera: ICCameraDevice?
   private var pendingOpen: FlutterResult?
+  /// Cameras whose session Dart closed, until ImageCaptureCore confirms it, so
+  /// that a late confirmation does not end a reopened session.
+  private var closing = Set<ObjectIdentifier>()
 
   /// The caller keeps the returned bridge: ImageCaptureCore holds its
   /// delegates weakly.
@@ -118,6 +121,7 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
     guard let camera = openCamera else { return }
     openCamera = nil
     failPendingOpen("Session closed")
+    closing.insert(ObjectIdentifier(camera))
     camera.requestCloseSession()
   }
 
@@ -156,8 +160,8 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
         "type": "attached",
         "device": [
           "deviceName": id,
-          "vendorId": Int(camera.usbVendorID),
-          "productId": Int(camera.usbProductID),
+          "vendorId": UsbCameraBridge.usbId(camera, "usbVendorID"),
+          "productId": UsbCameraBridge.usbId(camera, "usbProductID"),
           "product": camera.name ?? "USB camera",
           "hasPermission": self.authorized,
         ] as [String: Any],
@@ -191,7 +195,7 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
 
   func device(_ device: ICDevice, didCloseSessionWithError error: Error?) {
     UsbCameraBridge.onMain {
-      // A session Dart closed is no longer the open one.
+      if self.closing.remove(ObjectIdentifier(device)) != nil { return }
       guard let camera = self.openCamera, device === camera else { return }
       self.openCamera = nil
       self.failPendingOpen(error?.localizedDescription ?? "Session closed")
@@ -215,6 +219,7 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
   private func removed(_ device: ICDevice) {
     guard let id = cameras.first(where: { $0.value === device })?.key else { return }
     cameras.removeValue(forKey: id)
+    closing.remove(ObjectIdentifier(device))
     if device === openCamera {
       openCamera = nil
       failPendingOpen("Camera detached")
@@ -229,6 +234,14 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
     let id = UUID().uuidString
     fallbackIds[key] = id
     return id
+  }
+
+  /// A USB id read by key, so that the build does not depend on the property
+  /// being exposed to Swift on iOS. 0 when it is missing, which no profile
+  /// claims.
+  private static func usbId(_ device: ICDevice, _ key: String) -> Int {
+    guard device.responds(to: NSSelectorFromString(key)) else { return 0 }
+    return (device.value(forKey: key) as? NSNumber)?.intValue ?? 0
   }
 
   private static func onMain(_ block: @escaping () -> Void) {
@@ -263,9 +276,12 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
   private static func isContainer(_ bytes: Data, type: UInt16) -> Bool {
     let b = [UInt8](bytes)
     guard b.count >= headerSize else { return false }
-    let length = UInt32(b[0]) | UInt32(b[1]) << 8 | UInt32(b[2]) << 16 | UInt32(b[3]) << 24
+    var length = 0
+    for i in (0..<4).reversed() {
+      length = length << 8 | Int(b[i])
+    }
     let kind = UInt16(b[4]) | UInt16(b[5]) << 8
-    return length == UInt32(b.count) && kind == type
+    return length == b.count && kind == type
   }
 
   /// A bare response, assumed to be `[u16 code][u32 params...]` with at most 5
