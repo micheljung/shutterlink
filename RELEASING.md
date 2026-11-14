@@ -27,8 +27,14 @@ tag, for example `v1.1.0`.
 
 It checks that the tag matches the `pubspec.yaml` version, builds the APK,
 signs it with the release key and uploads it to
-`https://repo.micheljung.ch/repository/shutterlink-releases/shutterlink-<version>.apk`,
+`https://repo.micheljung.ch/repository/shutterlink-release/shutterlink-<version>.apk`,
 for example `shutterlink-1.1.0+2.apk`.
+
+Pushing to any branch builds and signs a preview APK the same way and uploads
+it to
+`https://repo.micheljung.ch/repository/shutterlink-preview/shutterlink-<version>-<branch>-<commit>.apk`,
+for example `shutterlink-1.1.0+2-main-7a2a7b2.apk`. Slashes and other
+special characters in the branch name become `-`.
 
 It needs these GitHub Actions settings:
 
