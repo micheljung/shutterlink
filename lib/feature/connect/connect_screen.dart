@@ -141,9 +141,10 @@ class _PairingCard extends StatelessWidget {
             const SizedBox(height: Spacing.small),
             const Text(
               'The camera does not know this phone yet. On the camera, go to '
-              'Remote control (EOS Utility) → Add a device, then tap Connect '
-              'and confirm "${IdentityRepository.friendlyName}" on the '
-              'camera.',
+              'Remote control (EOS Utility) and add a device, or select the '
+              'saved connection and press OK at "Start pairing devices". '
+              'Then tap Connect and confirm '
+              '"${IdentityRepository.friendlyName}" on the camera.',
             ),
           ],
         ),

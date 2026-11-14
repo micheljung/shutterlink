@@ -65,8 +65,11 @@ add a destination in Settings.
 Early. Be aware of what has and hasn't been verified:
 
 - The protocol layer and the app are tested against an in-process emulated
-  camera (`test/ptpip/fake_camera.dart`). They have **not yet been verified on a
-  real EOS R**, nor on physical Android or iOS devices.
+  camera (`test/ptpip/fake_camera.dart`).
+- On a real EOS R (firmware 3-1.8.0, on a home Wi-Fi network) the probe CLI
+  has paired, listed the card, fetched a thumbnail and downloaded a JPEG
+  byte-complete. The download ran at 0.13 MB/s. The app itself has **not yet
+  been run on physical Android or iOS devices**.
 - The Android release APK builds, and CI checks it on every push. The **iOS
   build has not been compiled yet**; the Swift code (RAW save to Photos) is
   untested.
@@ -77,7 +80,7 @@ Reports from real hardware are very welcome.
 
 | Camera | Status |
 |---|---|
-| Canon EOS R | Targeted; untested on hardware |
+| Canon EOS R | Protocol verified with the probe CLI (firmware 3-1.8.0); app untested on hardware |
 | Other Canon EOS bodies with Wi-Fi "Remote control (EOS Utility)" | Untested; may work |
 
 ## Camera setup
@@ -94,7 +97,11 @@ gateway; you can override it in Settings.
 
 If the camera is in infrastructure mode on your home Wi-Fi instead, join the
 same network and tap **Connect**: the app finds the camera via SSDP and asks
-which one to use if there are several.
+which one to use if there are several. To pair on that network, select the
+saved connection under **Remote control (EOS Utility)**, press **OK** at
+**Start pairing devices**, then tap **Connect** and confirm **"Shutterlink"**.
+The EOS R also asks for this OK after it has left the network, for example
+after auto power off.
 
 ## Install
 
@@ -131,6 +138,7 @@ fvm dart run bin/probe.dart --host 192.168.1.2 --dump packets.txt
 | Option | Default | Meaning |
 |---|---|---|
 | `--host` | (required) | Camera IP, usually the Wi-Fi gateway address |
+| `--clock` | off | Print the device properties and the camera clock, then exit (no download) |
 | `--watch-events` | off | Skip download; log Canon GetEvent records (type, size, hex) every second until Ctrl-C |
 | `--port` | `15740` | PTP/IP port |
 | `--name` | `Shutterlink` | Name shown on the camera when pairing |
@@ -283,9 +291,11 @@ to view and download their photos for 30 days.
   offset. Connect, or do a sync shot, before changing the camera clock.
 - While the phone is connected to the camera's Wi-Fi, uploads need another
   network with internet access, such as mobile data.
-- New photos are detected up to 30 seconds late on cameras that do not report
-  new shots, and not at all while Live transfer owns the camera; they are
-  picked up once Live hands the camera back.
+- New photos are detected about 2 seconds after the camera reports a new
+  object or a change on the card, which the EOS R does for each shot. On
+  cameras that report neither, they are detected up to 30 seconds late. While
+  Live transfer owns the camera they are not detected at all; they are picked
+  up once Live hands the camera back.
 - Sessions whose server copy expired cannot be resumed; a new Session is
   offered instead.
 - An open Session only takes photos up to 2 seconds past the phone's current
