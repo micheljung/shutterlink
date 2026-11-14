@@ -13,6 +13,7 @@ import 'upload_settings_cubit.dart';
 import 'upload_setup_cubit.dart';
 
 const _folderHint = 'Photos';
+const _immichHint = 'https://photos.example.com';
 
 IconData presetIcon(ProviderPreset? preset) => switch (preset) {
   ProviderPreset.nextcloud => Icons.cloud_outlined,
@@ -20,6 +21,7 @@ IconData presetIcon(ProviderPreset? preset) => switch (preset) {
   ProviderPreset.awsS3 => Icons.inventory_2_outlined,
   ProviderPreset.cloudflareR2 => Icons.bolt_outlined,
   ProviderPreset.hetznerStorageBox => Icons.dns_outlined,
+  ProviderPreset.immich => Icons.photo_library_outlined,
   ProviderPreset.custom || null => Icons.tune,
 };
 
@@ -29,6 +31,7 @@ String destinationTitle(Destination destination, ProviderPreset? preset) =>
         DestinationType.webdav => 'WebDAV server',
         DestinationType.s3 => 'S3 bucket',
         DestinationType.sftp => 'SFTP server',
+        DestinationType.immich => 'Immich server',
       },
       _ => preset.label,
     };
@@ -44,7 +47,9 @@ String destinationLocation(Destination destination) {
 }
 
 String destinationFolder(Destination destination) =>
-    '/${pathSegments(destination.basePath).join('/')}';
+    destination.type == DestinationType.immich
+    ? 'Timeline'
+    : '/${pathSegments(destination.basePath).join('/')}';
 
 /// A route to [screen] with a draft made by [create] from [settings].
 Route<void> uploadDraftRoute(
@@ -233,7 +238,7 @@ class _UploadServerFieldsState extends State<UploadServerFields> {
         ProviderPreset.nextcloud => 'Server address',
         ProviderPreset.cloudflareR2 => 'Account ID',
         _ => switch (state.input.type) {
-          DestinationType.webdav => 'Server URL',
+          DestinationType.webdav || DestinationType.immich => 'Server URL',
           DestinationType.s3 => 'Endpoint URL',
           DestinationType.sftp => 'Host',
         },
@@ -241,11 +246,13 @@ class _UploadServerFieldsState extends State<UploadServerFields> {
       hint: switch (preset) {
         ProviderPreset.nextcloud => 'cloud.example.com',
         ProviderPreset.cloudflareR2 => null,
+        ProviderPreset.immich => _immichHint,
         _ => switch (state.input.type) {
           DestinationType.webdav =>
             'https://cloud.example.com/remote.php/dav/files/me',
           DestinationType.s3 => 'https://s3.eu-central-1.amazonaws.com',
           DestinationType.sftp => 'example.com:22',
+          DestinationType.immich => _immichHint,
         },
       },
       keyboardType: TextInputType.url,
@@ -303,6 +310,10 @@ class _UploadServerFieldsState extends State<UploadServerFields> {
               onChanged: (value) =>
                   _update((input) => input.copyWith(username: value)),
             ),
+          ],
+          ProviderPreset.immich => [
+            const _Help('The address you open Immich with.'),
+            server,
           ],
           ProviderPreset.custom => [
             Padding(
@@ -387,6 +398,7 @@ class _UploadSignInFieldsState extends State<UploadSignInFields> {
     final (username, password) = switch (preset) {
       ProviderPreset.nextcloud => ('Username', 'App password'),
       ProviderPreset.backblazeB2 => ('Key ID', 'Application key'),
+      ProviderPreset.immich => ('', 'API key'),
       _ when s3 => ('Access key ID', 'Secret access key'),
       _ => ('Username', 'Password'),
     };
@@ -403,13 +415,17 @@ class _UploadSignInFieldsState extends State<UploadSignInFields> {
         'Create an R2 API token with Object Read & Write for this bucket.',
       ProviderPreset.hetznerStorageBox =>
         'Turn on SSH support for the Storage Box in Hetzner Console.',
+      ProviderPreset.immich =>
+        'Create an API key in Immich under Account Settings, API Keys. It '
+            'needs the asset.upload permission.',
       ProviderPreset.custom => null,
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (help != null) _Help(help),
-        if (preset != ProviderPreset.hetznerStorageBox)
+        if (preset != ProviderPreset.hetznerStorageBox &&
+            state.type != DestinationType.immich)
           _DraftField(
             controller: _username,
             label: username,

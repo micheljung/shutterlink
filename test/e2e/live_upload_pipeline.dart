@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shutterlink/data/download_history.dart';
@@ -15,6 +16,7 @@ import 'package:shutterlink/upload/upload_queue.dart';
 
 import '../ptpip/fake_camera.dart';
 import '../upload/support/dropping_proxy.dart';
+import '../upload/support/immich_test_server.dart';
 import '../upload/support/s3_test_server.dart';
 import '../upload/support/sshd_fixture.dart';
 import '../upload/support/webdav_test_server.dart';
@@ -32,10 +34,13 @@ const _waitStep = Duration(milliseconds: 20);
 /// Long enough for several production event polls and a folder rescan.
 const _quietPeriod = Duration(seconds: 6);
 
-/// A storage server as the pipeline sees it: files by `<day>/<name>`
-/// relative to the destination's base path.
+/// A storage server as the pipeline sees it: files by [pathOf] relative to
+/// the destination's base path.
 abstract class Remote {
   Destination get destination;
+
+  /// Where a file named [name] captured on [day] lands.
+  String pathOf(String day, String name);
 
   DestinationSecrets get secrets;
 
@@ -65,6 +70,9 @@ class WebDavRemote implements Remote {
     basePath: 'Photos',
     username: 'alice',
   );
+
+  @override
+  String pathOf(String day, String name) => '$day/$name';
 
   @override
   DestinationSecrets get secrets =>
@@ -111,6 +119,9 @@ class S3Remote implements Remote {
   );
 
   @override
+  String pathOf(String day, String name) => '$day/$name';
+
+  @override
   DestinationSecrets get secrets =>
       const DestinationSecrets(password: 'test-secret');
 
@@ -153,6 +164,9 @@ class SftpRemote implements Remote {
   );
 
   @override
+  String pathOf(String day, String name) => '$day/$name';
+
+  @override
   DestinationSecrets get secrets => DestinationSecrets(
     privateKey: _sshd.clientPrivateKey,
     hostKeyPin: _fingerprint,
@@ -180,6 +194,49 @@ class SftpRemote implements Remote {
   Future<void> close() => _sshd.stop();
 }
 
+/// Immich has no folders, so files are keyed by their name alone.
+class ImmichRemote implements Remote {
+  ImmichRemote(this._server);
+
+  static Future<ImmichRemote> start() async =>
+      ImmichRemote(await ImmichTestServer.start());
+
+  final ImmichTestServer _server;
+
+  @override
+  Destination get destination => Destination(
+    type: DestinationType.immich,
+    endpoint: 'http://immich.test:${_server.port}',
+  );
+
+  @override
+  String pathOf(String day, String name) => name;
+
+  @override
+  DestinationSecrets get secrets =>
+      DestinationSecrets(password: _server.apiKey);
+
+  @override
+  int get port => _server.port;
+
+  @override
+  Map<String, Uint8List> files() => {
+    for (final asset in _server.assets.values)
+      asset.fields['filename']!: asset.bytes,
+  };
+
+  @override
+  void put(String path, Uint8List bytes) {
+    final id = 'existing-${_server.assets.length}';
+    _server.assets[sha1.convert(bytes).toString()] = ImmichAsset(id, bytes, {
+      'filename': p.posix.basename(path),
+    }, p.posix.basename(path));
+  }
+
+  @override
+  Future<void> close() => _server.close();
+}
+
 Future<void> _eventually(bool Function() condition) async {
   final deadline = DateTime.now().add(_waitTimeout);
   while (!condition()) {
@@ -189,8 +246,12 @@ Future<void> _eventually(bool Function() condition) async {
 }
 
 /// Live pipeline: FakeCamera → production 1 s event poll → LiveIngestor →
-/// UploadQueue → dropping proxy → [startRemote]'s server.
-void pipelineTests(Future<Remote> Function() startRemote) {
+/// UploadQueue → dropping proxy → [startRemote]'s server. [namedFiles] is
+/// false for servers that key files by content rather than name.
+void pipelineTests(
+  Future<Remote> Function() startRemote, {
+  bool namedFiles = true,
+}) {
   final shot = FakeObject(
     handle: _shotHandle,
     format: PtpObjectFormat.exifJpeg,
@@ -199,9 +260,8 @@ void pipelineTests(Future<Remote> Function() startRemote) {
     captureDate: '20261113T101010',
     content: patternBytes(_shotSize, seed: _shotHandle),
   );
-  const shotPath = '$_shotDay/$_shotName';
-
   late Remote remote;
+  String shotPath() => remote.pathOf(_shotDay, _shotName);
   late Directory root;
   late FakeCamera camera;
   late PtpIpCameraClient client;
@@ -301,18 +361,18 @@ void pipelineTests(Future<Remote> Function() startRemote) {
 
     final stopwatch = Stopwatch()..start();
     camera.addObject(shot);
-    await _eventually(() => remote.files().containsKey(shotPath));
+    await _eventually(() => remote.files().containsKey(shotPath()));
     stopwatch.stop();
 
     expect(stopwatch.elapsed, lessThanOrEqualTo(_maxUploadLatency));
-    expect(remote.files()[shotPath], shot.content);
+    expect(remote.files()[shotPath()], shot.content);
 
     final connections = proxy!.connections;
     camera.queueEventRecord(objectAddedRecord(shot));
     await Future<void>.delayed(_quietPeriod);
 
     expect(proxy!.connections, connections);
-    expect(remote.files().keys, [shotPath]);
+    expect(remote.files().keys, [shotPath()]);
   });
 
   test('AC6: a cut upload is retried without leaving a temp file', () async {
@@ -320,11 +380,11 @@ void pipelineTests(Future<Remote> Function() startRemote) {
     await startLive(queue);
 
     camera.addObject(shot);
-    await _eventually(() => remote.files().containsKey(shotPath));
+    await _eventually(() => remote.files().containsKey(shotPath()));
     await queue.idle;
 
     expect(proxy!.drops, 1);
-    expect(remote.files()[shotPath], shot.content);
+    expect(remote.files()[shotPath()], shot.content);
     expect(hasTempFiles(), isFalse);
   });
 
@@ -335,29 +395,42 @@ void pipelineTests(Future<Remote> Function() startRemote) {
     await _eventually(
       () => first.snapshot.items.any((item) => item.attempts == 1),
     );
-    expect(remote.files().containsKey(shotPath), isFalse);
+    expect(remote.files().containsKey(shotPath()), isFalse);
     await live.close();
     await first.close();
 
     final restarted = await startQueue();
-    await _eventually(() => remote.files().containsKey(shotPath));
+    await _eventually(() => remote.files().containsKey(shotPath()));
     await restarted.idle;
 
-    expect(remote.files()[shotPath], shot.content);
+    expect(remote.files()[shotPath()], shot.content);
     expect(hasTempFiles(), isFalse);
   });
 
-  test('C3: a different file under the same name moves to _1', () async {
-    final other = Uint8List.fromList([1, 2, 3]);
-    remote.put(shotPath, other);
-    await startLive(await startQueue());
+  if (namedFiles) {
+    test('C3: a different file under the same name moves to _1', () async {
+      final other = Uint8List.fromList([1, 2, 3]);
+      remote.put(shotPath(), other);
+      await startLive(await startQueue());
 
-    camera.addObject(shot);
-    await _eventually(
-      () => remote.files().containsKey('$_shotDay/IMG_0100_1.JPG'),
-    );
+      camera.addObject(shot);
+      await _eventually(
+        () => remote.files().containsKey('$_shotDay/IMG_0100_1.JPG'),
+      );
 
-    expect(remote.files()['$_shotDay/IMG_0100_1.JPG'], shot.content);
-    expect(remote.files()[shotPath], other);
-  });
+      expect(remote.files()['$_shotDay/IMG_0100_1.JPG'], shot.content);
+      expect(remote.files()[shotPath()], other);
+    });
+  } else {
+    test('a file the server already has is not stored twice', () async {
+      remote.put(shotPath(), shot.content);
+      final queue = await startQueue();
+      await startLive(queue);
+
+      camera.addObject(shot);
+      await _eventually(() => queue.snapshot.completed == 1);
+
+      expect(remote.files(), {shotPath(): shot.content});
+    });
+  }
 }

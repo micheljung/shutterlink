@@ -22,6 +22,9 @@ class HttpResult {
 
 /// Sends one request and reads the whole response. Transport failures become
 /// readable [StorageException]s.
+///
+/// [filePrefix] and [fileSuffix] frame [file], e.g. as a multipart part;
+/// [onProgress] counts only the file's bytes.
 Future<HttpResult> sendHttp(
   HttpClient client,
   String method,
@@ -30,6 +33,8 @@ Future<HttpResult> sendHttp(
   List<int>? body,
   File? file,
   int? fileLength,
+  List<int> filePrefix = const [],
+  List<int> fileSuffix = const [],
   UploadProgress? onProgress,
 }) async {
   try {
@@ -38,7 +43,8 @@ Future<HttpResult> sendHttp(
     headers.forEach(request.headers.set);
     if (file != null) {
       final total = fileLength ?? await file.length();
-      request.contentLength = total;
+      request.contentLength = filePrefix.length + total + fileSuffix.length;
+      request.add(filePrefix);
       var sent = 0;
       await request.addStream(
         file.openRead().map((chunk) {
@@ -47,6 +53,7 @@ Future<HttpResult> sendHttp(
           return chunk;
         }),
       );
+      request.add(fileSuffix);
     } else {
       request.contentLength = body?.length ?? 0;
       if (body != null) request.add(body);

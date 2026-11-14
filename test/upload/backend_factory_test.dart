@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
+import 'package:shutterlink/upload/immich_backend.dart';
 import 'package:shutterlink/upload/s3_backend.dart';
 import 'package:shutterlink/upload/sftp_backend.dart';
 import 'package:shutterlink/upload/storage_backend.dart';
 import 'package:shutterlink/upload/webdav_backend.dart';
 
+import 'support/immich_test_server.dart';
 import 'support/s3_test_server.dart';
 import 'support/serve.dart';
 import 'support/upload_fixture.dart';
@@ -56,11 +58,22 @@ void main() {
           ),
           const DestinationSecrets(),
         ),
+        createBackend(
+          const Destination(
+            type: DestinationType.immich,
+            endpoint: 'https://photos.example.com/api',
+          ),
+          const DestinationSecrets(),
+        ),
       ];
       expect(backends[0], isA<WebDavBackend>());
       expect((backends[1] as S3Backend).region, defaultS3Region);
       final sftp = backends[2] as SftpBackend;
       expect((sftp.host, sftp.port), ('nas.example.com', defaultSftpPort));
+      expect(
+        (backends[3] as ImmichBackend).endpoint,
+        Uri.parse('https://photos.example.com'),
+      );
       for (final backend in backends) {
         await backend.close();
       }
@@ -82,6 +95,7 @@ void main() {
         Destination(type: DestinationType.webdav, endpoint: 'dav.example.com'),
         Destination(type: DestinationType.s3, endpoint: 'ftp://s3.example'),
         Destination(type: DestinationType.sftp, endpoint: ':22'),
+        Destination(type: DestinationType.immich, endpoint: 'photos.example'),
       ]) {
         expect(
           () => createBackend(destination, const DestinationSecrets()),
@@ -158,6 +172,30 @@ void main() {
       );
 
       expect(meteredFlags, allOf(isNotEmpty, everyElement(isTrue)));
+    });
+
+    test('passes the Immich API key', () async {
+      final server = await ImmichTestServer.start(apiKey: 'key-1');
+      addTearDown(server.close);
+      final destination = Destination(
+        type: DestinationType.immich,
+        endpoint: 'http://photos.example.com:${server.port}',
+      );
+
+      await testDestination(
+        destination,
+        const DestinationSecrets(password: 'key-1'),
+        connector: connectorFor(server.port),
+      );
+      await expectLater(
+        testDestination(
+          destination,
+          const DestinationSecrets(password: 'key-2'),
+          connector: connectorFor(server.port),
+        ),
+        throwsA(isA<AuthenticationException>()),
+      );
+      expect(hosts, everyElement('photos.example.com'));
     });
 
     test('reports rejected credentials readably', () async {

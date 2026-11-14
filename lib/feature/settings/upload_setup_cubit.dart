@@ -45,10 +45,12 @@ class UploadSetupState extends Equatable {
 
   bool get _keyLogin => type == DestinationType.sftp && useKey;
 
+  bool get hasFolder => type != DestinationType.immich;
+
   DestinationSecrets get secrets {
     final sftp = type == DestinationType.sftp;
     return DestinationSecrets(
-      password: password,
+      password: type == DestinationType.immich ? password.trim() : password,
       privateKey: _keyLogin ? privateKey.trim() : '',
       passphrase: _keyLogin ? passphrase : '',
       certificatePin: sftp ? null : certificatePin,
@@ -61,7 +63,7 @@ class UploadSetupState extends Equatable {
     final input = this.input;
     bool filled(String value) => value.trim().isNotEmpty;
     return switch (_preset) {
-      ProviderPreset.nextcloud => filled(input.server),
+      ProviderPreset.nextcloud || ProviderPreset.immich => filled(input.server),
       ProviderPreset.backblazeB2 ||
       ProviderPreset.awsS3 => filled(input.region) && filled(input.bucket),
       ProviderPreset.cloudflareR2 =>

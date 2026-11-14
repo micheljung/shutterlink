@@ -256,6 +256,56 @@ void main() {
     expect(find.text('camera · /eos'), findsOneWidget);
   });
 
+  testWidgets('guides through Immich without a folder step', (tester) async {
+    await pump(tester);
+    await openGuide(tester, 'Immich');
+
+    expect(find.text('Your Immich server'), findsOneWidget);
+    await enter(tester, 'Server URL', 'photos.example.com/api/');
+    expect(find.text('Endpoint: https://photos.example.com'), findsOneWidget);
+    await tap(tester, 'Next');
+
+    expect(find.text('Step 3 of 4 · Sign in'), findsOneWidget);
+    expect(field('Username'), findsNothing);
+    answers.add(
+      const AuthenticationException(
+        'The API key lacks the asset.upload permission.',
+      ),
+    );
+    await enter(tester, 'API key', 'api-key');
+    await tap(tester, 'Next');
+
+    expect(find.text('Step 4 of 4 · Check & save'), findsOneWidget);
+    expect(
+      find.text('The API key lacks the asset.upload permission.'),
+      findsOneWidget,
+    );
+    await tap(tester, 'Back to Sign in');
+    await tap(tester, 'Next');
+
+    expect(
+      repository.destination,
+      const Destination(
+        type: DestinationType.immich,
+        endpoint: 'https://photos.example.com',
+      ),
+    );
+    expect(repository.preset, ProviderPreset.immich);
+    expect((await repository.readSecrets()).password, 'api-key');
+    expect(find.text('photos.example.com · Timeline'), findsOneWidget);
+
+    await openEdit(tester);
+    expect(
+      tester.widget<TextField>(field('Server URL')).controller?.text,
+      'photos.example.com',
+    );
+    expect(
+      tester.widget<TextField>(field('API key')).controller?.text,
+      'api-key',
+    );
+    expect(field('Folder'), findsNothing);
+  });
+
   testWidgets('shows the connection check result', (tester) async {
     await pump(tester);
     await openGuide(tester, 'Custom');

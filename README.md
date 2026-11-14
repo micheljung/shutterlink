@@ -2,7 +2,7 @@
 
 Download JPEG and CR3 photos from a Canon EOS R to your phone over the
 camera's own Wi-Fi. No cloud of ours, no Canon app, just PTP/IP written in pure Dart.
-Optionally upload to your own WebDAV/S3/SFTP server.
+Optionally upload to your own WebDAV/S3/SFTP server or Immich.
 
 [![CI](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml/badge.svg)](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -50,10 +50,13 @@ Optionally upload to your own WebDAV/S3/SFTP server.
 Photos can be uploaded to your own server. Nothing is sent anywhere unless you
 add a destination in Settings.
 
-- **Destinations:** WebDAV, S3-compatible storage or SFTP. **Set up upload**
-  in Settings guides you through it, with presets for Nextcloud/ownCloud,
-  Backblaze B2, AWS S3, Cloudflare R2 and Hetzner Storage Box. Credentials are
-  kept in secure storage.
+- **Destinations:** WebDAV, S3-compatible storage, SFTP or Immich. **Set up
+  upload** in Settings guides you through it, with presets for
+  Nextcloud/ownCloud, Backblaze B2, AWS S3, Cloudflare R2, Hetzner Storage Box
+  and Immich. Credentials are kept in secure storage.
+- **Immich:** photos go to the timeline, not an album. Use an API key with
+  the `asset.upload` permission. A photo Immich already has is not uploaded
+  again.
 - **Live transfer:** a toggle in the gallery. While on, new photos are uploaded
   in the background, and the connection to the camera is kept and restored
   after drops.

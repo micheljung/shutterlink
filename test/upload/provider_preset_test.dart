@@ -88,6 +88,47 @@ void main() {
       ),
     ),
     (
+      ProviderPreset.immich,
+      const PresetInput(server: 'photos.example.com'),
+      const Destination(
+        type: DestinationType.immich,
+        endpoint: 'https://photos.example.com',
+      ),
+    ),
+    (
+      ProviderPreset.immich,
+      const PresetInput(server: ' http://nas.local:2283/api/ '),
+      const Destination(
+        type: DestinationType.immich,
+        endpoint: 'http://nas.local:2283',
+      ),
+    ),
+    (
+      ProviderPreset.immich,
+      const PresetInput(
+        server: 'https://example.com/immich/',
+        basePath: 'ignored',
+        username: 'ignored',
+      ),
+      const Destination(
+        type: DestinationType.immich,
+        endpoint: 'https://example.com/immich',
+      ),
+    ),
+    (
+      ProviderPreset.immich,
+      const PresetInput(server: 'api'),
+      const Destination(type: DestinationType.immich, endpoint: 'https://api'),
+    ),
+    (
+      ProviderPreset.immich,
+      const PresetInput(server: 'https://example.com/immich/api/'),
+      const Destination(
+        type: DestinationType.immich,
+        endpoint: 'https://example.com/immich',
+      ),
+    ),
+    (
       ProviderPreset.custom,
       const PresetInput(
         type: DestinationType.s3,
@@ -144,6 +185,7 @@ void main() {
       ProviderPreset.backblazeB2,
       ProviderPreset.cloudflareR2,
       ProviderPreset.hetznerStorageBox,
+      ProviderPreset.immich,
     ]) {
       expect(preset.parse(aws), isNull, reason: preset.name);
     }
@@ -158,5 +200,16 @@ void main() {
     );
     expect(ProviderPreset.hetznerStorageBox.parse(moved), isNull);
     expect(ProviderPreset.custom.parse(moved), isNotNull);
+  });
+
+  test('an Immich destination parses back to its address', () {
+    final immich = ProviderPreset.immich.build(
+      const PresetInput(server: 'photos.example.com/api'),
+    );
+    expect(
+      ProviderPreset.immich.parse(immich),
+      const PresetInput(server: 'photos.example.com'),
+    );
+    expect(ProviderPreset.nextcloud.parse(immich), isNull);
   });
 }

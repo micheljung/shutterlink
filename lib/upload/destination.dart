@@ -5,7 +5,7 @@ import 'package:equatable/equatable.dart';
 
 import 'network_policy.dart';
 
-enum DestinationType { webdav, s3, sftp }
+enum DestinationType { webdav, s3, sftp, immich }
 
 /// The single configured upload target, without secrets.
 class Destination extends Equatable {
@@ -23,7 +23,7 @@ class Destination extends Equatable {
 
   final DestinationType type;
 
-  /// URL for WebDAV/S3, `host:port` for SFTP.
+  /// URL for WebDAV/S3/Immich, `host:port` for SFTP.
   final String endpoint;
   final String region;
   final String bucket;
