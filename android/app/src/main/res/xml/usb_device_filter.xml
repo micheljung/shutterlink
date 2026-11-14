@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Any PTP camera: the still-image capture class, subclass and protocol. -->
+    <usb-device class="6" subclass="1" protocol="1" />
+    <!-- Canon. -->
+    <usb-device vendor-id="1193" />
+</resources>
