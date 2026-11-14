@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'camera_connector.dart';
 import 'data/camera_host_resolver.dart';
 import 'data/destination_repository.dart';
 import 'data/download_history.dart';
@@ -26,12 +27,14 @@ import 'data/upload_tunnel.dart';
 import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/live/ingest_coordinator.dart';
 import 'feature/sessions/sessions_dependencies.dart';
-import 'ptpip/ptpip_camera_client.dart';
+import 'ptp/profile_registry.dart';
 import 'upload/backend_factory.dart';
 import 'upload/media_saver.dart';
 import 'upload/network_policy.dart';
 import 'upload/platform_tcp_connector.dart';
 import 'upload/upload_queue.dart';
+import 'usb/android_usb_platform.dart';
+import 'usb/usb_camera_platform.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -97,6 +100,10 @@ Future<void> main() async {
   );
   unawaited(sessions.sweepPrefetch());
 
+  final UsbCameraPlatform usb = Platform.isAndroid
+      ? AndroidUsbPlatform()
+      : const NoUsbCameraPlatform();
+
   runApp(
     ShutterlinkApp(
       dependencies: AppDependencies(
@@ -105,8 +112,9 @@ Future<void> main() async {
         hostResolver: CameraHostResolver(settings),
         networkBinder: PlatformNetworkBinder(),
         photoSaver: photoSaver,
-        connector: (host, identity) =>
-            PtpIpCameraClient.connect(host: host, identity: identity),
+        connector: cameraConnector(usb: usb),
+        usb: usb,
+        claimsUsbVendor: defaultProfileRegistry.claimsUsbVendor,
         thumbnailCache: ThumbnailCache(
           directory: Directory(p.join(cacheDirectory.path, 'thumbnails')),
         ),

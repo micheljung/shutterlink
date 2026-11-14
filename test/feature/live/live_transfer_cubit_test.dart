@@ -163,6 +163,7 @@ void main() {
   LiveTransferCubit buildLive(LiveService liveService) {
     final coordinator = IngestCoordinator();
     return LiveTransferCubit(
+      claimsUsbVendor: (_) => false,
       connect: connect,
       connector: connector,
       identity: identity,
@@ -213,14 +214,15 @@ void main() {
     hosts = [];
     onIngestor = null;
     identity = IdentityRepository(prefs);
-    connector = (String host, CameraIdentity _) async {
-      hosts.add(host);
+    connector = (target) async {
+      hosts.add((target as WifiTarget).host);
       final next = connections.removeAt(0);
       if (next is Exception) throw next;
       return next as CameraClient;
     };
 
     connect = ConnectCubit(
+      claimsUsbVendor: (_) => false,
       connector: connector,
       identity: identity,
       hostResolver: resolver(),

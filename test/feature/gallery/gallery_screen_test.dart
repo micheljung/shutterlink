@@ -47,7 +47,7 @@ void main() {
     void Function(AppDependencies dependencies)? onDependencies,
   }) async {
     final client = FakeCameraClient(objects, canDelete: canDelete);
-    final dependencies = await testDependencies((_, _) async => client);
+    final dependencies = await testDependencies((_) async => client);
     onDependencies?.call(dependencies);
     await tester.runAsync(
       () => dependencies.downloadHistory.record(

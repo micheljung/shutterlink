@@ -48,7 +48,7 @@ void main() {
       cameraObject(1, 'IMG_0001.JPG', captureDate: DateTime.utc(2026)),
     ])..cameraLag = const Duration(seconds: 90);
     final dependencies = await testDependencies(
-      (_, _) async => client,
+      (_) async => client,
       prefs: prefs,
       sessions: (settings, directory, coordinator) =>
           sessions = SpySessionsDependencies(

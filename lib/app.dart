@@ -29,6 +29,7 @@ import 'feature/settings/settings_cubit.dart';
 import 'feature/settings/upload_settings_cubit.dart';
 import 'feature/upload/upload_status_cubit.dart';
 import 'upload/upload_queue.dart';
+import 'usb/usb_camera_platform.dart';
 
 class AppDependencies {
   const AppDependencies({
@@ -47,6 +48,8 @@ class AppDependencies {
     required this.liveService,
     required this.connectionTester,
     required this.sessions,
+    required this.claimsUsbVendor,
+    this.usb = const NoUsbCameraPlatform(),
   });
 
   final SettingsRepository settings;
@@ -66,6 +69,10 @@ class AppDependencies {
   final LiveService liveService;
   final ConnectionTester connectionTester;
   final SessionsDependencies sessions;
+
+  /// Built from the profile registry in main, so features never import it.
+  final UsbVendorClaim claimsUsbVendor;
+  final UsbCameraPlatform usb;
 }
 
 class ShutterlinkApp extends StatelessWidget {
@@ -96,6 +103,8 @@ class ShutterlinkApp extends StatelessWidget {
             identity: dependencies.identity,
             hostResolver: dependencies.hostResolver,
             networkBinder: dependencies.networkBinder,
+            claimsUsbVendor: dependencies.claimsUsbVendor,
+            usbWatcher: dependencies.usb.watcher,
           ),
         ),
         BlocProvider(
@@ -129,6 +138,8 @@ class ShutterlinkApp extends StatelessWidget {
             networkBinder: dependencies.networkBinder,
             service: dependencies.liveService,
             queue: dependencies.uploadQueue,
+            claimsUsbVendor: dependencies.claimsUsbVendor,
+            usbWatcher: dependencies.usb.watcher,
             ingestorFactory: (client, baseline) => LiveIngestor(
               client: client,
               format: dependencies.settings.format,
@@ -160,7 +171,7 @@ class ShutterlinkApp extends StatelessWidget {
             colorSchemeSeed: _seedColor,
             brightness: Brightness.dark,
           ),
-          home: const _Home(),
+          home: _Home(usbExperimental: dependencies.usb.isExperimental),
         ),
       ),
     ),
@@ -218,7 +229,9 @@ class _SessionsUploadsState extends State<_SessionsUploads>
 }
 
 class _Home extends StatelessWidget {
-  const _Home();
+  const _Home({required this.usbExperimental});
+
+  final bool usbExperimental;
 
   @override
   Widget build(BuildContext context) =>
@@ -240,7 +253,7 @@ class _Home extends StatelessWidget {
             client: client,
           ),
           ConnectLiveOwned() => const LiveScreen(),
-          _ => const ConnectScreen(),
+          _ => ConnectScreen(usbExperimental: usbExperimental),
         },
       );
 }

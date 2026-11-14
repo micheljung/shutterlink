@@ -23,6 +23,9 @@ class AndroidUsbPlatform implements UsbCameraPlatform {
   @override
   late final AndroidUsbCameraWatcher watcher;
 
+  @override
+  bool get isExperimental => false;
+
   StreamSubscription<Object?>? _events;
   AndroidUsbPipe? _pipe;
 
@@ -94,7 +97,7 @@ class AndroidUsbCameraWatcher implements UsbCameraWatcher {
 
   final AndroidUsbPlatform _platform;
   final bool Function() _isForeground;
-  late final _attached = StreamController<UsbCameraRef>.broadcast(
+  late final _attached = StreamController<UsbAttachment>.broadcast(
     onListen: _platform._listen,
   );
   late final _detached = StreamController<UsbCameraRef>.broadcast(
@@ -108,7 +111,7 @@ class AndroidUsbCameraWatcher implements UsbCameraWatcher {
   final _pendingPermissions = <String, Completer<UsbPermission>>{};
 
   @override
-  Stream<UsbCameraRef> get attached => _attached.stream;
+  Stream<UsbAttachment> get attached => _attached.stream;
 
   @override
   Stream<UsbCameraRef> get detached => _detached.stream;
@@ -175,11 +178,11 @@ class AndroidUsbCameraWatcher implements UsbCameraWatcher {
       return;
     }
     for (final device in devices ?? const <Object?>[]) {
-      _attach((device! as Map).cast<String, Object?>());
+      _attach((device! as Map).cast<String, Object?>(), enumerated: true);
     }
   }
 
-  void _attach(Map<String, Object?> device) {
+  void _attach(Map<String, Object?> device, {bool enumerated = false}) {
     final deviceName = device['deviceName']! as String;
     if (device['hasPermission'] == true) _permitted.add(deviceName);
     if (_devices.containsKey(deviceName)) return;
@@ -193,7 +196,7 @@ class AndroidUsbCameraWatcher implements UsbCameraWatcher {
       serial: device['serial'] as String?,
     );
     _devices[deviceName] = ref;
-    _attached.add(ref);
+    _attached.add(UsbAttachment(ref, enumerated: enumerated));
   }
 
   void _detach(String deviceName) {

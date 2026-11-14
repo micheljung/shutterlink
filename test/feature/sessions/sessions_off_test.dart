@@ -23,7 +23,7 @@ void main() {
     late SpySessionsDependencies sessions;
     final client = FakeCameraClient([cameraObject(1, 'IMG_0001.JPG')]);
     final dependencies = await testDependencies(
-      (_, _) async => client,
+      (_) async => client,
       sessions: (settings, directory, coordinator) =>
           sessions = SpySessionsDependencies(
             settings,
