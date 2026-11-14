@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/settings_repository.dart';
 import '../../ptpip/camera_client.dart';
+import '../gallery/delete_photos.dart';
 import '../gallery/gallery_cubit.dart';
 import '../gallery/photo_group.dart';
 import '../gallery/thumbnail_cache.dart';
@@ -49,6 +51,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
     super.dispose();
   }
 
+  Future<void> _delete(PhotoGroup group) async {
+    await confirmDelete(context, widget.client, [group]);
+    if (!mounted) return;
+    if (context.read<GalleryCubit>().state.groups.isEmpty) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<GalleryCubit>().state;
@@ -56,13 +66,23 @@ class _PreviewScreenState extends State<PreviewScreen> {
       (cubit) => cubit.state.previewQuality,
     );
     final groups = state.groups;
-    final group = groups[_index];
+    if (groups.isEmpty) {
+      return const Scaffold(backgroundColor: Colors.black);
+    }
+    final group = groups[min(_index, groups.length - 1)];
     final selected = state.selected.contains(group.key);
+    final deletable = canDeleteNow(context, widget.client);
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: Text(group.baseName),
         actions: [
+          if (widget.client.canDelete)
+            IconButton(
+              tooltip: 'Delete from camera',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: deletable ? () => _delete(group) : null,
+            ),
           IconButton(
             tooltip: selected ? 'Deselect' : 'Select',
             icon: Icon(

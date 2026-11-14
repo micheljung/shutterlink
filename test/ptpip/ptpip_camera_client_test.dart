@@ -349,6 +349,124 @@ void main() {
     expect(await c.objectInfo(0xDEAD), isNull);
   });
 
+  group('delete', () {
+    test('is offered when the camera supports DeleteObject', () async {
+      expect((await start(FakeCamera())).canDelete, isTrue);
+    });
+
+    test('is not offered without DeleteObject', () async {
+      final c = await start(
+        FakeCamera(
+          supportedOperations: [
+            for (final op in FakeCamera.defaultOperations)
+              if (op != PtpOperation.deleteObject) op,
+          ],
+        ),
+      );
+      expect(c.canDelete, isFalse);
+    });
+
+    test('removes the file from the card', () async {
+      final c = await start(FakeCamera());
+      await c.delete(FakeCamera.rawHandle);
+
+      final request = camera.receivedRequests.lastWhere(
+        (r) => r.opcode == PtpOperation.deleteObject,
+      );
+      expect(request.params, [FakeCamera.rawHandle, PtpHandle.anyFormat]);
+      expect(
+        (await c.listPhotos()).map((p) => p.handle),
+        isNot(contains(FakeCamera.rawHandle)),
+      );
+    });
+
+    test('a file that is already gone counts as deleted', () async {
+      final c = await start(FakeCamera());
+      await c.delete(0xDEAD);
+    });
+
+    for (final code in [
+      PtpResponseCode.objectWriteProtected,
+      PtpResponseCode.storeReadOnly,
+      PtpResponseCode.accessDenied,
+    ]) {
+      test(
+        'a refusal 0x${code.toRadixString(16)} is reported as denied',
+        () async {
+          final c = await start(FakeCamera(deleteDeniedCode: code));
+          await expectLater(
+            c.delete(FakeCamera.jpegHandle),
+            throwsA(
+              isA<DeleteDeniedException>().having(
+                (e) => e.responseCode,
+                'responseCode',
+                code,
+              ),
+            ),
+          );
+          expect(
+            (await c.listPhotos()).map((p) => p.handle),
+            contains(FakeCamera.jpegHandle),
+          );
+        },
+      );
+    }
+
+    test('a busy camera is asked again', () async {
+      final c = await start(FakeCamera(deleteBusyResponses: 2));
+      await c.delete(FakeCamera.jpegHandle);
+      expect(
+        (await c.listPhotos()).map((p) => p.handle),
+        isNot(contains(FakeCamera.jpegHandle)),
+      );
+    });
+
+    test('a camera that stays busy fails the delete', () async {
+      final c = await start(FakeCamera(deleteBusyResponses: 3));
+      await expectLater(
+        c.delete(FakeCamera.jpegHandle),
+        throwsA(
+          isA<PtpResponseException>().having(
+            (e) => e.responseCode,
+            'responseCode',
+            PtpResponseCode.deviceBusy,
+          ),
+        ),
+      );
+    });
+
+    test('other errors stay response errors', () async {
+      final c = await start(
+        FakeCamera(deleteDeniedCode: PtpResponseCode.generalError),
+      );
+      await expectLater(
+        c.delete(FakeCamera.jpegHandle),
+        throwsA(isA<PtpResponseException>()),
+      );
+    });
+
+    test('drops the cached info of the handle', () async {
+      final c = await start(FakeCamera());
+      await c.listPhotos();
+      await c.delete(FakeCamera.jpegHandle);
+      camera.objects.add(_shot(FakeCamera.jpegHandle));
+      camera.receivedRequests.clear();
+
+      await c.listPhotos();
+
+      expect(
+        camera.receivedRequests.where(
+          (r) => r.opcode == PtpOperation.getObjectInfo,
+        ),
+        [
+          isA<CommandRequest>().having((r) => r.params, 'params', [
+            FakeCamera.jpegHandle,
+          ]),
+        ],
+      );
+    });
+  });
+
   test('a thumbnail cancelled before it starts sends nothing', () async {
     final c = await start(
       FakeCamera(responseDelay: const Duration(milliseconds: 10)),

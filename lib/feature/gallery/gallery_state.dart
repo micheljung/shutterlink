@@ -9,12 +9,14 @@ class GalleryState extends Equatable {
     this.status = GalleryStatus.loading,
     this.groups = const [],
     this.selected = const {},
+    this.deleting = false,
     this.error,
   });
 
   final GalleryStatus status;
   final List<PhotoGroup> groups;
   final Set<String> selected;
+  final bool deleting;
   final String? error;
 
   List<PhotoGroup> get selectedGroups =>
@@ -26,14 +28,16 @@ class GalleryState extends Equatable {
     GalleryStatus? status,
     List<PhotoGroup>? groups,
     Set<String>? selected,
+    bool? deleting,
     String? error,
   }) => GalleryState(
     status: status ?? this.status,
     groups: groups ?? this.groups,
     selected: selected ?? this.selected,
+    deleting: deleting ?? this.deleting,
     error: error,
   );
 
   @override
-  List<Object?> get props => [status, groups, selected, error];
+  List<Object?> get props => [status, groups, selected, deleting, error];
 }

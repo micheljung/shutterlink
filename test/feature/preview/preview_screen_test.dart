@@ -141,6 +141,54 @@ void main() {
     );
   });
 
+  Future<void> deleteShown(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Delete from camera'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('deleting in the preview shows the next photo', (tester) async {
+    final client = await pumpGallery(tester);
+
+    await openPreview(tester, 'IMG_0002');
+    await deleteShown(tester);
+
+    expect(client.deleted, [3]);
+    expect(title('IMG_0003'), findsOneWidget);
+    expect(find.text('Deleted 1 photo.'), findsOneWidget);
+  });
+
+  testWidgets('deleting the last photo shows the one before', (tester) async {
+    final client = await pumpGallery(tester);
+
+    await openPreview(tester, 'IMG_0003');
+    await deleteShown(tester);
+
+    expect(client.deleted, [4]);
+    expect(title('IMG_0002'), findsOneWidget);
+  });
+
+  testWidgets('deleting the only photo closes the preview', (tester) async {
+    final client = await pumpGallery(tester);
+    final gallery = tester
+        .element(find.byType(ThumbnailTile).first)
+        .read<GalleryCubit>();
+    await tester.runAsync(
+      () => gallery.delete(
+        gallery.state.groups.where((g) => g.baseName != 'IMG_0002').toList(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await openPreview(tester, 'IMG_0002');
+    await deleteShown(tester);
+
+    expect(client.objects, hasLength(0));
+    expect(find.byType(PreviewScreen), findsNothing);
+    expect(find.text('No photos on the card.'), findsOneWidget);
+  });
+
   testWidgets('thumbnail quality transfers no photo', (tester) async {
     final client = await pumpGallery(tester);
 
