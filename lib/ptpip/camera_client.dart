@@ -128,6 +128,10 @@ abstract interface class CameraClient {
 
   Stream<int> get addedObjects;
 
+  /// The card contents changed without the camera naming the object. The
+  /// EOS R reports a new shot only this way.
+  Stream<void> get storageChanged;
+
   Future<List<CameraObject>> listPhotos();
 
   /// Handles in the newest DCIM folder of every storage, where new shots land.

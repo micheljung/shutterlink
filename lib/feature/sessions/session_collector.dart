@@ -69,6 +69,7 @@ class SessionCollector {
   StreamSubscription<ClockState>? _clockChanges;
   StreamSubscription<void>? _sessionChanges;
   StreamSubscription<int>? _added;
+  StreamSubscription<void>? _storageChanged;
   Timer? _rescanTimer;
   bool _addedDuringRescan = false;
   bool _rescanning = false;
@@ -87,6 +88,7 @@ class SessionCollector {
     });
     _sessionChanges = _sessions.changes.listen((_) => unawaited(_collect()));
     _added = _client.addedObjects.listen((_) => _onAdded());
+    _storageChanged = _client.storageChanged.listen((_) => _onAdded());
     _scheduleRescan();
   }
 
@@ -120,6 +122,7 @@ class SessionCollector {
     await _clockChanges?.cancel();
     await _sessionChanges?.cancel();
     await _added?.cancel();
+    await _storageChanged?.cancel();
     await _running;
     await _persistBaseline();
   }

@@ -618,6 +618,18 @@ void main() {
     expect(timers.last.delay, collectorAddedDelay);
   });
 
+  test('a camera storage change brings the rescan forward', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    collector(await resolvedClock());
+    expect(timers.single.delay, collectorRescanInterval);
+
+    client.emitStorageChanged();
+    await pumpEventQueue();
+    expect(timers.last.delay, collectorAddedDelay);
+    expect(timers.first.isActive, isFalse);
+  });
+
   test('an error in a pass is survived and the next pass retries', () async {
     await sessions.start();
     client.objects.add(shot(1, t0.add(second * 10)));

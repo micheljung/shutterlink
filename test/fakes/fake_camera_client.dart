@@ -43,6 +43,7 @@ class FakeCameraClient implements CameraClient {
   Map<int, CameraObject?> objectInfoOverrides = {};
   final _disconnected = Completer<void>();
   final _added = StreamController<int>.broadcast();
+  final _storageChanged = StreamController<void>.broadcast();
   Completer<void>? chunkGate;
   Completer<void>? objectInfoGate;
   int _chunksSent = 0;
@@ -67,9 +68,15 @@ class FakeCameraClient implements CameraClient {
 
   void emitAdded(int handle) => _added.add(handle);
 
+  @override
+  Stream<void> get storageChanged => _storageChanged.stream;
+
+  void emitStorageChanged() => _storageChanged.add(null);
+
   void simulateDisconnect() {
     if (!_disconnected.isCompleted) _disconnected.complete();
     if (!_added.isClosed) _added.close();
+    if (!_storageChanged.isClosed) _storageChanged.close();
   }
 
   @override

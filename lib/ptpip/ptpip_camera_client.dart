@@ -33,6 +33,7 @@ class PtpIpCameraClient implements CameraClient {
   Timer? _pollTimer;
   bool _pollInFlight = false;
   final _addedObjects = StreamController<int>.broadcast();
+  final _storageChanged = StreamController<void>.broadcast();
 
   /// The last Canon camera-time property and when it arrived.
   ({int seconds, Stopwatch age})? _canonClock;
@@ -120,9 +121,15 @@ class PtpIpCameraClient implements CameraClient {
   @override
   Stream<int> get addedObjects => _addedObjects.stream;
 
+  @override
+  Stream<void> get storageChanged => _storageChanged.stream;
+
   void _closeAddedObjects() {
     if (!_addedObjects.isClosed) {
       _addedObjects.close();
+    }
+    if (!_storageChanged.isClosed) {
+      _storageChanged.close();
     }
   }
 
@@ -151,7 +158,9 @@ class PtpIpCameraClient implements CameraClient {
             if (!_addedObjects.isClosed) _addedObjects.add(handle);
           case CanonObjectRemoved(:final handle):
             _objectInfoCache.remove(handle);
-          case CanonStorageChanged() || CanonPropertyChanged():
+          case CanonStorageChanged():
+            if (!_storageChanged.isClosed) _storageChanged.add(null);
+          case CanonPropertyChanged():
             break;
         }
       }
