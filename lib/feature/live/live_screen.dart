@@ -10,12 +10,16 @@ import 'live_transfer_cubit.dart';
 class LiveScreen extends StatelessWidget {
   const LiveScreen({super.key});
 
+  static const allowUsbLabel = 'Allow USB access';
+
   static const notificationsHint =
       'Notifications are off, so Live progress only shows here.';
 
   static String statusText(LiveTransferState state) => switch (state) {
     LiveIdle() || LiveConnecting() => LiveTransferCubit.connectingText,
     LiveTransferring() => 'Waiting for new photos',
+    LiveReconnecting(userActionNeeded: true) =>
+      LiveTransferCubit.userActionText,
     LiveReconnecting(unreachable: false) => LiveTransferCubit.reconnectingText,
     LiveReconnecting(unreachable: true) => LiveTransferCubit.unreachableText,
   };
@@ -55,6 +59,12 @@ class LiveScreen extends StatelessWidget {
             ),
             onTap: () => UploadStatusSheet.show(context),
           ),
+          if (state case LiveReconnecting(userActionNeeded: true))
+            OutlinedButton.icon(
+              icon: const Icon(Icons.usb),
+              label: const Text(allowUsbLabel),
+              onPressed: context.read<LiveTransferCubit>().allowUsbAccess,
+            ),
           const SizedBox(height: Spacing.large),
           FilledButton.icon(
             icon: const Icon(Icons.stop),
