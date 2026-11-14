@@ -37,6 +37,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   bloc_test: ^10.0.0
   mocktail: ^1.0.5
+  mime: ^2.1.0
   shelf: ^1.4.3
   shutterlink_server:
     path: server

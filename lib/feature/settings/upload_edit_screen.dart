@@ -94,8 +94,10 @@ class _UploadEditScreenState extends State<UploadEditScreen> {
           const UploadServerFields(),
           const SettingsSectionHeader('Sign in'),
           const UploadSignInFields(),
-          const SettingsSectionHeader('Folder'),
-          const UploadFolderField(),
+          if (state.hasFolder) ...const [
+            SettingsSectionHeader('Folder'),
+            UploadFolderField(),
+          ],
           const SizedBox(height: Spacing.large),
           SetupCheckStatus(
             busy: _busy,

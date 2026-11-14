@@ -90,6 +90,7 @@ class _UploadSetupScreenState extends State<UploadSetupScreen> {
       ProviderPreset.awsS3 => 'Your AWS S3 bucket',
       ProviderPreset.cloudflareR2 => 'Your Cloudflare R2 bucket',
       ProviderPreset.hetznerStorageBox => 'Your Storage Box',
+      ProviderPreset.immich => 'Your Immich server',
       ProviderPreset.custom || null => 'Your server',
     },
     _Step.signIn => 'Sign in',
@@ -100,7 +101,12 @@ class _UploadSetupScreenState extends State<UploadSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<UploadSetupCubit>().state;
-    final previous = _step.index == 0 ? null : _Step.values[_step.index - 1];
+    final steps = [
+      for (final step in _Step.values)
+        if (step != _Step.folder || state.hasFolder) step,
+    ];
+    final index = steps.indexOf(_step);
+    final previous = index == 0 ? null : steps[index - 1];
     final canContinue = switch (_step) {
       _Step.provider => state.preset != null,
       _Step.server => state.serverComplete,
@@ -108,21 +114,19 @@ class _UploadSetupScreenState extends State<UploadSetupScreen> {
     };
     return SetupScaffold(
       title: 'Set up upload',
-      steps: [for (final step in _Step.values) step.label],
-      step: _step.index,
+      steps: [for (final step in steps) step.label],
+      step: index,
       headline: _headline(state.preset),
       bottomBar: _step == _Step.check
           ? SetupButtonBar(
-              onBack: _checking ? null : () => _goTo(_Step.folder),
+              onBack: _checking ? null : () => _goTo(previous!),
               primary: 'Check again',
               onPrimary: _checking ? null : _check,
             )
           : SetupButtonBar(
               onBack: previous == null ? null : () => _goTo(previous),
               primary: 'Next',
-              onPrimary: canContinue
-                  ? () => _goTo(_Step.values[_step.index + 1])
-                  : null,
+              onPrimary: canContinue ? () => _goTo(steps[index + 1]) : null,
             ),
       children: switch (_step) {
         _Step.provider => [

@@ -83,4 +83,18 @@ void main() {
     expect(cubit.state.secrets.privateKey, isEmpty);
     expect(cubit.state.secrets.password, 'pw');
   });
+
+  test('Immich needs only the address and has no folder', () {
+    cubit.choosePreset(ProviderPreset.immich);
+    cubit.updateInput(const PresetInput());
+    expect(cubit.state.serverComplete, isFalse);
+
+    change((input) => input.copyWith(server: 'photos.example.com'));
+    cubit.setPassword(' api-key ');
+
+    expect(cubit.state.serverComplete, isTrue);
+    expect(cubit.state.hasFolder, isFalse);
+    expect(cubit.state.destination.type, DestinationType.immich);
+    expect(cubit.state.secrets.password, 'api-key');
+  });
 }

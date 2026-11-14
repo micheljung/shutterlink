@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import 'destination.dart';
+import 'immich_backend.dart';
 
 const _nextcloudPath = '/remote.php/webdav';
 const _httpsPrefix = 'https://';
@@ -24,7 +25,8 @@ class PresetInput extends Equatable {
   /// Custom only.
   final DestinationType type;
 
-  /// The Nextcloud address, the R2 account ID, or the custom endpoint.
+  /// The Nextcloud or Immich address, the R2 account ID, or the custom
+  /// endpoint.
   final String server;
   final String region;
   final String bucket;
@@ -70,6 +72,7 @@ enum ProviderPreset {
   awsS3('AWS S3', 'Amazon bucket', DestinationType.s3),
   cloudflareR2('Cloudflare R2', 'S3-compatible bucket', DestinationType.s3),
   hetznerStorageBox('Hetzner Storage Box', 'SFTP', DestinationType.sftp),
+  immich('Immich', 'Self-hosted photos', DestinationType.immich),
   custom('Custom', 'WebDAV, S3 or SFTP', null);
 
   const ProviderPreset(this.label, this.description, this._type);
@@ -132,6 +135,13 @@ enum ProviderPreset {
           basePath: basePath,
           username: username,
         );
+      case immich:
+        final url = _withScheme(server);
+        final uri = Uri.tryParse(url);
+        return Destination(
+          type: DestinationType.immich,
+          endpoint: uri == null ? url : immichServerRoot(uri).toString(),
+        );
       case custom:
         final s3 = input.type == DestinationType.s3;
         return Destination(
@@ -170,6 +180,7 @@ enum ProviderPreset {
         bucket: destination.bucket,
       ),
       hetznerStorageBox => common,
+      immich => PresetInput(server: _withoutHttps(endpoint)),
       custom => common.copyWith(
         type: destination.type,
         server: endpoint,

@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 import 'destination.dart';
+import 'immich_backend.dart';
 import 's3_backend.dart';
 import 'sftp_backend.dart';
 import 'storage_backend.dart';
@@ -31,7 +32,8 @@ class DestinationSecrets extends Equatable {
         hostKeyPin: json['hostKeyPin'] as String?,
       );
 
-  /// The WebDAV or SFTP password, or the S3 secret access key.
+  /// The WebDAV or SFTP password, the S3 secret access key, or the Immich
+  /// API key.
   final String password;
 
   /// PEM, for SFTP key authentication.
@@ -154,6 +156,13 @@ StorageBackend createBackend(
         basePath: destination.basePath,
         pinnedHostKey: secrets.hostKeyPin,
         connector: connector,
+      );
+    case DestinationType.immich:
+      return ImmichBackend(
+        endpoint: _httpEndpoint(destination.endpoint),
+        apiKey: secrets.password,
+        connector: connector,
+        pinnedCertificate: secrets.certificatePin,
       );
   }
 }
