@@ -6,13 +6,14 @@ import 'package:shutterlink/ptpip/ptpip.dart';
 import 'fake_camera.dart';
 
 const _terminator = [8, 0, 0, 0, 0, 0, 0, 0];
-const _unknownType = 0xC189;
+const _unknownType = 0xC1F6;
 const _bigSize = 0x123456789;
 const _sizeAt = 0x1C;
 const _beforeName = 0x20;
 const _pastEnd = 0x30;
 const _partialHeader = 4;
 const _unknownPayload = 5;
+const _longPropertyRecord = 52;
 
 Uint8List _join(List<List<int>> parts) =>
     Uint8List.fromList([for (final part in parts) ...part]);
@@ -83,6 +84,30 @@ void main() {
       ),
       [const CanonTransferRequested(0x91234567), jpegAdded],
     );
+  });
+
+  test('a storage change and a u32 property change are decoded', () {
+    expect(
+      parseCanonEvents(
+        _join([
+          storageChangedRecord(0x00020001),
+          propertyChangedRecord(CanonEosProperty.cameraTime, 0x6af859d9),
+        ]),
+      ),
+      [
+        const CanonStorageChanged(),
+        const CanonPropertyChanged(CanonEosProperty.cameraTime, 0x6af859d9),
+      ],
+    );
+  });
+
+  test('a property change with a longer value is skipped', () {
+    final long = Uint8List(_longPropertyRecord);
+    ByteData.sublistView(long)
+      ..setUint32(0, _longPropertyRecord, Endian.little)
+      ..setUint32(4, CanonEosEvent.propValueChanged, Endian.little)
+      ..setUint32(8, 0xD157, Endian.little);
+    expect(parseCanonEvents(long), isEmpty);
   });
 
   test('unknown and too short records are skipped by their size', () {

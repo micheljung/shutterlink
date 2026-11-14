@@ -17,6 +17,9 @@ const _nameOffset = 0x28;
 const _parentOffset64 = 0x24;
 const _nameOffset64 = 0x2C;
 const _handleRecordMinSize = _handleOffset + _u32Size;
+const _propertyOffset = 0x08;
+const _propertyValueOffset = 0x0C;
+const _propertyRecordMinSize = _propertyValueOffset + _u32Size;
 
 sealed class CanonEvent extends Equatable {
   const CanonEvent();
@@ -57,6 +60,26 @@ class CanonTransferRequested extends CanonEvent {
 
   @override
   List<Object?> get props => [handle];
+}
+
+/// The card contents or free space changed. Bodies that do not report new
+/// shots as objects still send this when a shot is written to the card.
+class CanonStorageChanged extends CanonEvent {
+  const CanonStorageChanged();
+
+  @override
+  List<Object?> get props => [];
+}
+
+/// A property whose value is a single u32; longer values are not decoded.
+class CanonPropertyChanged extends CanonEvent {
+  const CanonPropertyChanged(this.property, this.value);
+
+  final int property;
+  final int value;
+
+  @override
+  List<Object?> get props => [property, value];
 }
 
 class CanonEventRecord {
@@ -127,6 +150,13 @@ CanonEvent? parseCanonEvent(CanonEventRecord record) {
       return CanonTransferRequested(u32(_handleOffset));
     case CanonEosEvent.objectRemoved when length >= _handleRecordMinSize:
       return CanonObjectRemoved(u32(_handleOffset));
+    case CanonEosEvent.storageInfoChanged:
+      return const CanonStorageChanged();
+    case CanonEosEvent.propValueChanged when length == _propertyRecordMinSize:
+      return CanonPropertyChanged(
+        u32(_propertyOffset),
+        u32(_propertyValueOffset),
+      );
     default:
       return null;
   }

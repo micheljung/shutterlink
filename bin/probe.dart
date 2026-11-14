@@ -284,7 +284,8 @@ void _logRecords(StringSink out, String stamp, Uint8List data) {
         '>>> TransferRequested handle ${_hex(handle)} >>> ',
       CanonObjectRemoved(:final handle) =>
         '>>> ObjectRemoved handle ${_hex(handle)} >>> ',
-      null => '',
+      CanonStorageChanged() => '>>> StorageChanged >>> ',
+      CanonPropertyChanged() || null => '',
     };
     out
       ..writeln(

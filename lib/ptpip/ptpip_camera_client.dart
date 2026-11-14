@@ -34,6 +34,9 @@ class PtpIpCameraClient implements CameraClient {
   bool _pollInFlight = false;
   final _addedObjects = StreamController<int>.broadcast();
 
+  /// The last Canon camera-time property and when it arrived.
+  ({int seconds, Stopwatch age})? _canonClock;
+
   /// Handles are only valid within this PTP session, like this client.
   final _objectInfoCache = <int, PtpObjectInfo>{};
 
@@ -78,9 +81,11 @@ class PtpIpCameraClient implements CameraClient {
       await runIfSupported(CanonEosOperation.setEventMode, const [
         CanonEosMode.eventModeOn,
       ]);
+      Uint8List? initialEvents;
       if (supported.contains(CanonEosOperation.getEvent)) {
-        final initial = await session.execute(CanonEosOperation.getEvent);
-        onEventData?.call(initial.data);
+        initialEvents = (await session.execute(CanonEosOperation.getEvent))
+            .data;
+        onEventData?.call(initialEvents);
       }
       final client = PtpIpCameraClient._(
         connection,
@@ -95,7 +100,8 @@ class PtpIpCameraClient implements CameraClient {
         info,
         onEventData,
       );
-      if (supported.contains(CanonEosOperation.getEvent)) {
+      if (initialEvents != null) {
+        client._noteClock(_parseEventsLeniently(initialEvents));
         client._startPolling(eventPollInterval);
       }
       connection.disconnected.then((_) => client._closeAddedObjects());
@@ -133,7 +139,9 @@ class PtpIpCameraClient implements CameraClient {
     try {
       final result = await _session.execute(CanonEosOperation.getEvent);
       _onEventData?.call(result.data);
-      for (final event in parseCanonEvents(result.data)) {
+      final events = parseCanonEvents(result.data);
+      _noteClock(events);
+      for (final event in events) {
         switch (event) {
           case CanonObjectAdded(:final format)
               when format == PtpObjectFormat.association:
@@ -143,6 +151,8 @@ class PtpIpCameraClient implements CameraClient {
             if (!_addedObjects.isClosed) _addedObjects.add(handle);
           case CanonObjectRemoved(:final handle):
             _objectInfoCache.remove(handle);
+          case CanonStorageChanged() || CanonPropertyChanged():
+            break;
         }
       }
     } on PtpResponseException {
@@ -291,8 +301,53 @@ class PtpIpCameraClient implements CameraClient {
     return kind == null ? null : _toCameraObject(handle, info, kind);
   }
 
+  static List<CanonEvent> _parseEventsLeniently(Uint8List data) {
+    try {
+      return parseCanonEvents(data);
+    } on PtpIpProtocolException {
+      return const [];
+    }
+  }
+
+  void _noteClock(List<CanonEvent> events) {
+    for (final event in events) {
+      if (event case CanonPropertyChanged(
+        property: CanonEosProperty.cameraTime,
+        :final value,
+      )) {
+        _canonClock = (seconds: value, age: Stopwatch()..start());
+      }
+    }
+  }
+
+  /// The standard DateTime property, or else the Canon camera-time property
+  /// advanced by the time since it arrived. Both are the camera's wall clock.
   @override
-  Future<DateTime?> cameraTime() async {
+  Future<DateTime?> cameraTime() async =>
+      await _ptpDateTime() ?? _canonCameraTime();
+
+  DateTime? _canonCameraTime() {
+    final clock = _canonClock;
+    if (clock == null) {
+      return null;
+    }
+    final wall = DateTime.fromMillisecondsSinceEpoch(
+      clock.seconds * Duration.millisecondsPerSecond +
+          clock.age.elapsedMilliseconds,
+      isUtc: true,
+    );
+    return DateTime(
+      wall.year,
+      wall.month,
+      wall.day,
+      wall.hour,
+      wall.minute,
+      wall.second,
+      wall.millisecond,
+    );
+  }
+
+  Future<DateTime?> _ptpDateTime() async {
     if (!ptpDeviceInfo.operationsSupported.contains(
           PtpOperation.getDevicePropValue,
         ) ||
