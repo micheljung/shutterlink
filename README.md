@@ -50,7 +50,9 @@ Optionally upload to your own WebDAV/S3/SFTP server.
 Photos can be uploaded to your own server. Nothing is sent anywhere unless you
 add a destination in Settings.
 
-- **Destinations:** WebDAV, S3-compatible storage or SFTP. Credentials are
+- **Destinations:** WebDAV, S3-compatible storage or SFTP. **Set up upload**
+  in Settings guides you through it, with presets for Nextcloud/ownCloud,
+  Backblaze B2, AWS S3, Cloudflare R2 and Hetzner Storage Box. Credentials are
   kept in secure storage.
 - **Live transfer:** a toggle in the gallery. While on, new photos are uploaded
   in the background, and the connection to the camera is kept and restored
@@ -227,7 +229,8 @@ lib/
     download/           Download planning, progress, resume
     history/            Downloaded-photo marks
     sessions/           Sessions, clock sync, attribution, QR code, upload status
-    settings/           Download format, preview quality, camera address, Sessions
+    settings/           Download format, preview quality, camera address,
+                        upload and Sessions setup
 android/app/src/main/kotlin/ch/micheljung/shutterlink/
                         Wi-Fi network binding, multicast lock, CR3 saving via MediaStore
 ios/Runner/AppDelegate.swift
@@ -284,8 +287,9 @@ to view and download their photos for 30 days.
 
 1. Run the server in [`server/`](server/README.md) behind a TLS reverse proxy
    and give it an upload token.
-2. In the app, open Settings → Sessions, turn it on, and enter the server URL
-   (`https://`; `http://` only for `localhost`) and the upload token.
+2. In the app, open Settings → Sessions, tap **Connect Sessions**, and enter
+   the server URL (`https://`; `http://` only for `localhost`) and the upload
+   token. The app checks the token with the server before saving it.
 3. Tap the QR icon on the connect or gallery screen to start a Session and show
    its code. Tap a past Session to show its code again.
 4. On connect the app reads the camera clock. If the camera does not report its

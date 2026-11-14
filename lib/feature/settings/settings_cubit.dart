@@ -124,6 +124,13 @@ class SettingsCubit extends Cubit<SettingsState> {
     await _refreshSessionsConfigured();
   }
 
+  /// The saved token as the credentials report it, or null when unreadable.
+  /// [SecureSessionsCredentials] reports none while Sessions are off.
+  Future<String?> sessionsToken() async {
+    final credentials = _credentials;
+    return credentials == null ? null : _tokenOf(credentials);
+  }
+
   Future<void> _refreshSessionsConfigured() async {
     final credentials = _credentials;
     final configured =

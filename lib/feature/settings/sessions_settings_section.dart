@@ -3,118 +3,53 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/upload_worker.dart';
 import '../sessions/sessions_upload_cubit.dart';
-import '../spacing.dart';
+import 'sessions_setup_screen.dart';
+import 'settings_cards.dart';
 import 'settings_cubit.dart';
 
-class SessionsSettingsSection extends StatefulWidget {
+class SessionsSettingsSection extends StatelessWidget {
   const SessionsSettingsSection({super.key});
 
   @override
-  State<SessionsSettingsSection> createState() =>
-      _SessionsSettingsSectionState();
-}
-
-class _SessionsSettingsSectionState extends State<SessionsSettingsSection> {
-  late final TextEditingController _urlController;
-  final _tokenController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _urlController = TextEditingController(
-      text: context.read<SettingsCubit>().state.sessionsServerUrl,
-    );
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    _tokenController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final cubit = context.read<SettingsCubit>();
-    final theme = Theme.of(context);
     final state = context.watch<SettingsCubit>().state;
+    final host = Uri.tryParse(state.sessionsServerUrl ?? '')?.host;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('Sessions', style: theme.textTheme.titleMedium),
-          subtitle: const Text(
-            'Upload the photos of each Session to a private web gallery.',
-          ),
-          value: state.sessionsEnabled,
-          onChanged: (enabled) => cubit.setSessionsEnabled(enabled),
-        ),
-        if (state.sessionsEnabled) ...[
-          const SizedBox(height: Spacing.small),
-          ValueListenableBuilder(
-            valueListenable: _urlController,
-            builder: (context, value, _) => TextField(
-              controller: _urlController,
-              keyboardType: TextInputType.url,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: 'Server URL',
-                hintText: 'https://photos.example.com',
-                errorText:
-                    value.text.trim().isEmpty ||
-                        isValidSessionsServerUrl(value.text)
-                    ? null
-                    : 'Use https:// (http:// only for localhost)',
-                suffixIcon: IconButton(
-                  tooltip: 'Save server URL',
-                  icon: const Icon(Icons.check),
-                  onPressed: _saveServerUrl,
-                ),
+        const SettingsSectionHeader('Sessions'),
+        if (state.sessionsEnabled)
+          SettingsSummaryCard(
+            icon: Icons.photo_library_outlined,
+            title: host == null || host.isEmpty ? 'Sessions' : host,
+            subtitle: _uploadStatus(context),
+            actions: [
+              TextButton(
+                onPressed: () => _disconnect(context),
+                child: const Text('Disconnect'),
               ),
-              onSubmitted: (_) => _saveServerUrl(),
-            ),
-          ),
-          const SizedBox(height: Spacing.medium),
-          TextField(
-            controller: _tokenController,
-            obscureText: true,
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              labelText: 'Upload token',
-              hintText: state.sessionsConfigured ? 'Saved' : null,
-              suffixIcon: IconButton(
-                tooltip: 'Save token',
-                icon: const Icon(Icons.check),
-                onPressed: _saveToken,
+              FilledButton.tonalIcon(
+                onPressed: () =>
+                    Navigator.of(context).push(SessionsSetupScreen.route()),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Edit'),
               ),
-            ),
-            onSubmitted: (_) => _saveToken(),
+            ],
+          )
+        else
+          SettingsEmptyCard(
+            icon: Icons.link_off,
+            title: 'Sessions not connected',
+            text: 'Upload the photos of each Session to a private web gallery.',
+            action: 'Connect Sessions',
+            onPressed: () =>
+                Navigator.of(context).push(SessionsSetupScreen.route()),
           ),
-          const SizedBox(height: Spacing.small),
-          const _UploadStatus(),
-        ],
       ],
     );
   }
 
-  Future<void> _saveServerUrl() =>
-      context.read<SettingsCubit>().setSessionsServerUrl(_urlController.text);
-
-  Future<void> _saveToken() async {
-    final token = _tokenController.text;
-    if (token.trim().isEmpty) return;
-    await context.read<SettingsCubit>().setSessionsToken(token);
-    _tokenController.clear();
-  }
-}
-
-class _UploadStatus extends StatelessWidget {
-  const _UploadStatus();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  String _uploadStatus(BuildContext context) {
     final upload = context.watch<SessionsUploadCubit>().state;
     final configured = context.select<SettingsCubit, bool>(
       (cubit) => cubit.state.sessionsConfigured,
@@ -133,14 +68,25 @@ class _UploadStatus extends StatelessWidget {
       UploadWorkerStatus.uploading => 'Uploading…',
       UploadWorkerStatus.idle => 'Ready.',
     };
-    return Text(
-      [
-        status,
-        if (upload.pending > 0) '${upload.pending} waiting to upload.',
-        if (upload.dropped > 0) '${upload.dropped} dropped.',
-        if (upload.expired > 0) '${upload.expired} for expired Sessions.',
-      ].join(' '),
-      style: theme.textTheme.bodySmall,
-    );
+    return [
+      status,
+      if (upload.pending > 0) '${upload.pending} waiting to upload.',
+      if (upload.dropped > 0) '${upload.dropped} dropped.',
+      if (upload.expired > 0) '${upload.expired} for expired Sessions.',
+    ].join(' ');
+  }
+
+  Future<void> _disconnect(BuildContext context) async {
+    final settings = context.read<SettingsCubit>();
+    if (await confirmDialog(
+      context,
+      title: 'Disconnect Sessions?',
+      content:
+          'Photos stop uploading to Sessions. The server address stays '
+          'filled in for when you connect again.',
+      action: 'Disconnect',
+    )) {
+      await settings.setSessionsEnabled(false);
+    }
   }
 }

@@ -72,6 +72,69 @@ void main() {
     }
   });
 
+  group('checkToken', () {
+    final serverUrl = Uri.parse('https://example.com/shutterlink/');
+
+    for (final (description, status, body, expected) in [
+      ('204', HttpStatus.noContent, '', TokenCheck.valid),
+      (
+        '401',
+        HttpStatus.unauthorized,
+        '{"error":"unauthorized"}',
+        TokenCheck.rejected,
+      ),
+      ('404', HttpStatus.notFound, '', TokenCheck.unsupported),
+      ('HTML of an old server', HttpStatus.ok, html, TokenCheck.unsupported),
+      ('502', HttpStatus.badGateway, html, TokenCheck.unsupported),
+    ]) {
+      test('maps $description', () async {
+        late http.Request sent;
+        final result = await const UploadClient().checkToken(
+          MockClient((request) async {
+            sent = request;
+            return http.Response(body, status);
+          }),
+          serverUrl: serverUrl,
+          token: 'secret',
+        );
+        expect(result, expected);
+        expect(sent.method, 'GET');
+        expect(sent.url.toString(), 'https://example.com/shutterlink/api/auth');
+        expect(sent.headers['authorization'], 'Bearer secret');
+      });
+    }
+
+    for (final (description, error) in [
+      ('a socket error', const SocketException('refused')),
+      ('a client error', http.ClientException('closed')),
+      ('a TLS failure', const HandshakeException('certificate expired')),
+      ('a generic TLS error', const TlsException('bad record')),
+      (
+        'a network policy error',
+        const StorageException('Waiting for a network.'),
+      ),
+    ]) {
+      test('maps $description to unreachable', () async {
+        final result = await const UploadClient().checkToken(
+          MockClient((_) async => throw error),
+          serverUrl: serverUrl,
+          token: 'secret',
+        );
+        expect(result, TokenCheck.unreachable);
+      });
+    }
+
+    test('maps a timeout to unreachable', () async {
+      final result = await const UploadClient().checkToken(
+        MockClient((_) => Completer<http.Response>().future),
+        serverUrl: serverUrl,
+        token: 'secret',
+        timeout: _idle,
+      );
+      expect(result, TokenCheck.unreachable);
+    });
+  });
+
   test('builds the photo URL under a path prefix', () {
     expect(
       UploadClient.photoUrl(

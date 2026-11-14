@@ -66,6 +66,29 @@ void main() {
       await backend().testConnection();
     });
 
+    test('signs for R2 with region auto and path-style addressing', () async {
+      const host = 'account.r2.cloudflarestorage.com';
+      await server.close();
+      server = await S3TestServer.start(region: 'auto');
+      final hosts = <String>[];
+      final r2 = S3Backend(
+        endpoint: Uri.parse('http://$host:${server.port}'),
+        region: 'auto',
+        bucket: 'photos',
+        basePath: 'camera',
+        accessKey: 'AKIDTEST',
+        secretKey: 'test-secret',
+        pathStyle: true,
+        connector: loopbackConnector(server.port, hosts: hosts),
+      );
+      backends.add(r2);
+
+      await r2.testConnection();
+
+      expect(hosts.toSet(), {host});
+      expect(server.requests.single, startsWith('GET photos/'));
+    });
+
     test('succeeds with virtual-host addressing', () async {
       final hosts = <String>[];
       await backend(pathStyle: false, hosts: hosts).testConnection();
@@ -78,9 +101,15 @@ void main() {
         throwsA(
           isA<StorageException>()
               .having(
+                (e) => e is AuthenticationException,
+                'is an authentication failure',
+                isFalse,
+              )
+              .having(
                 (e) => e.message,
                 'message',
-                'Access denied (SignatureDoesNotMatch).',
+                'Access denied (SignatureDoesNotMatch). '
+                    'Check the secret key, region and endpoint.',
               )
               .having((e) => e.retryable, 'retryable', false),
         ),
@@ -91,7 +120,7 @@ void main() {
       await expectLater(
         backend(accessKey: 'nobody').testConnection(),
         throwsA(
-          isA<StorageException>().having(
+          isA<AuthenticationException>().having(
             (e) => e.message,
             'message',
             'Access denied (InvalidAccessKeyId).',

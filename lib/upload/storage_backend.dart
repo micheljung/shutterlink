@@ -93,6 +93,11 @@ class StorageException implements Exception {
   String toString() => message;
 }
 
+/// The server rejected the credentials.
+class AuthenticationException extends StorageException {
+  const AuthenticationException(super.message) : super(retryable: false);
+}
+
 /// No network allowed for this upload has internet access; retrying once one
 /// appears may succeed.
 class NoNetworkException extends StorageException {

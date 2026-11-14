@@ -5,6 +5,7 @@ class FakeSessionsCredentials implements SessionsCredentials {
 
   String? _token;
   int reads = 0;
+  String? get storedToken => _token;
   Object? readError;
 
   @override
