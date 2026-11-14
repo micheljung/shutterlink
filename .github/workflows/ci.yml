@@ -9,6 +9,7 @@ on:
 env:
   FLUTTER_VERSION: 3.47.5
   PTPIP_MIN_COVERAGE: 90
+  PTP_MIN_COVERAGE: 90
   UPLOAD_MIN_COVERAGE: 90
 
 jobs:
@@ -29,6 +30,8 @@ jobs:
         working-directory: server
       - name: Check lib/ptpip coverage
         run: tool/check_coverage.sh ptpip "$PTPIP_MIN_COVERAGE" coverage/lcov.info
+      - name: Check lib/ptp coverage
+        run: tool/check_coverage.sh ptp "$PTP_MIN_COVERAGE" coverage/lcov.info
       - name: Install OpenSSH server
         run: |
           sudo apt-get update

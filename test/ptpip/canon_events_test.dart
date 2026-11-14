@@ -53,7 +53,7 @@ void main() {
   test('ObjectAddedEx64 reads the 64-bit size and the shifted parent', () {
     final raw = FakeObject(
       handle: 0x22,
-      format: PtpObjectFormat.canonCr3,
+      format: CanonObjectFormat.cr3,
       filename: 'IMG_0042.CR3',
       parent: 0x11,
     );
@@ -64,7 +64,7 @@ void main() {
       const CanonObjectAdded(
         handle: 0x22,
         storageId: fakeStorageId,
-        format: PtpObjectFormat.canonCr3,
+        format: CanonObjectFormat.cr3,
         size: _bigSize,
         parent: 0x11,
       ),
@@ -153,11 +153,11 @@ void main() {
 
     expect(
       () => parseCanonEvents(tooSmall),
-      throwsA(isA<PtpIpProtocolException>()),
+      throwsA(isA<PtpProtocolException>()),
     );
     expect(
       () => parseCanonEvents(truncated),
-      throwsA(isA<PtpIpProtocolException>()),
+      throwsA(isA<PtpProtocolException>()),
     );
   });
 

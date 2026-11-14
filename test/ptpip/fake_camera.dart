@@ -171,6 +171,7 @@ class FakeCamera {
     this.devicePropValueCode = PtpResponseCode.ok,
     this.deleteDeniedCode,
     this.deleteBusyResponses = 0,
+    this._deviceInfo,
   }) : objects = objects ?? defaultObjects(),
        devicePropertyValues = devicePropertyValues ?? {};
 
@@ -226,7 +227,7 @@ class FakeCamera {
     ),
     FakeObject(
       handle: rawHandle,
-      format: PtpObjectFormat.canonCr3,
+      format: CanonObjectFormat.cr3,
       filename: 'IMG_0001.CR3',
       parent: folderHandle,
       captureDate: '20240102T030405',
@@ -234,7 +235,7 @@ class FakeCamera {
     ),
     FakeObject(
       handle: videoHandle,
-      format: PtpObjectFormat.canonMov,
+      format: CanonObjectFormat.mov,
       filename: 'MVI_0002.MOV',
       parent: folderHandle,
       content: patternBytes(10, seed: videoHandle),
@@ -575,7 +576,12 @@ class FakeCamera {
     );
   }
 
-  PtpDeviceInfo get deviceInfo => PtpDeviceInfo(
+  final PtpDeviceInfo? _deviceInfo;
+
+  /// An EOS R unless the test passes another camera.
+  PtpDeviceInfo get deviceInfo => _deviceInfo ?? _eosDeviceInfo;
+
+  PtpDeviceInfo get _eosDeviceInfo => PtpDeviceInfo(
     standardVersion: 100,
     vendorExtensionId: _canonVendorExtensionId,
     vendorExtensionVersion: 100,
@@ -585,7 +591,7 @@ class FakeCamera {
     eventsSupported: const [],
     devicePropertiesSupported: devicePropertyValues.keys.toList(),
     captureFormats: const [],
-    imageFormats: const [PtpObjectFormat.exifJpeg, PtpObjectFormat.canonCr3],
+    imageFormats: const [PtpObjectFormat.exifJpeg, CanonObjectFormat.cr3],
     manufacturer: 'Canon Inc.',
     model: 'Canon EOS R',
     deviceVersion: '1-1.8.0',

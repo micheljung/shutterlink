@@ -54,7 +54,10 @@ void main() {
         port: camera.port,
         identity: pairedIdentity,
       );
-      session = PtpSession(connection, responseTimeout: testResponseTimeout);
+      session = PtpSession(
+        PtpIpTransport(connection),
+        responseTimeout: testResponseTimeout,
+      );
     }
 
     tearDown(() async {
@@ -243,7 +246,10 @@ void main() {
 
     Future<PtpSession> start(RequestHandler handler) async {
       (server, connection) = await scriptedCamera(handler);
-      return PtpSession(connection, responseTimeout: testResponseTimeout);
+      return PtpSession(
+        PtpIpTransport(connection),
+        responseTimeout: testResponseTimeout,
+      );
     }
 
     test('ignores packets of other transactions', () async {

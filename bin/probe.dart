@@ -272,7 +272,7 @@ void _logRecords(StringSink out, String stamp, Uint8List data) {
   final List<CanonEventRecord> records;
   try {
     records = canonEventRecords(data);
-  } on PtpIpProtocolException catch (error) {
+  } on PtpProtocolException catch (error) {
     out.writeln('$stamp malformed: ${error.message}\n${hexDump(data)}');
     return;
   }

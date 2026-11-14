@@ -8,7 +8,7 @@ void main() {
     expect(CanonEosOperation.getEvent, 0x9116);
     expect(PtpOperation.getPartialObject, 0x101B);
     expect(PtpOperation.getThumb, 0x100A);
-    expect(PtpObjectFormat.canonCr3, 0xB108);
+    expect(CanonObjectFormat.cr3, 0xB108);
     expect(PtpObjectFormat.exifJpeg, 0x3801);
     expect(PtpResponseCode.ok, 0x2001);
     expect(CanonEosEvent.objectAddedEx, 0xC181);

@@ -1,3 +1,8 @@
+export '../ptp/camera_profile.dart';
+export '../ptp/generic_ptp_profile.dart';
+export '../ptp/profile_registry.dart';
+export '../ptp/ptp_camera_client.dart';
+export '../ptp/ptp_protocol_exception.dart';
 export 'camera_client.dart';
 export 'canon_eos.dart';
 export 'canon_events.dart';
@@ -7,3 +12,4 @@ export 'packet.dart';
 export 'packet_reader.dart';
 export 'ptp_session.dart';
 export 'ptpip_camera_client.dart';
+export 'ptpip_transport.dart';
