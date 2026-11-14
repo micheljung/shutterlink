@@ -103,11 +103,18 @@ class PtpIpConnection {
       PtpIpChannel.command,
       await Socket.connect(host, port, timeout: timeout),
     );
-    final ack = await _request(
-      PtpIpChannel.command,
-      InitCommandRequest(guid: identity.guid, name: identity.name),
-      pairingTimeout,
-    );
+    final PtpIpPacket ack;
+    try {
+      ack = await _request(
+        PtpIpChannel.command,
+        InitCommandRequest(guid: identity.guid, name: identity.name),
+        pairingTimeout,
+      );
+    } on CameraDisconnectedException {
+      // A real EOS R resets the connection instead of sending InitFail when
+      // it does not know the GUID and is not waiting to pair.
+      throw const PairingRequiredException();
+    }
     if (ack is! InitCommandAck) {
       throw PtpIpProtocolException('Expected InitCommandAck, got $ack');
     }

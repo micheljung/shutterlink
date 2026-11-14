@@ -90,6 +90,18 @@ void main() {
     );
   });
 
+  test('a reset after InitCommandRequest means pairing is required', () async {
+    await startCamera(
+      FakeCamera(pairedGuids: const [], resetUnknownGuid: true),
+    );
+    await expectLater(
+      open(),
+      throwsA(
+        isA<PairingRequiredException>().having((e) => e.reason, 'reason', null),
+      ),
+    );
+  });
+
   test('waiting for pairing times out on a silent camera', () async {
     await startCamera(FakeCamera(ignoreInitCommand: true));
     await expectLater(
