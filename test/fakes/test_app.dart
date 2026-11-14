@@ -17,6 +17,7 @@ import 'package:shutterlink/data/network_binder.dart';
 import 'package:shutterlink/data/session_repository.dart';
 import 'package:shutterlink/data/session_seen_store.dart';
 import 'package:shutterlink/data/sessions_credentials.dart';
+import 'package:shutterlink/data/sessions_prefetch.dart';
 import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_transport.dart';
@@ -128,6 +129,9 @@ SessionsDependencies testSessionsDependencies(
     p.join(directory.path, SessionsDependencies.uploadDirectoryName),
   ),
   ingestCoordinator: coordinator,
+  prefetch: SessionsPrefetch(
+    Directory(p.join(directory.path, SessionsPrefetch.directoryName)),
+  ),
 );
 
 Future<AppDependencies> testDependencies(

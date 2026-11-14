@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import '../../data/download_history.dart';
 import '../../data/settings_repository.dart';
@@ -19,6 +20,9 @@ class LiveBaseline {
   final Set<int> handles;
 }
 
+/// Receives a complete JPEG before it is queued and may be moved away.
+typedef JpegFetched = Future<void> Function(String key, File file);
+
 /// Turns new camera objects into gallery copies and queued uploads.
 class LiveIngestor {
   LiveIngestor({
@@ -29,6 +33,7 @@ class LiveIngestor {
     required this._queue,
     required this._coordinator,
     this._fetcher = const ObjectFetcher(),
+    this._onJpegFetched,
     this._infoRetryDelay = defaultInfoRetryDelay,
     this._rescanInterval = defaultRescanInterval,
   }) : _cameraKey = cameraKeyOf(_client.deviceInfo),
@@ -45,6 +50,7 @@ class LiveIngestor {
   final UploadQueue _queue;
   final IngestCoordinator _coordinator;
   final ObjectFetcher _fetcher;
+  final JpegFetched? _onJpegFetched;
   final Duration _infoRetryDelay;
   final Duration _rescanInterval;
   final String _cameraKey;
@@ -169,6 +175,9 @@ class LiveIngestor {
           object,
           _queue.stagingFileFor(key, object.filename),
         );
+        if (object.kind == CameraObjectKind.jpeg) {
+          await _onJpegFetched?.call(key, file);
+        }
         await _queue.add(
           id: key,
           file: file,

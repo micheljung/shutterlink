@@ -136,6 +136,11 @@ class ShutterlinkApp extends StatelessWidget {
               history: dependencies.downloadHistory,
               queue: dependencies.uploadQueue,
               coordinator: dependencies.ingestCoordinator,
+              onJpegFetched: (key, file) async {
+                if (context.read<SettingsCubit>().state.sessionsConfigured) {
+                  await dependencies.sessions.prefetch.keep(key, file);
+                }
+              },
             ),
           ),
         ),
