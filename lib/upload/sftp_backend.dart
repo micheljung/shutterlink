@@ -134,10 +134,7 @@ class SftpBackend implements StorageBackend {
         throw UnknownHostKeyException(rejectedType!, fingerprint);
       }
       if (e is SSHAuthFailError) {
-        throw const StorageException(
-          'Wrong username, password or key.',
-          retryable: false,
-        );
+        throw const AuthenticationException('Wrong username, password or key.');
       }
       throw StorageException('Connection to $host failed: $e');
     }

@@ -33,6 +33,21 @@ class Destination extends Equatable {
   final MobileDataPolicy policy;
   final bool keepLocalCopy;
 
+  Destination withPolicy(
+    MobileDataPolicy policy, {
+    required bool keepLocalCopy,
+  }) => Destination(
+    type: type,
+    endpoint: endpoint,
+    region: region,
+    bucket: bucket,
+    basePath: basePath,
+    username: username,
+    pathStyle: pathStyle,
+    policy: policy,
+    keepLocalCopy: keepLocalCopy,
+  );
+
   /// Identifies where files land, so a changed server, bucket or path counts
   /// as a new destination while a changed secret or policy does not.
   String get fingerprint => sha256

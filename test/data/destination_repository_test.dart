@@ -5,6 +5,7 @@ import 'package:shutterlink/data/destination_repository.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
 import 'package:shutterlink/upload/network_policy.dart';
+import 'package:shutterlink/upload/provider_preset.dart';
 
 class _FailingSecureStorage extends FlutterSecureStorage {
   final deleted = <String>[];
@@ -194,5 +195,61 @@ void main() {
     await prefs.setString(DestinationRepository.typeKey, 'ftp');
 
     expect(repository.destination, isNull);
+  });
+
+  test('savePolicy changes the policy and keeps the fingerprint', () async {
+    await repository.save(s3, s3Secrets);
+    final changes = <Destination?>[];
+    final subscription = repository.changes.listen(changes.add);
+    addTearDown(subscription.cancel);
+
+    await repository.savePolicy(MobileDataPolicy.all, keepLocalCopy: true);
+    await pumpEventQueue();
+
+    final saved = repository.destination!;
+    expect(saved.policy, MobileDataPolicy.all);
+    expect(saved.keepLocalCopy, isTrue);
+    expect(saved.fingerprint, s3.fingerprint);
+    expect(changes, [saved]);
+    expect(await repository.readSecrets(), s3Secrets);
+  });
+
+  test('savePolicy leaves missing secrets missing', () async {
+    await repository.save(s3, s3Secrets);
+    FlutterSecureStorage.setMockInitialValues({});
+
+    await repository.savePolicy(MobileDataPolicy.all, keepLocalCopy: true);
+
+    expect(
+      await DestinationRepository.defaultSecureStorage.read(
+        key: DestinationRepository.secretsKey,
+      ),
+      isNull,
+    );
+    await expectLater(
+      repository.readSecrets(),
+      throwsA(isA<CredentialsMissingException>()),
+    );
+  });
+
+  test('savePolicy without a destination saves nothing', () async {
+    await repository.savePolicy(MobileDataPolicy.all, keepLocalCopy: false);
+
+    expect(repository.destination, isNull);
+    expect(prefs.getKeys(), isEmpty);
+  });
+
+  test('stores the preset outside the fingerprint', () async {
+    expect(repository.preset, isNull);
+    await repository.save(s3, s3Secrets, preset: ProviderPreset.awsS3);
+    expect(repository.preset, ProviderPreset.awsS3);
+    expect(await repository.readSecrets(), s3Secrets);
+
+    await repository.save(s3, s3Secrets);
+    expect(repository.preset, isNull);
+
+    await repository.save(s3, s3Secrets, preset: ProviderPreset.awsS3);
+    await repository.remove();
+    expect(repository.preset, isNull);
   });
 }

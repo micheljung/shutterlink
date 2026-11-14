@@ -1,3 +1,4 @@
+import 'package:shelf/shelf.dart';
 import 'package:shutterlink_server/src/limits.dart';
 import 'package:test/test.dart';
 
@@ -19,6 +20,21 @@ void main() {
       expect(await bodyJson(response), {'error': 'unauthorized'});
     }
     expect(await server.app.store.snapshot(codeA), isNull);
+  });
+
+  test('GET /api/auth accepts only the upload token', () async {
+    Request authRequest(String? token) => Request(
+      'GET',
+      origin.resolve('/api/auth'),
+      headers: {if (token != null) 'authorization': 'Bearer $token'},
+    );
+
+    expect((await server.call(authRequest(uploadToken))).statusCode, 204);
+    for (final token in [null, 'wrong', '']) {
+      final response = await server.call(authRequest(token));
+      expect(response.statusCode, 401, reason: '$token');
+      expect(await bodyJson(response), {'error': 'unauthorized'});
+    }
   });
 
   test('stores once and re-PUT is idempotent', () async {

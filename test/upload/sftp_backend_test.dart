@@ -107,7 +107,7 @@ void main() {
           privateKey: sshd.unauthorizedPrivateKey,
         ).testConnection(),
         throwsA(
-          isA<StorageException>()
+          isA<AuthenticationException>()
               .having(
                 (e) => e.message,
                 'message',

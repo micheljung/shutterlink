@@ -28,7 +28,7 @@ dart run bin/server.dart \
 | `--address` | 127.0.0.1 | Listening address |
 
 Enter the server URL and the same token in the app under
-Settings → Sessions. The server stops cleanly on `SIGINT`/`SIGTERM`.
+Settings → Sessions → Connect Sessions. The server stops cleanly on `SIGINT`/`SIGTERM`.
 
 Tips never gate anything: every download works the same with or without
 tip links.
@@ -105,6 +105,10 @@ body.
 | 400 | `{"error": "sha_mismatch" \| "bad_code" \| "bad_key"}` | Rejected photo |
 | 413 | `{"error": "too_large" \| "session_full"}` | Over a limit |
 | 410 | `{"error": "expired"}` | The Session was already deleted |
+
+`GET /api/auth` checks the token without uploading: `204` when it is right,
+`401 {"error": "unauthorized"}` when it is missing or wrong. The app uses it
+to check the token during setup.
 
 ## Development
 

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -20,9 +21,15 @@ import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
+import 'package:shutterlink/feature/settings/settings_cards.dart';
+import 'package:shutterlink/feature/settings/settings_screen.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/upload/backend_factory.dart';
+import 'package:shutterlink/upload/network_policy.dart';
+import 'package:shutterlink/upload/provider_preset.dart';
 
 import '../fakes/fake_camera_client.dart';
+import '../fakes/fake_sessions_credentials.dart';
 import '../fakes/test_app.dart';
 
 const _outputDirectory = 'docs/screenshots';
@@ -35,6 +42,7 @@ const _maxDownloadPolls = 2000;
 const _arrowFallbackFont = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
 final _platform = TargetPlatformVariant.only(TargetPlatform.linux);
 const _settleDuration = Duration(seconds: 1);
+const _settingsScrollStep = 200.0;
 
 void main() {
   setUpAll(() async {
@@ -100,6 +108,105 @@ void main() {
     await tester.pumpAndSettle();
     await _capture(tester, 'settings');
   }, variant: _platform);
+
+  testWidgets('settings without upload or Sessions', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _openSettingsAt(tester, 'Upload');
+    await _capture(tester, 'settings_upload_empty');
+  }, variant: _platform);
+
+  testWidgets('settings with upload and Sessions', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient(), configured: true);
+    await _openSettingsAt(tester, 'Upload');
+    await _capture(tester, 'settings_upload_configured');
+  }, variant: _platform);
+
+  testWidgets('upload setup provider step', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _openSettingsAt(tester, 'Upload');
+    await _tapAndSettle(tester, 'Set up upload');
+    await _tapAndSettle(tester, ProviderPreset.backblazeB2.label);
+    await _capture(tester, 'upload_setup_provider');
+  }, variant: _platform);
+
+  testWidgets('upload setup Backblaze B2 step', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _openSettingsAt(tester, 'Upload');
+    await _tapAndSettle(tester, 'Set up upload');
+    await _tapAndSettle(tester, ProviderPreset.backblazeB2.label);
+    await _tapAndSettle(tester, 'Next');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Region'),
+      'eu-central-003',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Bucket name'),
+      'camera-photos',
+    );
+    await _settleWithoutFocus(tester);
+    await _capture(tester, 'upload_setup_b2');
+  }, variant: _platform);
+
+  testWidgets('upload edit page', (tester) async {
+    await withClock(Clock.fixed(_screenshotDay), () async {
+      await _pumpApp(tester, _ScreenshotCameraClient(), configured: true);
+      await _openSettingsAt(tester, 'Upload');
+      await tester.tap(find.text('Edit').first);
+      await tester.pumpAndSettle();
+      await _capture(tester, 'upload_edit');
+    });
+  }, variant: _platform);
+
+  testWidgets('Sessions setup token step', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _openSettingsAt(tester, 'Sessions');
+    await _tapAndSettle(tester, 'Connect Sessions');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Server URL'),
+      _sessionsServerUrl,
+    );
+    await tester.pump();
+    await _tapAndSettle(tester, 'Next');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Upload token'),
+      'a-long-random-token',
+    );
+    await _settleWithoutFocus(tester);
+    await _capture(tester, 'sessions_setup_token');
+  }, variant: _platform);
+}
+
+const _sessionsServerUrl = 'https://photos.example.com';
+final _screenshotDay = DateTime(2026, 6, 14);
+
+/// Opens Settings scrolled so the [header] section starts at the top.
+Future<void> _openSettingsAt(WidgetTester tester, String header) async {
+  await tester.tap(find.byTooltip('Settings'));
+  await tester.pumpAndSettle();
+  final section = find.widgetWithText(SettingsSectionHeader, header);
+  await tester.scrollUntilVisible(
+    section,
+    _settingsScrollStep,
+    scrollable: find
+        .descendant(
+          of: find.byType(SettingsScreen),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.ensureVisible(section);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapAndSettle(WidgetTester tester, String text) async {
+  await tester.tap(find.text(text));
+  await tester.pumpAndSettle();
+}
+
+/// Hides the cursor and keyboard focus so captures are stable.
+Future<void> _settleWithoutFocus(WidgetTester tester) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
 }
 
 final _boundaryKey = GlobalKey();
@@ -138,13 +245,19 @@ Future<void> _pumpApp(
   WidgetTester tester,
   FakeCameraClient client, {
   Iterable<String> downloaded = const [],
+  bool configured = false,
 }) async {
   tester.view
     ..physicalSize = _logicalSize * _pixelRatio
     ..devicePixelRatio = _pixelRatio;
   addTearDown(tester.view.reset);
   final thumbnails = await tester.runAsync(_renderThumbnails);
-  SharedPreferences.setMockInitialValues({});
+  SharedPreferences.setMockInitialValues({
+    if (configured) ...{
+      SettingsRepository.sessionsEnabledKey: true,
+      SettingsRepository.sessionsServerUrlKey: _sessionsServerUrl,
+    },
+  });
   final prefs = await SharedPreferences.getInstance();
   final settings = SettingsRepository(prefs);
   final workDirectory = Directory.systemTemp.createTempSync('shutterlink_');
@@ -165,6 +278,23 @@ Future<void> _pumpApp(
     ),
   );
   final upload = testUploadDependencies(prefs, workDirectory);
+  if (configured) {
+    await tester.runAsync(
+      () => upload.destinations.save(
+        ProviderPreset.nextcloud
+            .build(
+              const PresetInput(
+                server: 'cloud.example.com',
+                basePath: 'Photos',
+                username: 'alice',
+              ),
+            )
+            .withPolicy(MobileDataPolicy.jpeg, keepLocalCopy: true),
+        const DestinationSecrets(password: 'app-password'),
+        preset: ProviderPreset.nextcloud,
+      ),
+    );
+  }
   await tester.pumpWidget(
     RepaintBoundary(
       key: _boundaryKey,
@@ -191,6 +321,7 @@ Future<void> _pumpApp(
             settings,
             workDirectory,
             upload.ingestCoordinator,
+            credentials: FakeSessionsCredentials(configured ? 'token' : null),
           ),
         ),
       ),

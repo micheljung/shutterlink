@@ -13,7 +13,6 @@ import 'package:shutterlink/feature/sessions/clock_sync_banner.dart';
 import 'package:shutterlink/feature/sessions/session_qr_sheet.dart';
 import 'package:shutterlink/feature/sessions/sessions_cubit.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
-import 'package:shutterlink/feature/settings/sessions_settings_section.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
 
@@ -35,18 +34,7 @@ Future<void> pumpUntil(WidgetTester tester, bool Function() condition) async {
   expect(condition(), isTrue);
 }
 
-final sessionsServerUrl = find.descendant(
-  of: find.byType(SessionsSettingsSection),
-  matching: find.text('Server URL'),
-);
-final sessionsServerUrlField = find.descendant(
-  of: find.byType(SessionsSettingsSection),
-  matching: find.widgetWithText(TextField, 'Server URL'),
-);
-final sessionsSwitch = find.descendant(
-  of: find.byType(SessionsSettingsSection),
-  matching: find.byType(Switch),
-);
+final serverUrlField = find.widgetWithText(TextField, 'Server URL');
 
 void main() {
   late SpySessionsDependencies sessions;
@@ -139,54 +127,55 @@ void main() {
     expect(client.closed, isTrue);
   });
 
-  testWidgets('enabling Sessions in settings reveals its configuration', (
+  Future<void> tapAndSettle(WidgetTester tester, String text) async {
+    await tester.tap(find.text(text));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('connecting Sessions saves the setup only on finish', (
     tester,
   ) async {
     await pumpApp(tester, prefs: {});
     await openSessionsSettings(tester);
-    expect(sessionsServerUrl, findsNothing);
+    expect(serverUrlField, findsNothing);
+    final settings = tester
+        .element(find.byType(SettingsScreen))
+        .read<SettingsCubit>();
 
-    await tester.ensureVisible(sessionsSwitch);
-    await tester.tap(sessionsSwitch);
+    await tester.ensureVisible(find.text('Connect Sessions'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byTooltip('Save token'));
-    await tester.pumpAndSettle();
-    await pumpUntil(tester, () => sessions.workers == 1);
-
-    await tester.enterText(
-      find.descendant(
-        of: find.byType(SessionsSettingsSection),
-        matching: find.widgetWithText(TextField, 'Server URL'),
-      ),
-      'http://photos.example.com',
-    );
+    await tapAndSettle(tester, 'Connect Sessions');
+    await tester.enterText(serverUrlField, 'http://photos.example.com');
     await tester.pump();
     expect(
       find.text('Use https:// (http:// only for localhost)'),
       findsOneWidget,
     );
-
-    await tester.enterText(
-      find.descendant(
-        of: find.byType(SessionsSettingsSection),
-        matching: find.widgetWithText(TextField, 'Server URL'),
-      ),
-      _serverUrl,
-    );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Upload token'),
-      'token',
-    );
-    await tester.tap(find.byTooltip('Save token'));
-    final settings = tester
-        .element(find.byType(SettingsScreen))
-        .read<SettingsCubit>();
-    await pumpUntil(tester, () => settings.state.sessionsConfigured);
+    await tester.enterText(serverUrlField, _serverUrl);
+    await tester.pump();
     expect(
       find.text('Use https:// (http:// only for localhost)'),
       findsNothing,
     );
+    await tapAndSettle(tester, 'Next');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Upload token'),
+      'token',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Next'));
+    await pumpUntil(
+      tester,
+      () => find.textContaining("can't check tokens").evaluate().isNotEmpty,
+    );
+    expect(sessions.requests.single.url.path, '/api/auth');
+    expect(settings.state.sessionsEnabled, isFalse);
+    expect(settings.state.sessionsServerUrl, isNull);
+
+    await tester.tap(find.text('Save anyway'));
+    await pumpUntil(tester, () => settings.state.sessionsConfigured);
+    await pumpUntil(tester, () => sessions.workers == 1);
+    expect(settings.state.sessionsServerUrl, _serverUrl);
     await pumpUntil(
       tester,
       () =>
@@ -236,7 +225,7 @@ void main() {
     await pumpUntil(tester, () => uploads.isClosed);
   });
 
-  testWidgets('the server URL is saved only when submitted', (tester) async {
+  testWidgets('editing the server URL saves it only on finish', (tester) async {
     const typed = 'https://other.example.com';
     await pumpApp(
       tester,
@@ -266,27 +255,75 @@ void main() {
       () => uploads.state.status == UploadWorkerStatus.serverConfiguration,
     );
     await openSessionsSettings(tester);
-    await tester.ensureVisible(sessionsServerUrlField);
     final settings = tester
         .element(find.byType(SettingsScreen))
         .read<SettingsCubit>();
 
-    for (var length = 'https://o'.length; length <= typed.length; length++) {
-      await tester.enterText(
-        sessionsServerUrlField,
-        typed.substring(0, length),
-      );
-      await tester.runAsync(() => Future<void>.delayed(_pollInterval));
+    Future<void> editToCheck() async {
+      await tester.ensureVisible(find.text('Edit'));
+      await tester.pumpAndSettle();
+      await tapAndSettle(tester, 'Edit');
+      await tester.enterText(serverUrlField, typed);
       await tester.pump();
+      await tapAndSettle(tester, 'Next');
+      await tester.tap(find.text('Next'));
+      await pumpUntil(
+        tester,
+        () => find.text('Save anyway').evaluate().isNotEmpty,
+      );
     }
-    expect(settings.state.sessionsServerUrl, _serverUrl);
-    expect(sessions.requests, hasLength(1));
 
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await pumpUntil(tester, () => sessions.requests.length == 2);
+    await editToCheck();
+    expect(sessions.requests, hasLength(2));
+    expect(sessions.requests.last.url.toString(), '$typed/api/auth');
+    expect(sessions.requests.last.headers['authorization'], 'Bearer token');
+    await tester.tap(find.byType(CloseButton));
+    await tester.pumpAndSettle();
+    expect(settings.state.sessionsServerUrl, _serverUrl);
+    expect(sessions.fakeCredentials.storedToken, 'token');
+
+    await editToCheck();
+    await tester.tap(find.text('Save anyway'));
+    await pumpUntil(
+      tester,
+      () =>
+          sessions.requests.last.url.host == Uri.parse(typed).host &&
+          sessions.requests.last.method == 'PUT',
+    );
     expect(settings.state.sessionsServerUrl, typed);
-    expect(sessions.requests.last.url.host, Uri.parse(typed).host);
+    expect(sessions.fakeCredentials.storedToken, 'token');
     await tester.pumpWidget(const SizedBox());
     await pumpUntil(tester, () => uploads.isClosed);
+  });
+
+  testWidgets('disconnecting keeps the server URL and token', (tester) async {
+    await pumpApp(
+      tester,
+      prefs: {
+        SettingsRepository.sessionsEnabledKey: true,
+        SettingsRepository.sessionsServerUrlKey: _serverUrl,
+      },
+      token: 'token',
+    );
+    await openSessionsSettings(tester);
+    final settings = tester
+        .element(find.byType(SettingsScreen))
+        .read<SettingsCubit>();
+    expect(find.text('photos.example.com'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Disconnect'));
+    await tester.pumpAndSettle();
+    await tapAndSettle(tester, 'Disconnect');
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('Disconnect'),
+      ),
+    );
+    await pumpUntil(tester, () => !settings.state.sessionsEnabled);
+
+    expect(settings.state.sessionsServerUrl, _serverUrl);
+    expect(sessions.fakeCredentials.storedToken, 'token');
+    expect(find.text('Connect Sessions'), findsOneWidget);
   });
 }

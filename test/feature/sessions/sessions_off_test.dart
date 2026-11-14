@@ -11,13 +11,9 @@ import '../../fakes/test_app.dart';
 
 const _scrollStep = 100.0;
 
-final sessionsServerUrl = find.descendant(
+final connectSessions = find.descendant(
   of: find.byType(SessionsSettingsSection),
-  matching: find.text('Server URL'),
-);
-final sessionsSwitch = find.descendant(
-  of: find.byType(SessionsSettingsSection),
-  matching: find.byType(Switch),
+  matching: find.text('Connect Sessions'),
 );
 
 void main() {
@@ -58,8 +54,8 @@ void main() {
           )
           .first,
     );
-    expect(sessionsSwitch, findsOneWidget);
-    expect(sessionsServerUrl, findsNothing);
+    expect(connectSessions, findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Server URL'), findsNothing);
 
     expect(sessions.fakeCredentials.reads, 0);
     expect(sessions.workers, 0);

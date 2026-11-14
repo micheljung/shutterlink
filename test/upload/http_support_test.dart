@@ -19,6 +19,24 @@ void main() {
     expect(statusException(400, 'x').message, contains('400'));
   });
 
+  test('statusException reports sign-in failures as authentication', () {
+    expect(statusException(401, 'x'), isA<AuthenticationException>());
+    expect(statusException(403, 'x'), isA<AuthenticationException>());
+    expect(
+      statusException(403, 'x', detail: 'InvalidAccessKeyId'),
+      isA<AuthenticationException>(),
+    );
+    final signature = statusException(
+      403,
+      'x',
+      detail: 'SignatureDoesNotMatch',
+    );
+    expect(signature, isNot(isA<AuthenticationException>()));
+    expect(signature.message, contains('Check the secret key'));
+    expect(signature.retryable, isFalse);
+    expect(statusException(404, 'x'), isNot(isA<AuthenticationException>()));
+  });
+
   test('networkException distinguishes DNS failures', () {
     expect(
       networkException(

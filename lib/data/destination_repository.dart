@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../upload/backend_factory.dart';
 import '../upload/destination.dart';
 import '../upload/network_policy.dart';
+import '../upload/provider_preset.dart';
 
 /// The upload destination: plain settings in [SharedPreferences], secrets and
 /// trust pins in [FlutterSecureStorage].
@@ -31,6 +32,7 @@ class DestinationRepository {
   static const usernameKey = 'upload_username';
   static const policyKey = 'upload_mobile_data_policy';
   static const keepLocalCopyKey = 'upload_keep_local_copy';
+  static const presetKey = 'upload_preset';
   static const secretsKey = 'upload_secrets';
   static const _fingerprintField = 'fingerprint';
 
@@ -44,13 +46,14 @@ class DestinationRepository {
     usernameKey,
     policyKey,
     keepLocalCopyKey,
+    presetKey,
   ];
 
   final SharedPreferences _prefs;
   final FlutterSecureStorage _secureStorage;
   final _changes = StreamController<Destination?>.broadcast();
 
-  /// Emits after every [save] and [remove]; feed it to
+  /// Emits after every [save], [savePolicy] and [remove]; feed it to
   /// `UploadQueue.setDestination` so pending items are re-targeted.
   Stream<Destination?> get changes => _changes.stream;
 
@@ -76,6 +79,13 @@ class DestinationRepository {
       ),
       keepLocalCopy: _prefs.getBool(keepLocalCopyKey) ?? true,
     );
+  }
+
+  /// The preset the destination was set up with; null for destinations
+  /// saved before presets existed.
+  ProviderPreset? get preset {
+    final name = _prefs.getString(presetKey);
+    return ProviderPreset.values.where((p) => p.name == name).firstOrNull;
   }
 
   /// Throws [CredentialsMissingException] when the secrets are unreadable or
@@ -108,7 +118,11 @@ class DestinationRepository {
   }
 
   /// Replaces any previous destination and its secrets.
-  Future<void> save(Destination destination, DestinationSecrets secrets) async {
+  Future<void> save(
+    Destination destination,
+    DestinationSecrets secrets, {
+    ProviderPreset? preset,
+  }) async {
     await _secureStorage.write(
       key: secretsKey,
       value: jsonEncode({
@@ -126,6 +140,24 @@ class DestinationRepository {
       _prefs.setString(usernameKey, destination.username),
       _prefs.setString(policyKey, destination.policy.name),
       _prefs.setBool(keepLocalCopyKey, destination.keepLocalCopy),
+      if (preset == null)
+        _prefs.remove(presetKey)
+      else
+        _prefs.setString(presetKey, preset.name),
+    ]);
+    _changes.add(destination);
+  }
+
+  /// Changes only the plain policy settings, so missing secrets stay
+  /// missing instead of being overwritten with empty ones.
+  Future<void> savePolicy(
+    MobileDataPolicy policy, {
+    required bool keepLocalCopy,
+  }) async {
+    if (destination == null) return;
+    await Future.wait([
+      _prefs.setString(policyKey, policy.name),
+      _prefs.setBool(keepLocalCopyKey, keepLocalCopy),
     ]);
     _changes.add(destination);
   }

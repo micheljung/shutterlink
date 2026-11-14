@@ -66,7 +66,7 @@ void main() {
       await expectLater(
         backend(password: 'nope').testConnection(),
         throwsA(
-          isA<StorageException>()
+          isA<AuthenticationException>()
               .having(
                 (e) => e.message,
                 'message',

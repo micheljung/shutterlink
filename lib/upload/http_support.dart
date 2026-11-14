@@ -6,6 +6,10 @@ import 'storage_backend.dart';
 
 const responseTimeout = Duration(seconds: 60);
 
+/// S3 answers 403 with this code for a wrong region or endpoint as well as
+/// for a wrong secret, so it is not reported as a sign-in failure.
+const _signatureMismatch = 'SignatureDoesNotMatch';
+
 class HttpResult {
   const HttpResult(this.status, this.headers, this.body);
 
@@ -85,11 +89,12 @@ StorageException networkException(SocketException e, String host) {
 StorageException statusException(int status, String what, {String? detail}) {
   final suffix = detail == null || detail.isEmpty ? '' : ' ($detail)';
   return switch (status) {
-    401 => StorageException(
-      'Wrong username or password$suffix.',
+    401 => AuthenticationException('Wrong username or password$suffix.'),
+    403 when detail == _signatureMismatch => StorageException(
+      'Access denied$suffix. Check the secret key, region and endpoint.',
       retryable: false,
     ),
-    403 => StorageException('Access denied$suffix.', retryable: false),
+    403 => AuthenticationException('Access denied$suffix.'),
     404 => StorageException('$what was not found$suffix.', retryable: false),
     408 ||
     429 ||

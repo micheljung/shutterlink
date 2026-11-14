@@ -88,6 +88,7 @@ class ShutterlinkApp {
 
   late final Router _router = Router(notFoundHandler: _notFound)
     ..put('/api/sessions/<code>/photos/<key>', _put)
+    ..get('/api/auth', _auth)
     ..get('/', (Request _) => _html(landingPage))
     ..get('/static/app.css', (Request _) => _css())
     ..get('/s', _redirect)
@@ -137,6 +138,10 @@ class ShutterlinkApp {
       _uploadToken,
     );
   }
+
+  Response _auth(Request request) => _authorized(request)
+      ? Response(HttpStatus.noContent)
+      : _error(HttpStatus.unauthorized, 'unauthorized');
 
   Future<Response> _put(Request request, String code, String key) async {
     if (!_authorized(request)) {
