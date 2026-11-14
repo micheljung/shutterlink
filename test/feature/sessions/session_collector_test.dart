@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/session_repository.dart';
 import 'package:shutterlink/data/session_seen_store.dart';
+import 'package:shutterlink/data/sessions_prefetch.dart';
 import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/feature/gallery/photo_group.dart';
 import 'package:shutterlink/feature/live/ingest_coordinator.dart';
@@ -113,10 +114,12 @@ void main() {
     void Function()? onYield,
     IngestCoordinator? coordinator,
     StagedFileOf? stagedFileOf,
+    SessionsPrefetch? prefetch,
   }) {
     final collector = SessionCollector(
       coordinator: coordinator,
       stagedFileOf: stagedFileOf,
+      prefetch: prefetch,
       client: client,
       cameraKey: cameraKey,
       clockSync: clockSync,
@@ -372,6 +375,97 @@ void main() {
 
     expect(client.log, ['start 1', 'end 1']);
     expect(await queue.items(), hasLength(1));
+  });
+
+  group('a Live prefetch', () {
+    late SessionsPrefetch prefetch;
+
+    Future<void> prefetched(CameraObject photo, List<int> bytes) async {
+      final source = File(p.join(root.path, 'live', photo.filename));
+      await source.parent.create();
+      await source.writeAsBytes(bytes);
+      await prefetch.keep(keyOf(photo), source);
+    }
+
+    setUp(() {
+      prefetch = SessionsPrefetch(
+        Directory(p.join(root.path, SessionsPrefetch.directoryName)),
+      );
+    });
+
+    test('is enqueued instead of downloading the photo', () async {
+      await sessions.start();
+      final photo = shot(1, t0.add(second * 10));
+      client.objects.add(photo);
+      now = t0.add(second * 20);
+      final bytes = List.filled(photo.size, 7);
+      await prefetched(photo, bytes);
+      final collecting = collector(await resolvedClock(), prefetch: prefetch);
+
+      await collecting.rescan();
+
+      expect(client.log, isEmpty);
+      final item = (await queue.items()).single;
+      expect(await File(item.filePath).readAsBytes(), bytes);
+      expect(await prefetch.keys(), isEmpty);
+    });
+
+    test('that is incomplete is downloaded and deleted', () async {
+      await sessions.start();
+      final photo = shot(1, t0.add(second * 10));
+      client.objects.add(photo);
+      now = t0.add(second * 20);
+      await prefetched(photo, List.filled(photo.size - 1, 7));
+      final collecting = collector(await resolvedClock(), prefetch: prefetch);
+
+      await collecting.rescan();
+
+      expect(client.log, ['start 1', 'end 1']);
+      final item = (await queue.items()).single;
+      expect(await File(item.filePath).readAsBytes(), contentFor(photo));
+      expect(await prefetch.keys(), isEmpty);
+    });
+
+    test('of a photo outside every Session is deleted', () async {
+      final photo = shot(1, t0.add(second * 10));
+      client.objects.add(photo);
+      now = t0.add(second * 20);
+      await prefetched(photo, List.filled(photo.size, 7));
+      final collecting = collector(await resolvedClock(), prefetch: prefetch);
+
+      await collecting.rescan();
+
+      expect(await queue.items(), isEmpty);
+      expect(await prefetch.keys(), isEmpty);
+    });
+
+    test('of an excluded photo is deleted', () async {
+      await sessions.start();
+      final photo = shot(1, t0.add(second * 10));
+      client.objects.add(photo);
+      await seen.markExcluded(cameraKey, [keyOf(photo)]);
+      now = t0.add(second * 20);
+      await prefetched(photo, List.filled(photo.size, 7));
+      final collecting = collector(await resolvedClock(), prefetch: prefetch);
+
+      await collecting.rescan();
+
+      expect(await queue.items(), isEmpty);
+      expect(await prefetch.keys(), isEmpty);
+    });
+
+    test('waits until the clock is resolved', () async {
+      await sessions.start();
+      final photo = shot(1, t0.add(second * 10));
+      client.objects.add(photo);
+      now = t0.add(second * 20);
+      await prefetched(photo, List.filled(photo.size, 7));
+      final collecting = collector(clockSync(), prefetch: prefetch);
+
+      await collecting.rescan();
+
+      expect(await prefetch.keys(), {keyOf(photo)});
+    });
   });
 
   test('waits for another ingest of the same file', () async {

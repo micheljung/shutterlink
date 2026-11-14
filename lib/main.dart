@@ -18,6 +18,7 @@ import 'data/photo_saver.dart';
 import 'data/session_repository.dart';
 import 'data/session_seen_store.dart';
 import 'data/sessions_credentials.dart';
+import 'data/sessions_prefetch.dart';
 import 'data/sessions_upload_queue.dart';
 import 'data/settings_repository.dart';
 import 'data/upload_transport.dart';
@@ -77,6 +78,24 @@ Future<void> main() async {
   final sessionsUploadDirectory = Directory(
     p.join(supportDirectory.path, SessionsDependencies.uploadDirectoryName),
   );
+  final sessions = SessionsDependencies(
+    repository: SessionRepository(supportFile(SessionRepository.fileName)),
+    seen: SessionSeenStore(supportFile(SessionSeenStore.fileName)),
+    queue: SessionsUploadQueue(
+      supportFile(SessionsUploadQueue.fileName),
+      uploadDirectory: sessionsUploadDirectory,
+    ),
+    credentials: SecureSessionsCredentials(settings),
+    transport: TunnelTransport(networkStatus, connector: tcpConnector),
+    settings: settings,
+    ingestCoordinator: ingestCoordinator,
+    prefetch: SessionsPrefetch(
+      Directory(p.join(supportDirectory.path, SessionsPrefetch.directoryName)),
+    ),
+    stagedFileOf: uploadQueue.stagingFileFor,
+    uploadDirectory: sessionsUploadDirectory,
+  );
+  unawaited(sessions.sweepPrefetch());
 
   runApp(
     ShutterlinkApp(
@@ -97,22 +116,7 @@ Future<void> main() async {
         downloadHistory: DownloadHistoryRepository(
           supportFile(DownloadHistoryRepository.fileName),
         ),
-        sessions: SessionsDependencies(
-          repository: SessionRepository(
-            supportFile(SessionRepository.fileName),
-          ),
-          seen: SessionSeenStore(supportFile(SessionSeenStore.fileName)),
-          queue: SessionsUploadQueue(
-            supportFile(SessionsUploadQueue.fileName),
-            uploadDirectory: sessionsUploadDirectory,
-          ),
-          credentials: SecureSessionsCredentials(settings),
-          transport: TunnelTransport(networkStatus, connector: tcpConnector),
-          settings: settings,
-          ingestCoordinator: ingestCoordinator,
-          stagedFileOf: uploadQueue.stagingFileFor,
-          uploadDirectory: sessionsUploadDirectory,
-        ),
+        sessions: sessions,
         destinations: destinations,
         uploadQueue: uploadQueue,
         ingestCoordinator: ingestCoordinator,

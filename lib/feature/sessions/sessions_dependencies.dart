@@ -6,6 +6,7 @@ import '../../data/download_history.dart';
 import '../../data/session_repository.dart';
 import '../../data/session_seen_store.dart';
 import '../../data/sessions_credentials.dart';
+import '../../data/sessions_prefetch.dart';
 import '../../data/sessions_upload_queue.dart';
 import '../../data/settings_repository.dart';
 import '../../data/upload_transport.dart';
@@ -25,6 +26,7 @@ class SessionsDependencies {
     required this.settings,
     required this.uploadDirectory,
     required this.ingestCoordinator,
+    required this.prefetch,
     this.stagedFileOf,
     this.clock = const Clock(),
   });
@@ -43,7 +45,13 @@ class SessionsDependencies {
   /// both at once.
   final IngestCoordinator ingestCoordinator;
   final StagedFileOf? stagedFileOf;
+
+  /// JPEGs Live transfer hands over while the collector is not running.
+  final SessionsPrefetch prefetch;
   final Clock clock;
+
+  Future<void> sweepPrefetch() async =>
+      prefetch.sweep((await seen.states()).keys.toSet());
 
   UploadWorker createWorker() => UploadWorker(
     queue: queue,
@@ -76,6 +84,7 @@ class SessionsDependencies {
     uploadDirectory: uploadDirectory,
     coordinator: ingestCoordinator,
     stagedFileOf: stagedFileOf,
+    prefetch: prefetch,
     isBusy: isBusy,
     clock: clock,
   );
