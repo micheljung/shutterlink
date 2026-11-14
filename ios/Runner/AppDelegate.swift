@@ -4,6 +4,9 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  /// Kept here because ImageCaptureCore holds its delegates weakly.
+  private var usbCameraBridge: UsbCameraBridge?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -15,6 +18,9 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RawPhotoSaver") {
       RawPhotoSaver.register(messenger: registrar.messenger())
+    }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "UsbCameraBridge") {
+      usbCameraBridge = UsbCameraBridge.register(messenger: registrar.messenger())
     }
   }
 }
