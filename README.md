@@ -68,8 +68,10 @@ Early. Be aware of what has and hasn't been verified:
   camera (`test/ptpip/fake_camera.dart`).
 - On a real EOS R (firmware 3-1.8.0, on a home Wi-Fi network) the probe CLI
   has paired, listed the card, fetched a thumbnail and downloaded a JPEG
-  byte-complete. The download ran at 0.13 MB/s. The app itself has **not yet
-  been run on physical Android or iOS devices**.
+  byte-complete, at 0.13 MB/s with a weak signal and 3.6 MB/s near the
+  router. Its camera clock is read from Canon's camera-time property. After a
+  connection closes, the camera is unreachable for about 15 seconds. The app
+  itself has **not yet been run on physical Android or iOS devices**.
 - The Android release APK builds, and CI checks it on every push. The **iOS
   build has not been compiled yet**; the Swift code (RAW save to Photos) is
   untested.
