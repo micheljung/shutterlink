@@ -39,7 +39,7 @@ void main() {
       addTearDown(tester.view.reset);
     }
     final client = FakeCameraClient(objects);
-    final dependencies = await testDependencies((_, _) async => client);
+    final dependencies = await testDependencies((_) async => client);
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
     await tester.tap(find.text('Connect'));
     await tester.pumpAndSettle();

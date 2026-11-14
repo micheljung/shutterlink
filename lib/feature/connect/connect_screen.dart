@@ -12,8 +12,35 @@ import '../spacing.dart';
 import 'connect_cubit.dart';
 import 'connect_state.dart';
 
-class ConnectScreen extends StatelessWidget {
-  const ConnectScreen({super.key});
+class ConnectScreen extends StatefulWidget {
+  const ConnectScreen({super.key, this.usbExperimental = false});
+
+  /// Owner of the USB watch while this screen shows.
+  static const usbWatchOwner = 'connect';
+  static const usbConnectingText = 'Connecting over USB…';
+  static const usbExperimentalLabel = 'USB (experimental)';
+
+  /// Labels USB as experimental, where it is not verified on hardware.
+  final bool usbExperimental;
+
+  @override
+  State<ConnectScreen> createState() => _ConnectScreenState();
+}
+
+class _ConnectScreenState extends State<ConnectScreen> {
+  late final _usbWatcher = context.read<ConnectCubit>().usbWatcher;
+
+  @override
+  void initState() {
+    super.initState();
+    _usbWatcher.start(ConnectScreen.usbWatchOwner);
+  }
+
+  @override
+  void dispose() {
+    _usbWatcher.stop(ConnectScreen.usbWatchOwner);
+    super.dispose();
+  }
 
   static const _setupSteps = [
     'On the camera, open MENU → Wireless communication settings → '
@@ -58,8 +85,15 @@ class ConnectScreen extends StatelessWidget {
                 title: Text(step),
               ),
             const SizedBox(height: Spacing.large),
+            if (widget.usbExperimental)
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.usb),
+                title: Text(ConnectScreen.usbExperimentalLabel),
+                subtitle: Text('Or connect the camera with a USB cable.'),
+              ),
             if (state is ConnectConnecting)
-              _ConnectingIndicator(cameraName: state.cameraName)
+              _ConnectingIndicator(cameraName: state.cameraName, usb: state.usb)
             else if (state is ConnectChooseCamera)
               _CameraChooser(cameras: state.cameras)
             else
@@ -76,9 +110,10 @@ class ConnectScreen extends StatelessWidget {
 }
 
 class _ConnectingIndicator extends StatelessWidget {
-  const _ConnectingIndicator({this.cameraName});
+  const _ConnectingIndicator({this.cameraName, this.usb = false});
 
   final String? cameraName;
+  final bool usb;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -86,9 +121,11 @@ class _ConnectingIndicator extends StatelessWidget {
       const CircularProgressIndicator(),
       const SizedBox(height: Spacing.medium),
       Text(
-        '${cameraName == null ? 'Connecting…' : 'Connecting to $cameraName…'} '
-        'If the camera asks to pair, confirm '
-        '"${IdentityRepository.friendlyName}" on the camera.',
+        usb
+            ? ConnectScreen.usbConnectingText
+            : '${cameraName == null ? 'Connecting…' : 'Connecting to $cameraName…'} '
+                  'If the camera asks to pair, confirm '
+                  '"${IdentityRepository.friendlyName}" on the camera.',
         textAlign: TextAlign.center,
       ),
     ],

@@ -108,6 +108,8 @@ void main() {
     test('finds nothing and opens nothing', () async {
       const platform = NoUsbCameraPlatform();
       final watcher = platform.watcher;
+      expect(platform.isExperimental, isFalse);
+      expect(AndroidUsbPlatform().isExperimental, isFalse);
       watcher.start('connect');
       watcher.stop('connect');
 
@@ -328,8 +330,10 @@ void main() {
   group('watcher', () {
     test('the first owner enumerates, others share the watch', () async {
       answers['list'] = (_) => [canon];
+      final enumerated = <bool>[];
+      platform.watcher.attached.listen((a) => enumerated.add(a.enumerated));
       final attached = <UsbCameraRef>[];
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.map((a) => a.device).listen(attached.add);
 
       platform.watcher.start('connect');
       platform.watcher.start('live');
@@ -338,6 +342,7 @@ void main() {
       expect(methods(), ['list']);
       expect(attached, [canonRef]);
       expect(attached.single.name, 'Canon EOS R');
+      expect(enumerated, [true]);
 
       platform.watcher.stop('connect');
       platform.watcher.start('connect');
@@ -355,7 +360,7 @@ void main() {
     test('a failed enumeration reports nothing', () async {
       answers['list'] = (_) => throw PlatformException(code: 'boom');
       final attached = <UsbCameraRef>[];
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.map((a) => a.device).listen(attached.add);
 
       platform.watcher.start('connect');
       await pumpEventQueue();
@@ -367,19 +372,22 @@ void main() {
       buffered.add({'type': 'attached', 'device': canon});
       answers['list'] = (_) => [canon];
       final attached = <UsbCameraRef>[];
+      final plugged = <UsbAttachment>[];
+      platform.watcher.attached.listen(plugged.add);
 
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.map((a) => a.device).listen(attached.add);
       await pumpEventQueue();
       platform.watcher.start('connect');
       await pumpEventQueue();
 
       expect(attached, [canonRef]);
+      expect(plugged, [const UsbAttachment(canonRef)]);
     });
 
     test('attach, detach and re-attach are each reported', () async {
       final attached = <UsbCameraRef>[];
       final detached = <UsbCameraRef>[];
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.map((a) => a.device).listen(attached.add);
       platform.watcher.detached.listen(detached.add);
       await pumpEventQueue();
 
@@ -399,7 +407,7 @@ void main() {
 
     test('a nameless device gets a default name', () async {
       final attached = <UsbCameraRef>[];
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.map((a) => a.device).listen(attached.add);
       await pumpEventQueue();
 
       await emit({

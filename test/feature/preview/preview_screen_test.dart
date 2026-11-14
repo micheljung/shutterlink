@@ -56,7 +56,7 @@ void main() {
     PreviewQuality quality = PreviewQuality.thumbnail,
   }) async {
     final client = FakeCameraClient(objects)..contentOverrides[4] = cr3;
-    final dependencies = await testDependencies((_, _) async => client);
+    final dependencies = await testDependencies((_) async => client);
     await dependencies.settings.setPreviewQuality(quality);
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
     await tester.tap(find.text('Connect'));

@@ -24,7 +24,7 @@ void main() {
     late SpySessionsDependencies sessions;
     final client = FakeCameraClient([])..cameraLag = _cameraLag;
     final dependencies = await testDependencies(
-      (_, _) async => client,
+      (_) async => client,
       prefs: {
         SettingsRepository.sessionsEnabledKey: true,
         SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',

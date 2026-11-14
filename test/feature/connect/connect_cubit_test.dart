@@ -44,9 +44,10 @@ void main() {
   });
 
   ConnectCubit build(CameraConnector connector) => ConnectCubit(
-    connector: (host, identity) {
-      hosts.add(host);
-      return connector(host, identity);
+    claimsUsbVendor: (_) => false,
+    connector: (target) {
+      hosts.add((target as WifiTarget).host);
+      return connector(target);
     },
     identity: IdentityRepository(prefs),
     hostResolver: CameraHostResolver(
@@ -62,7 +63,7 @@ void main() {
 
   blocTest<ConnectCubit, ConnectState>(
     'connects to the bound Wi-Fi gateway',
-    build: () => build((_, _) async => client),
+    build: () => build((_) async => client),
     act: (cubit) => cubit.connect(),
     expect: () => [const ConnectConnecting(), ConnectConnected(client)],
     verify: (_) => expect(hosts, [gateway]),
@@ -70,7 +71,7 @@ void main() {
 
   blocTest<ConnectCubit, ConnectState>(
     'maps PairingRequiredException to pairing instructions',
-    build: () => build((_, _) => throw const PairingRequiredException(1)),
+    build: () => build((_) => throw const PairingRequiredException(1)),
     act: (cubit) => cubit.connect(),
     expect: () => [const ConnectConnecting(), const ConnectPairingRequired()],
     verify: (_) =>
@@ -80,7 +81,7 @@ void main() {
 
   blocTest<ConnectCubit, ConnectState>(
     'maps CameraBusyException to a busy message',
-    build: () => build((_, _) => throw const CameraBusyException(2)),
+    build: () => build((_) => throw const CameraBusyException(2)),
     act: (cubit) => cubit.connect(),
     expect: () => [
       const ConnectConnecting(),
@@ -96,7 +97,7 @@ void main() {
     setUp: () =>
         when(() => binder.acquireBinding(any()))
             .thenThrow(PlatformException(code: ConnectCubit.noWifiCode)),
-    build: () => build((_, _) async => client),
+    build: () => build((_) async => client),
     act: (cubit) => cubit.connect(),
     expect: () => [
       const ConnectConnecting(),
@@ -111,7 +112,7 @@ void main() {
 
     blocTest<ConnectCubit, ConnectState>(
       'when the connection fails on the platform side',
-      build: () => build((_, _) => throw PlatformException(code: 'socket')),
+      build: () => build((_) => throw PlatformException(code: 'socket')),
       act: (cubit) => cubit.connect(),
       expect: () => [const ConnectConnecting(), const ConnectFailed('null')],
       verify: (_) => verifyReleased(),
@@ -119,7 +120,8 @@ void main() {
 
     test('when resolving the gateway fails', () async {
       final cubit = ConnectCubit(
-        connector: (_, _) async => client,
+        claimsUsbVendor: (_) => false,
+        connector: (_) async => client,
         identity: IdentityRepository(prefs),
         hostResolver: CameraHostResolver(
           SettingsRepository(prefs),
@@ -138,7 +140,7 @@ void main() {
 
     test('when the cubit closes while connecting', () async {
       final connected = Completer<CameraClient>();
-      final cubit = build((_, _) => connected.future);
+      final cubit = build((_) => connected.future);
       final connecting = cubit.connect();
       await pumpEventQueue();
       await cubit.close();
@@ -153,7 +155,7 @@ void main() {
 
   blocTest<ConnectCubit, ConnectState>(
     'reports a camera drop',
-    build: () => build((_, _) async => client),
+    build: () => build((_) async => client),
     act: (cubit) async {
       await cubit.connect();
       client.simulateDisconnect();
@@ -168,7 +170,7 @@ void main() {
 
   blocTest<ConnectCubit, ConnectState>(
     'disconnect closes the client',
-    build: () => build((_, _) async => client),
+    build: () => build((_) async => client),
     act: (cubit) async {
       await cubit.connect();
       await cubit.disconnect();
@@ -189,7 +191,8 @@ void main() {
     const second = DiscoveredCamera(host: '192.168.178.21', name: 'EOS R6');
 
     CameraConnector refusingGateway() =>
-        (host, _) async => host == gateway ? throw refused : client;
+        (target) async =>
+            (target as WifiTarget).host == gateway ? throw refused : client;
 
     void verifyLockReleased() {
       verifyInOrder([binder.acquireMulticastLock, binder.releaseMulticastLock]);
@@ -198,7 +201,7 @@ void main() {
     blocTest<ConnectCubit, ConnectState>(
       'does not run while the gateway answers',
       setUp: () => discovered = [first],
-      build: () => build((_, _) async => client),
+      build: () => build((_) async => client),
       act: (cubit) => cubit.connect(),
       expect: () => [const ConnectConnecting(), ConnectConnected(client)],
       verify: (_) {
@@ -241,6 +244,7 @@ void main() {
     blocTest<ConnectCubit, ConnectState>(
       'releases the lock when discovery fails',
       build: () => ConnectCubit(
+        claimsUsbVendor: (_) => false,
         connector: refusingGateway(),
         identity: IdentityRepository(prefs),
         hostResolver: CameraHostResolver(
@@ -261,7 +265,7 @@ void main() {
     blocTest<ConnectCubit, ConnectState>(
       'does not run when pairing is required',
       setUp: () => discovered = [first],
-      build: () => build((_, _) => throw const PairingRequiredException(1)),
+      build: () => build((_) => throw const PairingRequiredException(1)),
       act: (cubit) => cubit.connect(),
       expect: () => [const ConnectConnecting(), const ConnectPairingRequired()],
       verify: (_) => expect(discoveries, 0),
@@ -319,7 +323,7 @@ void main() {
         await SettingsRepository(prefs).setHostOverride('10.0.0.9');
         discovered = [first];
       },
-      build: () => build((_, _) => throw refused),
+      build: () => build((_) => throw refused),
       act: (cubit) => cubit.connect(),
       expect: () => [
         const ConnectConnecting(),
@@ -338,7 +342,7 @@ void main() {
 
     blocTest<ConnectCubit, ConnectState>(
       'a client drop and disconnect() leave the binding to Live',
-      build: () => build((_, _) async => client),
+      build: () => build((_) async => client),
       act: (cubit) async {
         await cubit.connect();
         expect(cubit.handOver(live), client);
@@ -361,7 +365,7 @@ void main() {
 
     blocTest<ConnectCubit, ConnectState>(
       'a live client comes back with the binding',
-      build: () => build((_, _) async => client),
+      build: () => build((_) async => client),
       act: (cubit) async {
         await cubit.connect();
         cubit.handOver(live);
@@ -376,7 +380,7 @@ void main() {
 
     blocTest<ConnectCubit, ConnectState>(
       'a reconnected client is watched for drops',
-      build: () => build((_, _) async => client),
+      build: () => build((_) async => client),
       act: (cubit) async {
         await cubit.connect();
         cubit.handOver(live);
@@ -394,7 +398,7 @@ void main() {
 
     blocTest<ConnectCubit, ConnectState>(
       'without a client it goes idle',
-      build: () => build((_, _) async => client),
+      build: () => build((_) async => client),
       act: (cubit) async {
         await cubit.connect();
         cubit.handOver(live);
@@ -406,7 +410,7 @@ void main() {
 
     blocTest<ConnectCubit, ConnectState>(
       'nothing to hand over or take back while idle',
-      build: () => build((_, _) async => client),
+      build: () => build((_) async => client),
       act: (cubit) {
         expect(cubit.handOver(live), isNull);
         expect(cubit.takeBack(client, owner: live), isFalse);
@@ -439,7 +443,8 @@ void main() {
       );
 
       ConnectCubit platformCubit() => ConnectCubit(
-        connector: (_, _) async => client,
+        claimsUsbVendor: (_) => false,
+        connector: (_) async => client,
         identity: IdentityRepository(prefs),
         hostResolver: CameraHostResolver(
           SettingsRepository(prefs),

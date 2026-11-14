@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 import '../../data/ssdp_discovery.dart';
 import '../../ptpip/camera_client.dart';
+import 'connect_target.dart';
 
 sealed class ConnectState extends Equatable {
   const ConnectState();
@@ -15,12 +16,15 @@ class ConnectIdle extends ConnectState {
 }
 
 class ConnectConnecting extends ConnectState {
-  const ConnectConnecting({this.cameraName});
+  const ConnectConnecting({this.cameraName, this.usb = false});
 
   final String? cameraName;
 
+  /// Connecting over the USB cable rather than Wi-Fi.
+  final bool usb;
+
   @override
-  List<Object?> get props => [cameraName];
+  List<Object?> get props => [cameraName, usb];
 }
 
 class ConnectChooseCamera extends ConnectState {
@@ -33,9 +37,12 @@ class ConnectChooseCamera extends ConnectState {
 }
 
 class ConnectConnected extends ConnectState {
-  const ConnectConnected(this.client);
+  const ConnectConnected(this.client, {this.target});
 
   final CameraClient client;
+
+  /// How [client] was reached; equality ignores it.
+  final ConnectTarget? target;
 
   @override
   List<Object?> get props => [client];

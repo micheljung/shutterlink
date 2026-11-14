@@ -31,7 +31,7 @@ void main() {
     required bool destination,
   }) async {
     final client = FakeCameraClient([cameraObject(1, 'IMG_0001.JPG')]);
-    final dependencies = await testDependencies((_, _) async => client);
+    final dependencies = await testDependencies((_) async => client);
     if (destination) {
       await dependencies.destinations.save(
         const Destination(

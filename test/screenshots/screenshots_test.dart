@@ -300,6 +300,7 @@ Future<void> _pumpApp(
       key: _boundaryKey,
       child: ShutterlinkApp(
         dependencies: AppDependencies(
+          claimsUsbVendor: (_) => false,
           settings: settings,
           identity: IdentityRepository(prefs),
           hostResolver: CameraHostResolver(
@@ -308,7 +309,7 @@ Future<void> _pumpApp(
           ),
           networkBinder: binder,
           photoSaver: RecordingPhotoSaver(),
-          connector: (_, _) async => client,
+          connector: (_) async => client,
           thumbnailCache: _PrerenderedThumbnails(thumbnails!),
           downloadDirectory: workDirectory,
           downloadHistory: history,

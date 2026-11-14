@@ -41,6 +41,31 @@ class UsbCameraRef {
       '${productId.toRadixString(16).padLeft(4, '0')}, $platformId)';
 }
 
+/// A camera reported on the cable.
+@immutable
+class UsbAttachment {
+  const UsbAttachment(this.device, {this.enumerated = false});
+
+  final UsbCameraRef device;
+
+  /// Already plugged in when the watch started, rather than plugged in
+  /// while watching. Such a camera never takes over another connection.
+  final bool enumerated;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UsbAttachment &&
+      other.device == device &&
+      other.enumerated == enumerated;
+
+  @override
+  int get hashCode => Object.hash(device, enumerated);
+
+  @override
+  String toString() =>
+      'UsbAttachment($device${enumerated ? ', enumerated' : ''})';
+}
+
 enum UsbPermission {
   granted,
   denied,
@@ -53,8 +78,9 @@ enum UsbPermission {
 /// Reports cameras coming and going on the USB cable.
 abstract interface class UsbCameraWatcher {
   /// Cameras plugged in, and those already plugged in when the first owner
-  /// [start]s. Each camera is reported once until it is [detached].
-  Stream<UsbCameraRef> get attached;
+  /// [start]s ([UsbAttachment.enumerated]). Each camera is reported once
+  /// until it is [detached].
+  Stream<UsbAttachment> get attached;
 
   Stream<UsbCameraRef> get detached;
 
@@ -73,6 +99,9 @@ abstract interface class UsbCameraWatcher {
 abstract interface class UsbCameraPlatform {
   UsbCameraWatcher get watcher;
 
+  /// USB support is not verified on hardware; the UI labels it.
+  bool get isExperimental;
+
   /// Opens [device] for PTP. Throws [UsbTransferException] when it cannot.
   Future<UsbCameraLink> open(UsbCameraRef device);
 }
@@ -85,6 +114,9 @@ class NoUsbCameraPlatform implements UsbCameraPlatform {
   UsbCameraWatcher get watcher => const NoUsbCameraWatcher();
 
   @override
+  bool get isExperimental => false;
+
+  @override
   Future<UsbCameraLink> open(UsbCameraRef device) =>
       Future.error(const UsbTransferException('USB is not supported'));
 }
@@ -93,7 +125,7 @@ class NoUsbCameraWatcher implements UsbCameraWatcher {
   const NoUsbCameraWatcher();
 
   @override
-  Stream<UsbCameraRef> get attached => const Stream.empty();
+  Stream<UsbAttachment> get attached => const Stream.empty();
 
   @override
   Stream<UsbCameraRef> get detached => const Stream.empty();

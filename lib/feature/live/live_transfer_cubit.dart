@@ -10,6 +10,7 @@ import '../../data/live_service.dart';
 import '../../data/network_binder.dart';
 import '../../ptpip/camera_client.dart';
 import '../../upload/upload_queue.dart';
+import '../../usb/usb_camera_platform.dart';
 import '../connect/connect_cubit.dart';
 import 'live_ingestor.dart';
 
@@ -51,13 +52,17 @@ class LiveReconnecting extends LiveTransferState {
     super.ingested,
     super.notificationsDenied,
     this.unreachable = false,
+    this.userActionNeeded = false,
   });
 
   /// Retries have slowed down because the camera stayed away.
   final bool unreachable;
 
+  /// The USB camera is back, but the user must allow access in the app.
+  final bool userActionNeeded;
+
   @override
-  List<Object?> get props => [...super.props, unreachable];
+  List<Object?> get props => [...super.props, unreachable, userActionNeeded];
 }
 
 /// Runs a Live session: owns the camera connection while it lasts, ingests
@@ -73,6 +78,8 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     required this._service,
     required this._queue,
     required this._ingestorFactory,
+    required this._claimsUsbVendor,
+    this._usbWatcher = const NoUsbCameraWatcher(),
     DateTime Function()? clock,
     TimerFactory? timerFactory,
   }) : _clock = clock ?? DateTime.now,
@@ -94,6 +101,7 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
   static const transferringText = 'Live transfer';
   static const reconnectingText = 'Reconnecting to the camera';
   static const unreachableText = 'Camera not reachable';
+  static const userActionText = 'Open Shutterlink to allow USB access';
 
   final ConnectCubit _connect;
   final CameraConnector _connector;
@@ -103,11 +111,24 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
   final LiveService _service;
   final UploadQueue _queue;
   final LiveIngestorFactory _ingestorFactory;
+  final UsbVendorClaim _claimsUsbVendor;
+  final UsbCameraWatcher _usbWatcher;
   final DateTime Function() _clock;
   final TimerFactory _timerFactory;
   late final StreamSubscription<void> _stopSubscription;
   final _subscriptions = <StreamSubscription<Object?>>[];
   StreamSubscription<Object?>? _ingestedSubscription;
+  StreamSubscription<void>? _bindingLostSubscription;
+
+  /// How the camera is reached; null until a client was handed over, which
+  /// counts as Wi-Fi.
+  ConnectTarget? _target;
+  bool _watchingUsb = false;
+
+  /// Whether the USB target is on the cable; a gone camera needs no access.
+  bool _usbPresent = true;
+  bool _userActionNeeded = false;
+  bool _permissionRequested = false;
   CameraClient? _client;
   LiveIngestor? _ingestor;
   LiveBaseline? _baseline;
@@ -138,10 +159,23 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     await _guard(() => _service.start(status));
     if (!_isCurrent(session)) return;
     _subscriptions
-      ..add(_networkBinder.bindingLost.listen((_) => _onBindingLost()))
-      ..add(_queue.snapshots.listen((_) => _report()));
+      ..add(_queue.snapshots.listen((_) => _report()))
+      ..add(_usbWatcher.attached.listen(_onUsbAttached))
+      ..add(_usbWatcher.detached.listen(_onUsbDetached));
+    _usbWatcher.start(bindingOwner);
+    _watchingUsb = true;
     final client = _client = _connect.handOver(bindingOwner);
+    _target = _connect.handedOverTarget;
+    if (_target is! UsbTarget) {
+      _bindingLostSubscription = _networkBinder.bindingLost.listen(
+        (_) => _onBindingLost(),
+      );
+    }
     if (client == null) return _tryReconnect(session);
+    if (_target is UsbTarget) {
+      if (!await _attach(client, catchUp: false)) _scheduleReconnect(session);
+      return;
+    }
     String? gateway;
     try {
       gateway = await _networkBinder.acquireBinding(
@@ -167,11 +201,13 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     if (state is LiveIdle) return _guard(_service.stop);
     _session++;
     final client = _client;
+    final target = _target;
     _client = null;
     await _teardown();
     _emit(const LiveIdle());
     await _guard(_service.stop);
-    if (client != null && _connect.takeBack(client, owner: bindingOwner)) {
+    if (client != null &&
+        _connect.takeBack(client, owner: bindingOwner, target: target)) {
       return;
     }
     _connect.takeBack(null, owner: bindingOwner);
@@ -180,7 +216,7 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     } on Exception {
       // The connection is gone either way; the binding must still go.
     }
-    await _release();
+    if (target is! UsbTarget) await _release();
   }
 
   bool _isCurrent(int session) => session == _session && !isClosed;
@@ -228,6 +264,7 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     _reconnectDelay = initialReconnectDelay;
     _failingSince = null;
     _unreachable = false;
+    _userActionNeeded = false;
     _emit(
       LiveTransferring(
         ingested: state.ingested,
@@ -237,6 +274,52 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     _report();
     if (catchUp) unawaited(ingestor.catchUp());
     return true;
+  }
+
+  /// A matching camera back on the cable reconnects at once. A claimed
+  /// vendor's camera plugged in while Live runs over Wi-Fi takes over.
+  void _onUsbAttached(UsbAttachment attachment) {
+    if (state is LiveIdle || isClosed) return;
+    final device = attachment.device;
+    final target = _target;
+    if (target is UsbTarget) {
+      if (device != target.device) return;
+      _target = UsbTarget(device);
+      _usbPresent = true;
+      _permissionRequested = false;
+      if (_client == null) _retryNow();
+      return;
+    }
+    if (attachment.enumerated || !_claimsUsbVendor(device.vendorId)) return;
+    _target = UsbTarget(device);
+    _usbPresent = true;
+    _permissionRequested = false;
+    unawaited(_bindingLostSubscription?.cancel());
+    _bindingLostSubscription = null;
+    final client = _client;
+    if (client != null) {
+      _onDisconnected(client);
+      unawaited(client.close());
+    }
+    unawaited(_release());
+    _retryNow();
+  }
+
+  void _onUsbDetached(UsbCameraRef device) {
+    final target = _target;
+    if (target is UsbTarget && target.device == device) {
+      _usbPresent = false;
+      _userActionNeeded = false;
+    }
+  }
+
+  void _retryNow() {
+    _reconnectDelay = initialReconnectDelay;
+    _failingSince = null;
+    _unreachable = false;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    unawaited(_tryReconnect(_session));
   }
 
   void _onBindingLost() {
@@ -264,21 +347,28 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     final now = _clock();
     final failingSince = _failingSince ??= now;
     if (now.difference(failingSince) >= unreachableAfter) _unreachable = true;
-    _emit(
-      LiveReconnecting(
-        ingested: state.ingested,
-        notificationsDenied: state.notificationsDenied,
-        unreachable: _unreachable,
-      ),
-    );
-    _report();
+    _emitReconnecting();
     _retryTimer = _timerFactory(
       _nextDelay(),
       () => unawaited(_tryReconnect(session)),
     );
   }
 
+  void _emitReconnecting() {
+    _emit(
+      LiveReconnecting(
+        ingested: state.ingested,
+        notificationsDenied: state.notificationsDenied,
+        unreachable: _unreachable,
+        userActionNeeded: _userActionNeeded,
+      ),
+    );
+    _report();
+  }
+
   Duration _nextDelay() {
+    // Waiting for the user to allow USB access: look again soon.
+    if (_userActionNeeded) return initialReconnectDelay;
     if (_unreachable) return unreachableReconnectDelay;
     final delay = _reconnectDelay;
     final next = delay * reconnectDelayFactor;
@@ -299,6 +389,8 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
   }
 
   Future<bool> _reconnect(int session) async {
+    final target = _target;
+    if (target is UsbTarget) return _reconnectUsb(session, target.device);
     String? host;
     try {
       final gateway = await _networkBinder.acquireBinding(
@@ -310,21 +402,59 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
         return false;
       }
       host = await _hostResolver.resolve(boundGateway: gateway);
-      final client = await _connector(host, await _identity.identity());
+      final client = await _connector(
+        WifiTarget(host, await _identity.identity()),
+      );
       if (!_isCurrent(session)) {
         await client.close();
+        return false;
+      }
+      if (_target is UsbTarget) {
+        await client.close();
+        await _release();
         return false;
       }
       _cameraHost ??= host;
       if (await _attach(client, catchUp: true)) return true;
     } on Exception {
       if (!_isCurrent(session)) return false;
+      if (_target is UsbTarget) {
+        await _release();
+        return false;
+      }
     }
     final cameraHost = _cameraHost;
     if (host != null && cameraHost != null && host != cameraHost) {
       _unreachable = true;
     }
     return false;
+  }
+
+  /// Asks for USB access once per plug-in; until it is granted, Live shows
+  /// that the user must act and keeps looking.
+  Future<bool> _reconnectUsb(int session, UsbCameraRef device) async {
+    if (!_usbPresent) return false;
+    try {
+      if (!_usbWatcher.hasPermission(device)) {
+        _userActionNeeded = true;
+        _emitReconnecting();
+        if (_permissionRequested) return false;
+        _permissionRequested = true;
+        final permission = await _usbWatcher.requestPermission(device);
+        if (!_isCurrent(session) || permission != UsbPermission.granted) {
+          return false;
+        }
+      }
+      _userActionNeeded = false;
+      final client = await _connector(UsbTarget(device));
+      if (!_isCurrent(session) || _target is! UsbTarget) {
+        await client.close();
+        return false;
+      }
+      return await _attach(client, catchUp: true);
+    } on Exception {
+      return false;
+    }
   }
 
   LiveTransferState _withIngested(int ingested) => switch (state) {
@@ -337,11 +467,16 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
       ingested: ingested,
       notificationsDenied: notificationsDenied,
     ),
-    LiveReconnecting(:final notificationsDenied, :final unreachable) =>
+    LiveReconnecting(
+      :final notificationsDenied,
+      :final unreachable,
+      :final userActionNeeded,
+    ) =>
       LiveReconnecting(
         ingested: ingested,
         notificationsDenied: notificationsDenied,
         unreachable: unreachable,
+        userActionNeeded: userActionNeeded,
       ),
   };
 
@@ -351,6 +486,10 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
       LiveIdle() ||
       LiveConnecting() => (LiveServiceState.connecting, connectingText),
       LiveTransferring() => (LiveServiceState.transferring, transferringText),
+      LiveReconnecting(userActionNeeded: true) => (
+        LiveServiceState.reconnecting,
+        userActionText,
+      ),
       LiveReconnecting(unreachable: false) => (
         LiveServiceState.reconnecting,
         reconnectingText,
@@ -398,6 +537,16 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
       await subscription.cancel();
     }
     _subscriptions.clear();
+    await _bindingLostSubscription?.cancel();
+    _bindingLostSubscription = null;
+    if (_watchingUsb) {
+      _watchingUsb = false;
+      _usbWatcher.stop(bindingOwner);
+    }
+    _target = null;
+    _usbPresent = true;
+    _userActionNeeded = false;
+    _permissionRequested = false;
     await _ingestedSubscription?.cancel();
     _ingestedSubscription = null;
     final ingestor = _ingestor;

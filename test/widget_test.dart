@@ -10,7 +10,7 @@ void main() {
     tester,
   ) async {
     final dependencies = await testDependencies(
-      (_, _) => throw const PairingRequiredException(),
+      (_) => throw const PairingRequiredException(),
     );
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
 
@@ -26,7 +26,7 @@ void main() {
     tester,
   ) async {
     final client = FakeCameraClient([cameraObject(1, 'IMG_0001.JPG')]);
-    final dependencies = await testDependencies((_, _) async => client);
+    final dependencies = await testDependencies((_) async => client);
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
     await tester.tap(find.text('Connect'));
     await tester.pumpAndSettle();

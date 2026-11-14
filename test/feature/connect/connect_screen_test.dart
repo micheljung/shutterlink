@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 
 import '../../fakes/fake_camera_client.dart';
+import '../../fakes/fake_usb_camera_watcher.dart';
 import '../../fakes/test_app.dart';
 
 void main() {
@@ -25,9 +27,11 @@ void main() {
   Future<void> showChooser(WidgetTester tester) async {
     hosts = [];
     final client = FakeCameraClient([]);
-    final dependencies = await testDependencies((_, _) async => client);
+    final dependencies = await testDependencies((_) async => client);
     final connect = ConnectCubit(
-      connector: (host, _) async {
+      claimsUsbVendor: (_) => false,
+      connector: (target) async {
+        final host = (target as WifiTarget).host;
         hosts.add(host);
         if (host == gateway) {
           throw const CameraDisconnectedException(
@@ -84,5 +88,75 @@ void main() {
 
     expect(find.text('EOS R'), findsNothing);
     expect(find.text('Connect'), findsOneWidget);
+  });
+
+  group('USB', () {
+    late FakeUsbCameraWatcher watcher;
+    late Completer<CameraClient> opened;
+
+    Future<void> showScreen(
+      WidgetTester tester, {
+      bool usbExperimental = false,
+    }) async {
+      watcher = FakeUsbCameraWatcher()..permitted.add(usbCamera());
+      opened = Completer<CameraClient>();
+      final dependencies = await testDependencies((_) => opened.future);
+      final connect = ConnectCubit(
+        connector: (_) => opened.future,
+        identity: dependencies.identity,
+        hostResolver: dependencies.hostResolver,
+        networkBinder: dependencies.networkBinder,
+        claimsUsbVendor: claimsCanonOnly,
+        usbWatcher: watcher,
+      );
+      addTearDown(connect.close);
+      await tester.pumpWidget(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: connect),
+            BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
+            BlocProvider(
+              create: (_) => DownloadCubit(
+                saver: dependencies.photoSaver,
+                workDirectory: dependencies.downloadDirectory,
+                history: dependencies.downloadHistory,
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            home: ConnectScreen(usbExperimental: usbExperimental),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('watches the cable while shown', (tester) async {
+      await showScreen(tester);
+      expect(watcher.calls, ['start connect']);
+
+      await tester.pumpWidget(const SizedBox());
+
+      expect(watcher.calls, ['start connect', 'stop connect']);
+    });
+
+    testWidgets('says when it connects over USB', (tester) async {
+      await showScreen(tester);
+
+      watcher.attach(usbCamera());
+      await tester.pump();
+      await tester.ensureVisible(find.text(ConnectScreen.usbConnectingText));
+
+      expect(find.text(ConnectScreen.usbConnectingText), findsOneWidget);
+      opened.complete(FakeCameraClient([]));
+    });
+
+    testWidgets('labels USB as experimental only when asked', (tester) async {
+      await showScreen(tester);
+      expect(find.text(ConnectScreen.usbExperimentalLabel), findsNothing);
+
+      await showScreen(tester, usbExperimental: true);
+      await tester.ensureVisible(find.text(ConnectScreen.usbExperimentalLabel));
+      expect(find.text(ConnectScreen.usbExperimentalLabel), findsOneWidget);
+    });
   });
 }

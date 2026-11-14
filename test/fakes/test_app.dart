@@ -156,6 +156,7 @@ Future<AppDependencies> testDependencies(
   });
   final upload = testUploadDependencies(preferences, historyDirectory);
   return AppDependencies(
+    claimsUsbVendor: (_) => false,
     settings: settings,
     identity: IdentityRepository(preferences),
     hostResolver: CameraHostResolver(settings, wifiGateway: () async => null),
