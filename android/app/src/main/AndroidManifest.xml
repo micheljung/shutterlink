@@ -11,6 +11,9 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
     <application
         android:label="Shutterlink"
         android:requestLegacyExternalStorage="true"
@@ -39,6 +42,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Plugging in a camera offers to open the app, see usb_device_filter.xml. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
         </activity>
         <service
             android:name=".LiveTransferService"

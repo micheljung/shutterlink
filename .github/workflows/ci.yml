@@ -74,6 +74,9 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build apk --release
+      # android/gradlew is gitignored; the apk build generates it.
+      - run: ./gradlew :app:testDebugUnitTest
+        working-directory: android
 
   build-ios:
     runs-on: macos-latest

@@ -19,6 +19,8 @@ object AppEngine {
         private set
     var liveService: LiveService? = null
         private set
+    var usbBridge: UsbBridge? = null
+        private set
     var activity: Activity? = null
         private set
 
@@ -31,6 +33,7 @@ object AppEngine {
         uploadTunnel = UploadTunnel(appContext).also { it.register(messenger) }
         mediaSaver = MediaSaver(appContext).also { it.register(messenger) }
         liveService = LiveService(appContext).also { it.register(messenger) }
+        usbBridge = UsbBridge(appContext).also { it.register(messenger) }
         FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
         return engine
     }
@@ -53,10 +56,12 @@ object AppEngine {
         uploadTunnel?.dispose()
         mediaSaver?.dispose()
         liveService?.dispose()
+        usbBridge?.dispose()
         networkBinder = null
         uploadTunnel = null
         mediaSaver = null
         liveService = null
+        usbBridge = null
     }
 
     fun destroy() {

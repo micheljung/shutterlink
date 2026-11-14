@@ -10,6 +10,14 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppEngine.attach(this)
         super.onCreate(savedInstanceState)
+        // The engine, and so the bridge, exists only once super.onCreate obtained it.
+        AppEngine.usbBridge?.onIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        AppEngine.usbBridge?.onIntent(intent)
     }
 
     override fun provideFlutterEngine(context: Context): FlutterEngine = AppEngine.obtain(context)
