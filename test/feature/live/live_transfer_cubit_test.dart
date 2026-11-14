@@ -264,10 +264,9 @@ void main() {
 
     first.objects.add(shot);
     first.emitAdded(shot.handle);
-    await until(() => server.files.isNotEmpty);
+    await until(() => server.files.isNotEmpty && live.state.ingested == 1);
 
     expect(server.files.keys, ['2026-11-13/IMG_0002.JPG']);
-    expect(live.state.ingested, 1);
   });
 
   test('a disconnect reconnects instead of failing', () async {
@@ -303,9 +302,8 @@ void main() {
       const Duration(seconds: 4),
       const Duration(seconds: 8),
     ]);
-    await until(() => server.files.isNotEmpty);
+    await until(() => server.files.isNotEmpty && live.state.ingested == 1);
     expect(server.files.keys, ['2026-11-13/IMG_0003.JPG']);
-    expect(live.state.ingested, 1);
   });
 
   test('the reconnect delay doubles up to 30 s', () async {
