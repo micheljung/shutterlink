@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Shutterlink controls your camera over the USB cable to download photos.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Shutterlink connects to your Canon camera over its Wi-Fi network to download photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
