@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/ptpip/ptpip.dart';
+import 'package:shutterlink/usb/usb_bulk_transport.dart';
 
 import '../fakes/fake_profile.dart';
+import '../fakes/fake_usb_pipe.dart';
 import '../ptpip/fake_camera.dart';
 import 'camera_client_contract.dart';
 
@@ -47,6 +49,20 @@ void main() {
   cameraClientContract('PTP/IP', () async {
     final (client, camera) = await _openOverPtpIp(FakeProfile());
     return (client, camera.device);
+  });
+
+  cameraClientContract('USB bulk', () async {
+    final device = FakePtpDevice(deviceInfo: _fakeInfo);
+    // 16 KiB reads put container boundaries inside reads.
+    final transport = await UsbBulkTransport.open(
+      FakeUsbPipe(device, maxTransfer: 16384),
+    );
+    final client = await PtpCameraClient.open(
+      transport,
+      registry: ProfileRegistry([FakeProfile()]),
+      responseTimeout: testResponseTimeout,
+    );
+    return (client, device);
   });
 
   test('profile events reach the client', () async {
