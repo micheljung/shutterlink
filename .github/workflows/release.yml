@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: ['**']
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -11,7 +12,8 @@ on:
 
 env:
   FLUTTER_VERSION: 3.47.5
-  NEXUS_REPOSITORY: https://repo.micheljung.ch/repository/shutterlink-releases
+  NEXUS_URL: https://repo.micheljung.ch/repository
+  RELEASE: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
   TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
@@ -20,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -30,11 +32,18 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - name: Check tag matches pubspec version
+      - name: Name APK
         run: |
           version=$(sed -n -E 's/^version: (.+)$/\1/p' pubspec.yaml)
-          [ "v${version%+*}" = "$TAG" ] || { echo "Tag $TAG does not match pubspec version $version"; exit 1; }
-          echo "APK_NAME=shutterlink-$version.apk" >> "$GITHUB_ENV"
+          if [ "$RELEASE" = true ]; then
+            [ "v${version%+*}" = "$TAG" ] || { echo "Tag $TAG does not match pubspec version $version"; exit 1; }
+            echo "NEXUS_REPOSITORY=$NEXUS_URL/shutterlink-release" >> "$GITHUB_ENV"
+            echo "APK_NAME=shutterlink-$version.apk" >> "$GITHUB_ENV"
+          else
+            branch=$(echo "$TAG" | tr -c 'A-Za-z0-9._\n-' '-')
+            echo "NEXUS_REPOSITORY=$NEXUS_URL/shutterlink-preview" >> "$GITHUB_ENV"
+            echo "APK_NAME=shutterlink-$version-$branch-${GITHUB_SHA::7}.apk" >> "$GITHUB_ENV"
+          fi
       - name: Build unsigned APK
         run: |
           sed -i -e '/signingConfig = /d' android/app/build.gradle.kts
