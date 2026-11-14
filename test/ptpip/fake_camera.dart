@@ -161,6 +161,7 @@ class FakeCamera {
     this.ignoreInitCommand = false,
     this.openSessionCode = PtpResponseCode.ok,
     this.initFailReason = fakeInitFailReason,
+    this.resetUnknownGuid = false,
     this.initAckDelay = Duration.zero,
     this.trickleDelay,
     this.eventRecords,
@@ -264,6 +265,10 @@ class FakeCamera {
   final bool ignoreInitCommand;
   final int openSessionCode;
   final int initFailReason;
+
+  /// Reset the connection for an unknown GUID, as a real EOS R does, instead
+  /// of answering InitFail.
+  final bool resetUnknownGuid;
   final Duration initAckDelay;
   final Duration? trickleDelay;
   final Uint8List? eventRecords;
@@ -378,6 +383,10 @@ class FakeCamera {
         final paired = pairedGuids;
         if (paired != null &&
             !paired.any((g) => const ListEquality<int>().equals(g, guid))) {
+          if (resetUnknownGuid) {
+            socket.destroy();
+            return;
+          }
           _write(socket, InitFail(initFailReason));
           return;
         }
