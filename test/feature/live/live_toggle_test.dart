@@ -115,6 +115,21 @@ void main() {
       expect(find.text('1 new photo'), findsOneWidget);
     });
 
+    testWidgets('asks for USB access when the user must act', (tester) async {
+      when(live.allowUsbAccess).thenReturn(null);
+      await pump(tester, const LiveReconnecting(userActionNeeded: true));
+
+      expect(find.text(LiveTransferCubit.userActionText), findsOneWidget);
+      await tester.tap(find.text(LiveScreen.allowUsbLabel));
+      verify(live.allowUsbAccess).called(1);
+    });
+
+    testWidgets('offers no USB access button otherwise', (tester) async {
+      await pump(tester, const LiveReconnecting());
+
+      expect(find.text(LiveScreen.allowUsbLabel), findsNothing);
+    });
+
     testWidgets('shows an unreachable camera and stops', (tester) async {
       await pump(tester, const LiveReconnecting(unreachable: true));
 

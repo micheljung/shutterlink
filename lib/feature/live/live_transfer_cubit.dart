@@ -305,6 +305,14 @@ class LiveTransferCubit extends Cubit<LiveTransferState> {
     _retryNow();
   }
 
+  /// Asks for USB access again, from the app in the foreground, where the
+  /// system dialog can be answered.
+  void allowUsbAccess() {
+    if (state is! LiveReconnecting || _target is! UsbTarget) return;
+    _permissionRequested = false;
+    _retryNow();
+  }
+
   void _onUsbDetached(UsbCameraRef device) {
     final target = _target;
     if (target is UsbTarget && target.device == device) {

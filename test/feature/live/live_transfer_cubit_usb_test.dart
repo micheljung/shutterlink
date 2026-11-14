@@ -233,6 +233,35 @@ void main() {
     expect(watcher.permissionRequests, [canon]);
   });
 
+  test('allowing USB access asks again and connects', () async {
+    final client = await startOverUsb();
+    await unplug(client);
+    watcher.permissionAnswers.addAll([
+      UsbPermission.userActionNeeded,
+      UsbPermission.granted,
+    ]);
+    await plug(canon);
+    await fire();
+    expect(watcher.permissionRequests, [canon]);
+
+    connections[UsbTarget]!.add(FakeCameraClient([old]));
+    live.allowUsbAccess();
+    await pumpEventQueue();
+
+    expect(watcher.permissionRequests, [canon, canon]);
+    expect(live.state, const LiveTransferring());
+  });
+
+  test('allowing USB access does nothing over Wi-Fi', () async {
+    await startOverWifi();
+
+    live.allowUsbAccess();
+    await pumpEventQueue();
+
+    expect(watcher.permissionRequests, isEmpty);
+    expect(live.state, const LiveTransferring());
+  });
+
   test('a Canon cable during Wi-Fi Live switches to USB', () async {
     final wifi = await startOverWifi();
     final usb = FakeCameraClient([old]);
