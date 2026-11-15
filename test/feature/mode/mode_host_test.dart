@@ -530,6 +530,40 @@ void main() {
     expect(saver.saved, hasLength(2));
   });
 
+  testWidgets('a download that pauses only after the reconnect resumes on '
+      'the new client', (tester) async {
+    final gate = Completer<void>();
+    final first = FakeCameraClient(photos(2), disconnectAfterChunks: 1)
+      ..chunkGate = gate;
+    final second = FakeCameraClient(photos(2));
+    answers.addAll([first, second]);
+    final dependencies = await pumpApp(tester);
+    await connectAndBrowse(tester);
+    final download = tester
+        .element(find.byType(GalleryScreen))
+        .read<DownloadCubit>();
+    await tester.tap(find.byTooltip('Select all'));
+    await tester.pump();
+    await tester.tap(find.text('Download (2)'));
+    await pumpUntil(tester, () => first.requestedOffsets.isNotEmpty);
+
+    first.simulateDisconnect();
+    await tester.pump();
+    await tester.pump(retryDelay);
+    await pumpUntil(tester, () => overlay.evaluate().isEmpty);
+    expect(download.state.status, DownloadStatus.running);
+
+    gate.complete();
+    await pumpUntil(
+      tester,
+      () => download.state.status == DownloadStatus.completed,
+    );
+
+    expect(second.requestedOffsets, isNotEmpty);
+    final saver = dependencies.photoSaver as RecordingPhotoSaver;
+    expect(saver.saved, hasLength(2));
+  });
+
   testWidgets('Abort after the camera came back shows the picker', (
     tester,
   ) async {

@@ -8,6 +8,7 @@ import '../auto_upload/auto_upload_screen.dart';
 import '../connect/connect_cubit.dart';
 import '../connect/connect_state.dart';
 import '../download/download_cubit.dart';
+import '../download/download_state.dart';
 import '../gallery/gallery_screen.dart';
 import '../qr_session/qr_session_screen.dart';
 import 'attached_client.dart';
@@ -30,6 +31,10 @@ class _ModeHostState extends State<ModeHost> {
   /// The last client that connected; dead while reconnecting.
   CameraClient? _client;
 
+  /// The new client a download still running on the dead one resumes on,
+  /// once it notices the drop and pauses.
+  CameraClient? _resumeOn;
+
   @override
   Widget build(BuildContext context) {
     final connection = context.watch<ConnectCubit>().state;
@@ -37,11 +42,27 @@ class _ModeHostState extends State<ModeHost> {
     if (connection case ConnectConnected(:final client)) _client = client;
     final client = _client;
     final reconnecting = connection is ConnectReconnecting ? connection : null;
-    return BlocListener<ConnectCubit, ConnectState>(
-      listenWhen: (previous, current) =>
-          current is ConnectConnected &&
-          (previous is! ConnectConnected || previous.client != current.client),
-      listener: (context, state) => _attach((state as ConnectConnected).client),
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<ConnectCubit, ConnectState>(
+          listenWhen: (previous, current) =>
+              current is ConnectConnected &&
+              (previous is! ConnectConnected ||
+                  previous.client != current.client),
+          listener: (context, state) =>
+              _attach((state as ConnectConnected).client),
+        ),
+        BlocListener<DownloadCubit, DownloadState>(
+          listenWhen: (previous, current) => previous.status != current.status,
+          listener: (context, state) {
+            if (state.status == DownloadStatus.paused) {
+              _resumePaused();
+            } else if (state.status != DownloadStatus.running) {
+              _resumeOn = null;
+            }
+          },
+        ),
+      ],
       child: AttachedClient(
         client: reconnecting == null ? client : null,
         child: Stack(
@@ -61,9 +82,31 @@ class _ModeHostState extends State<ModeHost> {
   }
 
   /// A new client keeps the mode going: Browse resumes a paused download.
+  /// A download still running on the dead client resumes once it pauses.
   void _attach(CameraClient client) {
+    final status = context.read<DownloadCubit>().state.status;
+    _resumeOn =
+        status == DownloadStatus.running || status == DownloadStatus.paused
+        ? client
+        : null;
+    _resumePaused();
+  }
+
+  /// Resumes a paused download once on the client that came after it, while
+  /// that client is still the connected one.
+  void _resumePaused() {
+    final client = _resumeOn;
+    final download = context.read<DownloadCubit>();
+    final connection = context.read<ConnectCubit>().state;
+    if (client == null ||
+        download.state.status != DownloadStatus.paused ||
+        connection is! ConnectConnected ||
+        connection.client != client) {
+      return;
+    }
+    _resumeOn = null;
     if (context.read<ModeCubit>().state != OperatingMode.browse) return;
-    unawaited(context.read<DownloadCubit>().resume(client));
+    unawaited(download.resume(client));
   }
 
   static Widget _screenFor(OperatingMode? mode, CameraClient client) =>
