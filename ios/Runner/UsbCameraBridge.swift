@@ -34,8 +34,10 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
   private var openCamera: ICCameraDevice?
   private var pendingOpen: FlutterResult?
   private var openGeneration = 0
-  /// Cameras whose session Dart closed, until ImageCaptureCore confirms it, so
-  /// that a late confirmation does not end a reopened session.
+  /// Cameras whose session Dart closed, until ImageCaptureCore confirms it or
+  /// the next session opens, so that a late confirmation does not end a
+  /// reopened session. Not cleared on `open`: the old close may still be
+  /// answered after that.
   private var closing = Set<ObjectIdentifier>()
 
   /// The caller keeps the returned bridge: ImageCaptureCore holds its
@@ -229,6 +231,10 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
         result(
           FlutterError(code: "open_failed", message: error.localizedDescription, details: nil))
       } else {
+        // ImageCaptureCore answers session requests in order, so a close
+        // still unconfirmed now never will be; a stale entry would swallow
+        // this session's own close.
+        self.closing.remove(ObjectIdentifier(device))
         result(nil)
       }
     }
