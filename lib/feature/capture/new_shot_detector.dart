@@ -5,9 +5,10 @@ import '../../ptpip/camera_client.dart';
 /// Finds shots a camera has taken, as candidate handles only. It does no
 /// objectInfo, no fetch and no format filtering; the consumer does.
 ///
-/// Handles come from the camera's object-added events and from a periodic
-/// diff of the newest folder, because not every body reports new shots (the
-/// EOS R sends no ObjectAdded at all). Each diff emits every newest-folder
+/// Handles come from the camera's object-added events and from a diff of the
+/// newest folder, because not every body reports new shots (the EOS R sends
+/// no ObjectAdded at all). The diff runs periodically and at once when the
+/// camera reports a storage change. Each diff emits every newest-folder
 /// handle that is neither in the baseline nor resolved, so a failed attempt is
 /// retried on the next diff without any event.
 class NewShotDetector {
@@ -29,6 +30,7 @@ class NewShotDetector {
   final _handles = StreamController<int>.broadcast(sync: true);
   final _changed = StreamController<void>.broadcast(sync: true);
   StreamSubscription<int>? _subscription;
+  StreamSubscription<void>? _storageSubscription;
   Timer? _timer;
   bool _started = false;
   bool _closed = false;
@@ -47,6 +49,7 @@ class NewShotDetector {
     _subscription = _client.addedObjects.listen((handle) {
       if (!_closed) _handles.add(handle);
     });
+    _storageSubscription = _client.storageChanged.listen((_) => _trigger());
     final timer = Timer.periodic(_interval, (_) => _trigger());
     _timer = timer;
     _client.disconnected.then((_) => timer.cancel());
@@ -60,6 +63,7 @@ class NewShotDetector {
     _closed = true;
     _timer?.cancel();
     await _subscription?.cancel();
+    await _storageSubscription?.cancel();
     unawaited(_handles.close());
     unawaited(_changed.close());
   }

@@ -99,6 +99,36 @@ void main() {
     },
   );
 
+  test('a storage change diffs at once, before the timer fires', () async {
+    detector(baseline: {1, 2}, interval: const Duration(days: 1));
+    client.objects.add(cameraObject(3, 'IMG_0003.JPG'));
+
+    client.emitStorageChanged();
+    await pumpEventQueue();
+
+    expect(emitted, [3]);
+  });
+
+  test('a storage change while the consumer is busy waits for idle', () async {
+    var busy = true;
+    final live = detector(
+      baseline: {1, 2},
+      busy: () => busy,
+      interval: const Duration(days: 1),
+    );
+    client.objects.add(cameraObject(3, 'IMG_0003.JPG'));
+
+    client.emitStorageChanged();
+    await pumpEventQueue();
+    expect(client.diffs, 0);
+
+    busy = false;
+    live.notifyIdle();
+    await pumpEventQueue();
+
+    expect(emitted, [3]);
+  });
+
   test('baseline handles are never emitted by a diff', () async {
     detector(baseline: {1, 2});
 
