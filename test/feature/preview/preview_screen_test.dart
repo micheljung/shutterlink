@@ -59,8 +59,7 @@ void main() {
     final dependencies = await testDependencies((_) async => client);
     await dependencies.settings.setPreviewQuality(quality);
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await connectAndBrowse(tester);
     return client;
   }
 

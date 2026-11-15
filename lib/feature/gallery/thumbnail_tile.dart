@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../ptpip/camera_client.dart';
+import '../mode/attached_client.dart';
 import '../spacing.dart';
 import 'photo_group.dart';
 import 'thumbnail_cache.dart';
@@ -43,7 +44,10 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
     super.initState();
     final source = widget.group.thumbnailSource;
     _bytes = widget.cache.peek(source);
-    if (_bytes == null) _load(source);
+    // A dead client is not asked; the mode gets a new one.
+    if (_bytes == null && AttachedClient.allows(context, widget.client)) {
+      _load(source);
+    }
   }
 
   @override

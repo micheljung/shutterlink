@@ -42,8 +42,7 @@ void main() {
       );
     }
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await connectAndBrowse(tester);
   }
 
   testWidgets('Live is hidden without an upload destination', (tester) async {

@@ -41,8 +41,7 @@ void main() {
     final client = FakeCameraClient(objects);
     final dependencies = await testDependencies((_) async => client);
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await connectAndBrowse(tester);
   }
 
   Finder tile(int index) => find.byWidgetPredicate(

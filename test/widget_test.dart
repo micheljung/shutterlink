@@ -1,9 +1,7 @@
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/app.dart';
-import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
-import 'package:shutterlink/feature/connect/connect_state.dart';
+import 'package:shutterlink/feature/mode/reconnecting_overlay.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 import 'package:shutterlink/usb/ios_usb_platform.dart';
 
@@ -27,26 +25,26 @@ void main() {
     expect(find.text('Pair this phone on the camera'), findsOneWidget);
   });
 
-  testWidgets('reconnects when the camera drops, until aborted', (
+  testWidgets('a camera drop shows the overlay over the mode; Abort ends it', (
     tester,
   ) async {
     final client = FakeCameraClient([cameraObject(1, 'IMG_0001.JPG')]);
     final dependencies = await testDependencies((_) async => client);
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await connectAndBrowse(tester);
     expect(find.text('Photos (1)'), findsOneWidget);
-    final connect = tester
-        .element(find.text('Photos (1)'))
-        .read<ConnectCubit>();
 
     client.simulateDisconnect();
-    await tester.pump();
-    expect(connect.state, const ConnectReconnecting());
+    await tester.pumpAndSettle();
 
-    await connect.abortReconnect();
+    expect(find.text(ReconnectingOverlay.reconnectingText), findsOneWidget);
+    expect(find.text('Photos (1)'), findsOneWidget);
+    expect(find.text('Connect'), findsNothing);
+
+    await tester.tap(find.text(ReconnectingOverlay.abortLabel));
     await tester.pumpAndSettle();
     expect(find.text('Connect'), findsOneWidget);
+    expect(find.text(ReconnectingOverlay.reconnectingText), findsNothing);
   });
 
   testWidgets('labels USB as experimental on iOS (U7)', (tester) async {

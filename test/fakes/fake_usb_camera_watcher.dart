@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:shutterlink/usb/usb_camera_platform.dart';
+import 'package:shutterlink/usb/usb_pipe.dart';
 
 const canonUsbVendor = 0x04A9;
 const otherUsbVendor = 0x05AC;
@@ -93,4 +94,19 @@ class FakeUsbCameraWatcher implements UsbCameraWatcher {
     calls.add('stop $owner');
     if (owners.remove(owner) && owners.isEmpty) ownersEmptied = true;
   }
+}
+
+/// A USB platform around [watcher]; the app's connector opens the cameras.
+class FakeUsbCameraPlatform implements UsbCameraPlatform {
+  FakeUsbCameraPlatform(this.watcher);
+
+  @override
+  final FakeUsbCameraWatcher watcher;
+
+  @override
+  bool get isExperimental => false;
+
+  @override
+  Future<UsbCameraLink> open(UsbCameraRef device) =>
+      Future.error(const UsbTransferException('opened by the connector'));
 }

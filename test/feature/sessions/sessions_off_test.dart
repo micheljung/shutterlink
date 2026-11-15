@@ -36,8 +36,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Sessions'), findsNothing);
 
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await connectAndBrowse(tester);
     expect(find.text('Photos (1)'), findsOneWidget);
     expect(find.byTooltip('Sessions'), findsNothing);
     expect(find.byType(ClockSyncBanner), findsNothing);

@@ -59,8 +59,7 @@ void main() {
       ),
     );
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
-    await tester.tap(find.text('Connect'));
-    await tester.pumpAndSettle();
+    await connectAndBrowse(tester);
     final history = tester
         .element(find.byType(ThumbnailTile).first)
         .read<DownloadHistoryCubit>();

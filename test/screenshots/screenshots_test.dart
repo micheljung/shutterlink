@@ -332,8 +332,7 @@ Future<void> _pumpApp(
 }
 
 Future<void> _connect(WidgetTester tester) async {
-  await tester.tap(find.text('Connect'));
-  await tester.pumpAndSettle();
+  await connectAndBrowse(tester);
   await _precacheImages(tester);
 }
 

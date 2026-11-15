@@ -11,6 +11,7 @@ import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
 import '../live/live_transfer_cubit.dart';
+import '../mode/modes_button.dart';
 import '../sessions/active_session_indicator.dart';
 import '../sessions/clock_sync_banner.dart';
 import '../sessions/sessions_connection.dart';
@@ -116,6 +117,7 @@ class _GalleryView extends StatelessWidget {
                 : cubit.selectAll,
           ),
           const SessionsAction(),
+          const ModesButton(),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
