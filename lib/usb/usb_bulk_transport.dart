@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 import 'dart:typed_data';
 
 import '../ptp/camera_client.dart';
@@ -191,6 +192,12 @@ class UsbBulkTransport implements PtpTransport {
         }
         for (final container in _reader.add(bytes)) {
           if (container.transactionId != transactionId) {
+            log(
+              'skipped ${container.type.name} container '
+              '0x${container.code.toRadixString(16)} of transaction '
+              '${container.transactionId} while waiting for $transactionId',
+              name: 'shutterlink.camera',
+            );
             continue;
           }
           switch (container.type) {

@@ -14,6 +14,18 @@ import '../../fakes/fake_usb_camera_watcher.dart';
 import '../live/live_transfer_cubit_test.dart'
     show RecordingBinder, cameraGateway;
 
+class _SlowClosingClient extends FakeCameraClient {
+  _SlowClosingClient() : super([]);
+
+  final closing = Completer<void>();
+
+  @override
+  Future<void> close() async {
+    await closing.future;
+    await super.close();
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final canon = usbCamera();
@@ -159,6 +171,30 @@ void main() {
         (cubit.state as ConnectConnected).target,
         isA<WifiTarget>().having((t) => t.host, 'host', cameraGateway),
       );
+    },
+  );
+
+  test(
+    'a Wi-Fi tap while USB closes the old Wi-Fi client keeps its binding',
+    () async {
+      final slow = _SlowClosingClient();
+      answers[WifiTarget]!.add(slow);
+      await cubit.connect();
+      expect(cubit.state, ConnectConnected(slow));
+
+      await plug(canon);
+      expect(
+        cubit.state,
+        const ConnectConnecting(cameraName: 'Canon EOS R', usb: true),
+      );
+      final wifi = await connectWifi();
+      slow.closing.complete();
+      await pumpEventQueue();
+
+      expect(cubit.state, ConnectConnected(wifi));
+      expect(binder.owners, {'connect'});
+      expect(binder.calls.last, 'acquire connect');
+      expect(targets.whereType<UsbTarget>(), isEmpty);
     },
   );
 

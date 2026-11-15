@@ -105,7 +105,8 @@ class UsbContainerReader {
 
   /// Feeds one whole transfer (empty for a zero-length packet) and returns
   /// the containers it completed. Throws [PtpProtocolException] for a
-  /// malformed or oversized container.
+  /// malformed or oversized container, or a transfer that ends short inside
+  /// a container's payload.
   List<UsbContainer> add(Uint8List transfer) {
     final done = <UsbContainer>[];
     var at = 0;
@@ -139,13 +140,26 @@ class UsbContainerReader {
         }
       }
     }
+    final payload = _payload;
+    if (payload != null &&
+        _payloadFilled < payload.length &&
+        _endsShort(transfer)) {
+      throw PtpProtocolException(
+        'Transfer ended $_payloadFilled bytes into a '
+        '${payload.length}-byte container',
+      );
+    }
     final unknown = _unknownLength;
-    if (unknown != null &&
-        (transfer.isEmpty || transfer.length % maxPacketSize != 0)) {
+    if (unknown != null && _endsShort(transfer)) {
       done.add(_finish(unknown.takeBytes()));
     }
     return done;
   }
+
+  /// A short packet or a zero-length packet ends the device's transfer; a
+  /// transfer of whole packets was only cut at the requested length.
+  bool _endsShort(Uint8List transfer) =>
+      transfer.isEmpty || transfer.length % maxPacketSize != 0;
 
   void _startPayload(List<UsbContainer> done) {
     final length = ByteData.sublistView(_header).getUint32(0, Endian.little);
