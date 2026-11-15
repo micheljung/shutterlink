@@ -45,9 +45,14 @@ void main() {
     buffered = [];
     sink = null;
     foreground = true;
+    var sessions = 0;
     answers = {
       'list': (_) => <Object?>[],
-      'open': (_) => {'maxPacketSize': 512, 'maxTransfer': 131072},
+      'open': (_) => {
+        'sessionId': ++sessions,
+        'maxPacketSize': 512,
+        'maxTransfer': 131072,
+      },
       'requestPermission': (_) => false,
     };
     messenger.setMockMethodCallHandler(AndroidUsbPlatform.channel, (
@@ -177,7 +182,7 @@ void main() {
       final data = await pipe.bulkIn(4096);
       expect(data, isA<UsbData>());
       expect((data as UsbData).bytes, [1, 2, 3]);
-      expect(calls.last.arguments, {'maxLength': 4096});
+      expect(calls.last.arguments, {'sessionId': 1, 'maxLength': 4096});
       expect(await pipe.bulkIn(4096), isA<UsbZeroLength>());
       final error = await pipe.bulkIn(4096);
       expect(error, isA<UsbReadError>());
@@ -197,8 +202,11 @@ void main() {
 
       expect(methods(), ['open', 'bulkOut', 'clearHalt', 'drainIn']);
       expect(calls[1].arguments, {
+        'sessionId': 1,
         'bytes': Uint8List.fromList([9, 8]),
       });
+      expect(calls[2].arguments, {'sessionId': 1});
+      expect(calls[3].arguments, {'sessionId': 1});
     });
 
     test('a failed transfer throws UsbTransferException', () async {
@@ -238,6 +246,7 @@ void main() {
 
       expect(status, [4, 0, 1, 0x20]);
       expect(calls[1].arguments, {
+        'sessionId': 1,
         'request': 0x67,
         'deviceToHost': true,
         'value': 0,
@@ -245,6 +254,7 @@ void main() {
         'data': null,
       });
       expect(calls[2].arguments, {
+        'sessionId': 1,
         'request': 0x64,
         'deviceToHost': false,
         'value': 0,
@@ -300,6 +310,7 @@ void main() {
       await pipe.close();
 
       expect(methods(), ['open', 'close']);
+      expect(calls.last.arguments, {'sessionId': 1});
     });
 
     test('a failing close still ends the pipe', () async {
@@ -321,10 +332,42 @@ void main() {
         await first.close();
 
         expect(methods(), ['open', 'open']);
+        expect(second.sessionId, isNot(first.sessionId));
         await second.close();
         expect(methods().last, 'close');
+        expect(calls.last.arguments, {'sessionId': second.sessionId});
       },
     );
+
+    test('a replaced pipe never reaches the bridge again', () async {
+      final first = await openPipe();
+      await openPipe();
+      calls.clear();
+
+      final read = await first.bulkIn(4096);
+      expect(read, isA<UsbReadError>());
+      expect((read as UsbReadError).cause, isA<UsbTransferException>());
+      for (final call in <Future<Object?> Function()>[
+        () => first.bulkOut(Uint8List(1)),
+        first.clearHalt,
+        () => first.classRequest(0x67, deviceToHost: true, length: 20),
+        first.drainIn,
+      ]) {
+        await expectLater(call(), throwsA(isA<UsbTransferException>()));
+      }
+
+      expect(calls, isEmpty);
+    });
+
+    test('an unplugged pipe fails without calling the bridge', () async {
+      final pipe = await openPipe();
+      await emit({'type': 'detached', 'deviceName': canon['deviceName']});
+      calls.clear();
+
+      expect(await pipe.bulkIn(4096), isA<UsbReadError>());
+      await expectLater(pipe.drainIn(), throwsA(isA<UsbTransferException>()));
+      expect(calls, isEmpty);
+    });
   });
 
   group('watcher', () {
@@ -519,6 +562,20 @@ void main() {
         await platform.watcher.requestPermission(canonRef),
         UsbPermission.denied,
       );
+    });
+
+    test('an unanswered request needs user action after the timeout', () async {
+      final patient = AndroidUsbPlatform(
+        isForeground: () => true,
+        permissionTimeout: const Duration(milliseconds: 10),
+      );
+      addTearDown(patient.dispose);
+
+      expect(
+        await patient.watcher.requestPermission(canonRef),
+        UsbPermission.userActionNeeded,
+      );
+      expect(patient.watcher.hasPermission(canonRef), isFalse);
     });
   });
 }

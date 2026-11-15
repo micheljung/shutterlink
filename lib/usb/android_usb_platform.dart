@@ -9,11 +9,17 @@ import 'usb_pipe.dart';
 /// USB cameras through the Kotlin `UsbBridge`, as bulk pipes.
 class AndroidUsbPlatform implements UsbCameraPlatform {
   /// [isForeground] decides whether a permission request waits for the
-  /// user's answer; it defaults to the app lifecycle being resumed.
-  AndroidUsbPlatform({bool Function()? isForeground}) {
+  /// user's answer; it defaults to the app lifecycle being resumed. An
+  /// answer that takes longer than [permissionTimeout] counts as
+  /// [UsbPermission.userActionNeeded].
+  AndroidUsbPlatform({
+    bool Function()? isForeground,
+    Duration permissionTimeout = const Duration(seconds: 60),
+  }) {
     watcher = AndroidUsbCameraWatcher._(
       this,
       isForeground ?? _lifecycleResumed,
+      permissionTimeout,
     );
   }
 
@@ -48,7 +54,8 @@ class AndroidUsbPlatform implements UsbCameraPlatform {
     final pipe = AndroidUsbPipe._(
       this,
       deviceName,
-      maxPacketSize: opened!['maxPacketSize']! as int,
+      sessionId: opened!['sessionId']! as int,
+      maxPacketSize: opened['maxPacketSize']! as int,
       maxTransfer: opened['maxTransfer']! as int,
     );
     _pipe = pipe;
@@ -93,10 +100,15 @@ class AndroidUsbPlatform implements UsbCameraPlatform {
 }
 
 class AndroidUsbCameraWatcher implements UsbCameraWatcher {
-  AndroidUsbCameraWatcher._(this._platform, this._isForeground);
+  AndroidUsbCameraWatcher._(
+    this._platform,
+    this._isForeground,
+    this._permissionTimeout,
+  );
 
   final AndroidUsbPlatform _platform;
   final bool Function() _isForeground;
+  final Duration _permissionTimeout;
   late final _attached = StreamController<UsbAttachment>.broadcast(
     onListen: _platform._listen,
   );
@@ -160,7 +172,16 @@ class AndroidUsbCameraWatcher implements UsbCameraWatcher {
       _pendingPermissions.remove(deviceName);
       return UsbPermission.granted;
     }
-    return answer?.future ?? UsbPermission.userActionNeeded;
+    if (answer == null) return UsbPermission.userActionNeeded;
+    return answer.future.timeout(
+      _permissionTimeout,
+      onTimeout: () {
+        if (identical(_pendingPermissions[deviceName], answer)) {
+          _pendingPermissions.remove(deviceName);
+        }
+        return UsbPermission.userActionNeeded;
+      },
+    );
   }
 
   /// The plugged-in camera equal to [device], under its current platform id.
@@ -218,17 +239,21 @@ class AndroidUsbCameraWatcher implements UsbCameraWatcher {
   }
 }
 
-/// The claimed PTP interface of the one open device.
+/// The claimed PTP interface of the one open device. Once ended, it never
+/// calls the bridge again, and the bridge refuses calls carrying an older
+/// [sessionId], so a replaced pipe cannot reach the next session's device.
 class AndroidUsbPipe implements UsbBulkPipe {
   AndroidUsbPipe._(
     this._platform,
     this.deviceName, {
+    required this.sessionId,
     required this.maxPacketSize,
     required this.maxTransfer,
   });
 
   final AndroidUsbPlatform _platform;
   final String deviceName;
+  final int sessionId;
 
   @override
   final int maxPacketSize;
@@ -253,8 +278,10 @@ class AndroidUsbPipe implements UsbBulkPipe {
 
   @override
   Future<UsbRead> bulkIn(int maxLength) async {
+    if (_detached.isCompleted) return const UsbReadError(_ended);
     try {
       final result = await _channel.invokeMapMethod<String, Object?>('bulkIn', {
+        'sessionId': sessionId,
         'maxLength': maxLength,
       });
       final bytes = result!['bytes']! as Uint8List;
@@ -295,18 +322,24 @@ class AndroidUsbPipe implements UsbBulkPipe {
     if (!current) return;
     _platform._pipe = null;
     try {
-      await _channel.invokeMethod<void>('close');
+      await _channel.invokeMethod<void>('close', {'sessionId': sessionId});
     } on PlatformException {
       // Already gone.
     }
   }
 
+  static const _ended = UsbTransferException('USB pipe ended');
+
   Future<Object?> _transfer(
     String method, [
-    Map<String, Object?>? arguments,
+    Map<String, Object?> arguments = const {},
   ]) async {
+    if (_detached.isCompleted) throw _ended;
     try {
-      return await _channel.invokeMethod<Object?>(method, arguments);
+      return await _channel.invokeMethod<Object?>(method, {
+        'sessionId': sessionId,
+        ...arguments,
+      });
     } on PlatformException catch (e) {
       throw UsbTransferException('$method failed: ${e.code} ${e.message}');
     }
