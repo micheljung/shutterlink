@@ -18,6 +18,12 @@ final ArgParser _parser = ArgParser()
   )
   ..addOption('data-dir', help: 'Directory for all data (required).')
   ..addOption(
+    'upload-token',
+    help:
+        'Upload token. Visible in the process list and shell history; '
+        'prefer --upload-token-file or $_tokenEnvironment in production.',
+  )
+  ..addOption(
     'upload-token-file',
     help: 'File holding the upload token (or set $_tokenEnvironment).',
   )
@@ -57,15 +63,20 @@ Future<void> main(List<String> arguments) async {
     _usage('Invalid --retention-days');
   }
 
+  final tokenArgument = options.option('upload-token');
   final tokenFile = options.option('upload-token-file');
+  if (tokenArgument != null && tokenFile != null) {
+    _usage('Pass either --upload-token or --upload-token-file, not both.');
+  }
   final token =
-      (tokenFile != null
-              ? await File(tokenFile).readAsString()
-              : Platform.environment[_tokenEnvironment] ?? '')
+      (tokenArgument ??
+              (tokenFile != null
+                  ? await File(tokenFile).readAsString()
+                  : Platform.environment[_tokenEnvironment] ?? ''))
           .trim();
   if (token.isEmpty) {
     _usage(
-      'An upload token is required (--upload-token-file or '
+      'An upload token is required (--upload-token, --upload-token-file or '
       '$_tokenEnvironment).',
     );
   }
