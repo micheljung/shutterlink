@@ -33,7 +33,38 @@ final ArgParser _parser = ArgParser()
     defaultsTo: '${defaultRetention.inDays}',
     help: 'Days a Session is kept after its first upload.',
   )
+  ..addFlag(
+    'healthcheck',
+    negatable: false,
+    help:
+        'Check that a server is answering on --address/--port, exit 0 if '
+        'so and 1 otherwise. Starts no server.',
+  )
   ..addFlag('help', abbr: 'h', negatable: false);
+
+const Duration _healthcheckTimeout = Duration(seconds: 3);
+
+/// Asks a running server for `/healthz`. A wildcard bind address is checked
+/// on loopback.
+Future<int> _healthcheck(String address, String portOption) async {
+  final port = int.tryParse(portOption);
+  if (port == null) _usage('Invalid --port');
+  final host = address == '0.0.0.0' || address == '::' ? '127.0.0.1' : address;
+  final client = HttpClient()..connectionTimeout = _healthcheckTimeout;
+  try {
+    final request = await client
+        .get(host, port, '/healthz')
+        .timeout(_healthcheckTimeout);
+    final response = await request.close().timeout(_healthcheckTimeout);
+    await response.drain<void>();
+    return response.statusCode == HttpStatus.noContent ? 0 : 1;
+  } on Object catch (e) {
+    stderr.writeln('Health check failed: $e');
+    return 1;
+  } finally {
+    client.close(force: true);
+  }
+}
 
 Never _usage(String message) {
   stderr
@@ -52,6 +83,11 @@ Future<void> main(List<String> arguments) async {
     }
   } on ArgParserException catch (e) {
     _usage(e.message);
+  }
+  if (options.flag('healthcheck')) {
+    exit(
+      await _healthcheck(options.option('address')!, options.option('port')!),
+    );
   }
 
   final dataDir = options.option('data-dir');
