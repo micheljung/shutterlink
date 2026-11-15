@@ -1,0 +1,8 @@
+# Only server/Dockerfile builds from this context. Send it nothing but the
+# server sources and the workspace lockfile.
+*
+!pubspec.lock
+!server/
+server/.dart_tool
+server/.omc
+server/build
