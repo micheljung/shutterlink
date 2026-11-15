@@ -92,10 +92,15 @@ class UsbContainerReader {
   UsbContainerReader({
     this.maxPacketSize = 512,
     this.maxDataLength = ptpMaxDataInLength,
+    this.rejectShortTransfers = true,
   });
 
   final int maxPacketSize;
   final int maxDataLength;
+
+  /// Whether a transfer that ends short inside a payload is an error. Off
+  /// for endpoints whose packet size is not [maxPacketSize].
+  final bool rejectShortTransfers;
 
   final _header = Uint8List(usbContainerHeaderSize);
   int _headerFilled = 0;
@@ -106,10 +111,12 @@ class UsbContainerReader {
   /// Feeds one whole transfer (empty for a zero-length packet) and returns
   /// the containers it completed. Throws [PtpProtocolException] for a
   /// malformed or oversized container, or a transfer that ends short inside
-  /// a container's payload.
+  /// a container's payload. A header in a short transfer of its own is
+  /// accepted, as some cameras send one (libgphoto2 PTPBUG_SPLIT_HEADER_DATA).
   List<UsbContainer> add(Uint8List transfer) {
     final done = <UsbContainer>[];
     var at = 0;
+    var payloadRead = false;
     while (at < transfer.length) {
       final unknown = _unknownLength;
       if (unknown != null) {
@@ -135,15 +142,17 @@ class UsbContainerReader {
         payload.setRange(_payloadFilled, _payloadFilled + take, transfer, at);
         _payloadFilled += take;
         at += take;
+        payloadRead = true;
         if (_payloadFilled == payload.length) {
           done.add(_finish(payload));
         }
       }
     }
     final payload = _payload;
-    if (payload != null &&
+    if (rejectShortTransfers &&
+        payload != null &&
         _payloadFilled < payload.length &&
-        _endsShort(transfer)) {
+        (transfer.isEmpty || payloadRead && _endsShort(transfer))) {
       throw PtpProtocolException(
         'Transfer ended $_payloadFilled bytes into a '
         '${payload.length}-byte container',

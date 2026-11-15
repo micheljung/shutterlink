@@ -153,6 +153,42 @@ void main() {
     ]);
   });
 
+  test('a header in a short transfer of its own, then the payload', () {
+    final payload = patternBytes(1500);
+    final data = _dataContainer(payload);
+    final response = UsbContainer.withParams(
+      UsbContainerType.response,
+      0x2001,
+      7,
+    ).encode();
+    final reader = UsbContainerReader();
+    expect(reader.add(Uint8List.sublistView(data, 0, 12)), isEmpty);
+    expect(reader.add(Uint8List.sublistView(data, 12, 12 + 1024)), isEmpty);
+    final containers = reader.add(
+      _concat([Uint8List.sublistView(data, 12 + 1024), response]),
+    );
+    expect(containers.map((c) => c.type), [
+      UsbContainerType.data,
+      UsbContainerType.response,
+    ]);
+    expect(containers.first.payload, payload);
+  });
+
+  test('a reader for another endpoint accepts short transfers', () {
+    final event = UsbContainer.withParams(UsbContainerType.event, 0x4002, 1, [
+      1,
+      2,
+      3,
+    ]).encode();
+    final reader = UsbContainerReader(rejectShortTransfers: false);
+    expect(reader.add(Uint8List.sublistView(event, 0, 16)), isEmpty);
+    expect(reader.add(Uint8List.sublistView(event, 16)).single.params, [
+      1,
+      2,
+      3,
+    ]);
+  });
+
   group('rejects', () {
     test('a short transfer inside a container', () {
       final data = _dataContainer(patternBytes(2000));
