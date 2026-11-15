@@ -11,10 +11,16 @@ void main() {
   const channel = PlatformLiveService.channel;
 
   late List<MethodCall> calls;
+  late List<MethodCall> idleCalls;
   late Object? permissionResult;
 
   setUp(() {
     calls = [];
+    idleCalls = [];
+    messenger.setMockMethodCallHandler(
+      PlatformLiveService.idleTimerChannel,
+      (call) async => idleCalls.add(call),
+    );
     permissionResult = true;
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
@@ -26,6 +32,10 @@ void main() {
 
   tearDown(() {
     messenger.setMockMethodCallHandler(channel, null);
+    messenger.setMockMethodCallHandler(
+      PlatformLiveService.idleTimerChannel,
+      null,
+    );
     channel.setMethodCallHandler(null);
   });
 
@@ -131,8 +141,34 @@ void main() {
     expect(await service.requestNotificationPermission(), isFalse);
   });
 
-  test('does nothing off Android', () async {
-    final service = PlatformLiveService(isAndroid: false);
+  const status = LiveStatus(
+    title: 'Auto Upload',
+    count: 0,
+    uploaded: 0,
+    pending: 0,
+    state: LiveServiceState.connecting,
+    text: '',
+  );
+
+  test('keeps an iPhone awake from start to stop, with no service', () async {
+    final service = PlatformLiveService(isAndroid: false, isIOS: true);
+
+    await service.start(status);
+    final whileRunning = [...idleCalls];
+    await service.stop();
+
+    expect(whileRunning.map((call) => (call.method, call.arguments)), [
+      (PlatformLiveService.setIdleTimerDisabledMethod, true),
+    ]);
+    expect(idleCalls.map((call) => (call.method, call.arguments)), [
+      (PlatformLiveService.setIdleTimerDisabledMethod, true),
+      (PlatformLiveService.setIdleTimerDisabledMethod, false),
+    ]);
+    expect(calls, isEmpty);
+  });
+
+  test('does nothing off Android and iOS', () async {
+    final service = PlatformLiveService(isAndroid: false, isIOS: false);
 
     await service.start(
       const LiveStatus(
@@ -148,5 +184,6 @@ void main() {
 
     expect(await service.requestNotificationPermission(), isTrue);
     expect(calls, isEmpty);
+    expect(idleCalls, isEmpty);
   });
 }

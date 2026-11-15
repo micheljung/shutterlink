@@ -19,8 +19,28 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RawPhotoSaver") {
       RawPhotoSaver.register(messenger: registrar.messenger())
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "IdleTimer") {
+      IdleTimer.register(messenger: registrar.messenger())
+    }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "UsbCameraBridge") {
       usbCameraBridge = UsbCameraBridge.register(messenger: registrar.messenger())
+    }
+  }
+}
+
+/// Keeps the screen on while a mode runs, since a locked iPhone suspends
+/// the app.
+enum IdleTimer {
+  static func register(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "ch.micheljung.shutterlink/idle_timer", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "setDisabled", let disabled = call.arguments as? Bool else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      UIApplication.shared.isIdleTimerDisabled = disabled
+      result(nil)
     }
   }
 }
