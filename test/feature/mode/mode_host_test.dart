@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shutterlink/app.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connection_supervisor.dart';
@@ -16,7 +18,18 @@ import 'package:shutterlink/feature/mode/mode_placeholder_screen.dart';
 import 'package:shutterlink/feature/mode/modes_button.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/mode/reconnecting_overlay.dart';
+import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
+import 'package:shutterlink/feature/settings/sessions_setup_screen.dart';
+import 'package:shutterlink/feature/settings/settings_cubit.dart';
+import 'package:shutterlink/feature/settings/upload_settings_cubit.dart';
+import 'package:shutterlink/feature/settings/upload_setup_screen.dart';
+import 'package:shutterlink/feature/upload/upload_status_cubit.dart';
+import 'package:shutterlink/feature/upload/upload_status_indicator.dart';
+import 'package:shutterlink/feature/upload/upload_status_sheet.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/upload/backend_factory.dart';
+import 'package:shutterlink/upload/destination.dart';
+import 'package:shutterlink/upload/provider_preset.dart';
 import 'package:shutterlink/usb/usb_camera_platform.dart';
 
 import '../../fakes/fake_camera_client.dart';
@@ -26,6 +39,20 @@ import '../live/live_transfer_cubit_test.dart' show unreachable;
 
 const _pollInterval = Duration(milliseconds: 5);
 const _maxPolls = 2000;
+
+const _destination = Destination(
+  type: DestinationType.webdav,
+  endpoint: 'https://dav.example.com',
+);
+
+class _MockUploadSettingsCubit extends MockCubit<UploadSettingsState>
+    implements UploadSettingsCubit {}
+
+class _MockUploadStatusCubit extends MockCubit<UploadStatusState>
+    implements UploadStatusCubit {}
+
+class _MockSessionsUploadCubit extends MockCubit<SessionsUploadState>
+    implements SessionsUploadCubit {}
 
 void main() {
   final retryDelay = ConnectionSupervisor.initialReconnectDelay;
@@ -106,12 +133,220 @@ void main() {
     await tester.tap(find.byTooltip(ModesButton.tooltip));
     await tester.pumpAndSettle();
     expect(find.byType(ModePickerScreen), findsOneWidget);
+    expect(home(tester).read<ModeCubit>().state, isNull);
+  });
 
-    await pick(tester, OperatingMode.qrSession);
-    expect(find.byType(ModePlaceholderScreen), findsOneWidget);
-    await tester.tap(find.byTooltip(ModesButton.tooltip));
+  group('setup gates', () {
+    Future<AppDependencies> pumpPicker(WidgetTester tester) async {
+      answers.add(FakeCameraClient(photos(1)));
+      final dependencies = await pumpApp(tester);
+      await tester.tap(connectScreenButton);
+      await tester.pumpAndSettle();
+      return dependencies;
+    }
+
+    Future<void> back(WidgetTester tester) async {
+      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Auto Upload asks for a destination, and backing out stays '
+        'on the picker', (tester) async {
+      await pumpPicker(tester);
+
+      await pick(tester, OperatingMode.autoUpload);
+      expect(find.byType(UploadSetupScreen), findsOneWidget);
+      await back(tester);
+
+      expect(find.byType(ModePickerScreen), findsOneWidget);
+      expect(home(tester).read<ModeCubit>().state, isNull);
+    });
+
+    testWidgets('Auto Upload is entered once the destination is set up', (
+      tester,
+    ) async {
+      await pumpPicker(tester);
+      await pick(tester, OperatingMode.autoUpload);
+
+      final uploads = home(tester).read<UploadSettingsCubit>();
+      await tester.runAsync(
+        () => uploads.save(
+          _destination,
+          const DestinationSecrets(password: 'secret'),
+          preset: ProviderPreset.custom,
+        ),
+      );
+      await back(tester);
+
+      expect(find.byType(ModePlaceholderScreen), findsOneWidget);
+      expect(find.text(OperatingMode.autoUpload.label), findsOneWidget);
+      await tester.tap(find.byTooltip(ModesButton.tooltip));
+      await tester.pumpAndSettle();
+      expect(find.byType(ModePickerScreen), findsOneWidget);
+    });
+
+    testWidgets('Auto Upload with a destination opens no setup', (
+      tester,
+    ) async {
+      final dependencies = await pumpPicker(tester);
+      final uploads = home(tester).read<UploadSettingsCubit>();
+      await tester.runAsync(
+        () => uploads.save(
+          _destination,
+          const DestinationSecrets(password: 'secret'),
+          preset: ProviderPreset.custom,
+        ),
+      );
+      expect(dependencies.destinations.destination, isNotNull);
+
+      await pick(tester, OperatingMode.autoUpload);
+
+      expect(find.byType(UploadSetupScreen), findsNothing);
+      expect(find.byType(ModePlaceholderScreen), findsOneWidget);
+    });
+
+    testWidgets('QR Session asks for the Sessions server, and backing out '
+        'stays on the picker', (tester) async {
+      await pumpPicker(tester);
+
+      await pick(tester, OperatingMode.qrSession);
+      expect(find.byType(SessionsSetupScreen), findsOneWidget);
+      await back(tester);
+
+      expect(find.byType(ModePickerScreen), findsOneWidget);
+      expect(home(tester).read<ModeCubit>().state, isNull);
+    });
+
+    testWidgets('QR Session is entered once the server is set up', (
+      tester,
+    ) async {
+      await pumpPicker(tester);
+      await pick(tester, OperatingMode.qrSession);
+
+      final settings = home(tester).read<SettingsCubit>();
+      await tester.runAsync(() async {
+        await settings.setSessionsServerUrl('https://photos.example.com');
+        await settings.setSessionsToken('token');
+        await settings.setSessionsEnabled(true);
+      });
+      expect(settings.state.sessionsConfigured, isTrue);
+      await back(tester);
+
+      expect(find.byType(ModePlaceholderScreen), findsOneWidget);
+      expect(find.text(OperatingMode.qrSession.label), findsOneWidget);
+    });
+  });
+
+  group('the upload indicator', () {
+    late _MockUploadSettingsCubit uploadSettings;
+    late _MockUploadStatusCubit uploads;
+    late _MockSessionsUploadCubit sessions;
+
+    setUp(() {
+      uploadSettings = _MockUploadSettingsCubit();
+      uploads = _MockUploadStatusCubit();
+      sessions = _MockSessionsUploadCubit();
+    });
+
+    Future<void> pumpIndicator(
+      WidgetTester tester, {
+      bool destination = false,
+      int pending = 0,
+      int sessionsPending = 0,
+    }) async {
+      when(() => uploadSettings.state).thenReturn(
+        UploadSettingsState(destination: destination ? _destination : null),
+      );
+      when(() => uploads.state).thenReturn(UploadStatusState(pending: pending));
+      when(() => sessions.state)
+          .thenReturn(SessionsUploadState(pending: sessionsPending));
+      await tester.pumpWidget(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider<UploadSettingsCubit>.value(value: uploadSettings),
+            BlocProvider<UploadStatusCubit>.value(value: uploads),
+            BlocProvider<SessionsUploadCubit>.value(value: sessions),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              appBar: AppBar(actions: const [UploadStatusIndicator()]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final indicator = find.byTooltip(UploadStatusIndicator.tooltip);
+
+    IconButton button(WidgetTester tester) =>
+        tester.widget<IconButton>(find.byType(IconButton));
+
+    testWidgets('is hidden with no destination and nothing pending', (
+      tester,
+    ) async {
+      await pumpIndicator(tester);
+
+      expect(indicator, findsNothing);
+    });
+
+    testWidgets('is plain with a destination and opens the sheet', (
+      tester,
+    ) async {
+      await pumpIndicator(tester, destination: true);
+
+      expect(indicator, findsOneWidget);
+      expect(button(tester).isSelected, isFalse);
+      expect(find.byType(Badge), findsNothing);
+      await tester.tap(indicator);
+      await tester.pumpAndSettle();
+      expect(find.byType(UploadStatusSheet), findsOneWidget);
+    });
+
+    testWidgets('stands out while the destination queue has photos left', (
+      tester,
+    ) async {
+      await pumpIndicator(tester, pending: 2);
+
+      expect(button(tester).isSelected, isTrue);
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('stands out while the Sessions queue has photos left', (
+      tester,
+    ) async {
+      await pumpIndicator(tester, sessionsPending: 3);
+
+      expect(button(tester).isSelected, isTrue);
+      expect(find.text('3'), findsOneWidget);
+      await tester.tap(indicator);
+      await tester.pumpAndSettle();
+      expect(find.text(UploadStatusSheet.sessionsTitle), findsOneWidget);
+      expect(find.text(UploadStatusSheet.sessionsText(3)), findsOneWidget);
+    });
+  });
+
+  testWidgets('the indicator shows in the picker and in Browse', (
+    tester,
+  ) async {
+    answers.add(FakeCameraClient(photos(1)));
+    await pumpApp(tester);
+    await tester.tap(connectScreenButton);
     await tester.pumpAndSettle();
-    expect(find.byType(ModePickerScreen), findsOneWidget);
+    expect(find.byTooltip(UploadStatusIndicator.tooltip), findsNothing);
+
+    final uploads = home(tester).read<UploadSettingsCubit>();
+    await tester.runAsync(
+      () => uploads.save(
+        _destination,
+        const DestinationSecrets(password: 'secret'),
+        preset: ProviderPreset.custom,
+      ),
+    );
+    await tester.pump();
+    expect(find.byTooltip(UploadStatusIndicator.tooltip), findsOneWidget);
+
+    await pick(tester, OperatingMode.browse);
+    expect(find.byTooltip(UploadStatusIndicator.tooltip), findsOneWidget);
   });
 
   testWidgets('a drop on the picker shows the overlay too', (tester) async {

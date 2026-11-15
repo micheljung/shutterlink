@@ -22,7 +22,7 @@ import '../settings/upload_draft_fields.dart';
 import '../settings/upload_settings_cubit.dart';
 import '../settings/upload_setup_screen.dart';
 import '../spacing.dart';
-import '../upload/upload_status_sheet.dart';
+import '../upload/upload_status_indicator.dart';
 import 'delete_photos.dart';
 import 'gallery_cubit.dart';
 import 'gallery_grid.dart';
@@ -78,21 +78,15 @@ class _GalleryView extends StatelessWidget {
               : '${state.selected.length} selected',
         ),
         actions: [
-          if (uploads) ...[
-            if (defaultTargetPlatform == TargetPlatform.android)
-              IconButton(
-                tooltip: 'Start Live transfer',
-                icon: const Icon(Icons.sensors),
-                onPressed: state.deleting
-                    ? null
-                    : context.read<LiveTransferCubit>().start,
-              ),
+          if (uploads && defaultTargetPlatform == TargetPlatform.android)
             IconButton(
-              tooltip: 'Uploads',
-              icon: const Icon(Icons.cloud_upload_outlined),
-              onPressed: () => UploadStatusSheet.show(context),
+              tooltip: 'Start Live transfer',
+              icon: const Icon(Icons.sensors),
+              onPressed: state.deleting
+                  ? null
+                  : context.read<LiveTransferCubit>().start,
             ),
-          ],
+          const UploadStatusIndicator(),
           if (client.canDelete && state.selected.isNotEmpty)
             IconButton(
               tooltip: 'Delete from camera',

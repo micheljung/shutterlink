@@ -2,22 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../upload/network_policy.dart';
+import '../sessions/sessions_upload_cubit.dart';
 import '../spacing.dart';
 import 'upload_status_cubit.dart';
 
+/// The destination queue and the Sessions queue.
 class UploadStatusSheet extends StatelessWidget {
   const UploadStatusSheet({super.key});
 
+  static const sessionsTitle = 'Sessions server';
+
   static Future<void> show(BuildContext context) {
     final cubit = context.read<UploadStatusCubit>();
+    final sessions = context.read<SessionsUploadCubit>();
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) =>
-          BlocProvider.value(value: cubit, child: const UploadStatusSheet()),
+      builder: (_) => MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: cubit),
+          BlocProvider.value(value: sessions),
+        ],
+        child: const UploadStatusSheet(),
+      ),
     );
   }
+
+  static String sessionsText(int pending) =>
+      pending == 1 ? '1 photo waiting' : '$pending photos waiting';
 
   static String waitText(WaitReason reason) => switch (reason) {
     WaitReason.noDestination => 'No upload destination set',
@@ -91,10 +104,38 @@ class UploadStatusSheet extends StatelessWidget {
                     ),
                 ],
               ),
+              const _SessionsQueue(),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _SessionsQueue extends StatelessWidget {
+  const _SessionsQueue();
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = context.select<SessionsUploadCubit, int>(
+      (cubit) => cubit.state.pending,
+    );
+    if (pending == 0) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: Spacing.large),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            UploadStatusSheet.sessionsTitle,
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: Spacing.small),
+          Text(UploadStatusSheet.sessionsText(pending)),
+        ],
+      ),
     );
   }
 }
