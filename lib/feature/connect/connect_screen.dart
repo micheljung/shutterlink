@@ -6,7 +6,6 @@ import '../../data/ssdp_discovery.dart';
 import '../download/download_cubit.dart';
 import '../download/download_state.dart';
 import '../sessions/active_session_indicator.dart';
-import '../sessions/sessions_screen.dart';
 import '../settings/settings_screen.dart';
 import '../spacing.dart';
 import 'connect_cubit.dart';
@@ -68,7 +67,6 @@ class _ConnectScreenState extends State<ConnectScreen> {
       appBar: AppBar(
         title: const Text('Shutterlink'),
         actions: [
-          const SessionsAction(),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),

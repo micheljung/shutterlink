@@ -21,8 +21,6 @@ class SessionQrSheet extends StatelessWidget {
     required this.code,
   });
 
-  static const _qrSize = 240.0;
-
   final String serverUrl;
   final String code;
 
@@ -38,47 +36,74 @@ class SessionQrSheet extends StatelessWidget {
   );
 
   @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.all(Spacing.large),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Scan to see your photos',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: Spacing.large),
+          SessionQrCode(serverUrl: serverUrl, code: code),
+        ],
+      ),
+    ),
+  );
+}
+
+/// A Session's QR code, its code and its page address.
+class SessionQrCode extends StatelessWidget {
+  const SessionQrCode({
+    super.key,
+    required this.serverUrl,
+    required this.code,
+    this.size = defaultSize,
+  });
+
+  static const defaultSize = 240.0;
+
+  final String serverUrl;
+  final String code;
+  final double size;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final url = sessionPageUrl(serverUrl, code).toString();
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(Spacing.large),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Scan to see your photos', style: theme.textTheme.titleMedium),
-            const SizedBox(height: Spacing.large),
-            ColoredBox(
-              color: Colors.white,
-              child: Padding(
-                padding: const EdgeInsets.all(Spacing.medium),
-                child: SizedBox.square(
-                  dimension: _qrSize,
-                  child: PrettyQrView.data(
-                    data: url,
-                    decoration: const PrettyQrDecoration(
-                      shape: PrettyQrSquaresSymbol(color: Colors.black),
-                    ),
-                  ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ColoredBox(
+          color: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(Spacing.medium),
+            child: SizedBox.square(
+              dimension: size,
+              child: PrettyQrView.data(
+                data: url,
+                decoration: const PrettyQrDecoration(
+                  shape: PrettyQrSquaresSymbol(color: Colors.black),
                 ),
               ),
             ),
-            const SizedBox(height: Spacing.large),
-            SelectableText(
-              code,
-              style: theme.textTheme.headlineSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: Spacing.small),
-            SelectableText(
-              url,
-              style: theme.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: Spacing.large),
+        SelectableText(
+          code,
+          style: theme.textTheme.headlineSmall,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: Spacing.small),
+        SelectableText(
+          url,
+          style: theme.textTheme.bodySmall,
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }

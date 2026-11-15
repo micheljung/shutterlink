@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shutterlink/app.dart';
+import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/auto_upload/auto_upload_screen.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connection_supervisor.dart';
@@ -15,11 +16,11 @@ import 'package:shutterlink/feature/gallery/gallery_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
 import 'package:shutterlink/feature/mode/mode_cubit.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
-import 'package:shutterlink/feature/mode/mode_placeholder_screen.dart';
 import 'package:shutterlink/feature/mode/modes_button.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/mode/reconnecting_overlay.dart';
 import 'package:shutterlink/feature/preview/preview_screen.dart';
+import 'package:shutterlink/feature/qr_session/qr_session_screen.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/sessions_setup_screen.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
@@ -37,6 +38,7 @@ import 'package:shutterlink/usb/usb_camera_platform.dart';
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/fake_usb_camera_watcher.dart';
 import '../../fakes/recording_binder.dart' show unreachable;
+import '../../fakes/spy_sessions_dependencies.dart';
 import '../../fakes/test_app.dart';
 
 const _pollInterval = Duration(milliseconds: 5);
@@ -232,11 +234,62 @@ void main() {
         await settings.setSessionsEnabled(true);
       });
       expect(settings.state.sessionsConfigured, isTrue);
-      await back(tester);
+      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+      await pumpUntil(
+        tester,
+        () => find.text(QrSessionScreen.stopLabel).evaluate().isNotEmpty,
+      );
 
-      expect(find.byType(ModePlaceholderScreen), findsOneWidget);
+      expect(find.byType(QrSessionScreen), findsOneWidget);
       expect(find.text(OperatingMode.qrSession.label), findsOneWidget);
+      await tester.tap(find.byTooltip(ModesButton.tooltip));
+      await pumpUntil(
+        tester,
+        () => find.byType(ModePickerScreen).evaluate().isNotEmpty,
+      );
     });
+  });
+
+  testWidgets('Browse collects nothing for Sessions, even when they are set '
+      'up (AC9)', (tester) async {
+    late SpySessionsDependencies sessions;
+    final client = FakeCameraClient(photos(2));
+    answers.add(client);
+    final dependencies = await testDependencies(
+      connector,
+      prefs: {
+        SettingsRepository.sessionsEnabledKey: true,
+        SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
+      },
+      sessions: (settings, directory, coordinator) =>
+          sessions = SpySessionsDependencies(
+            settings,
+            directory,
+            coordinator: coordinator,
+            token: 'token',
+          ),
+    );
+    await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
+    await pumpUntil(
+      tester,
+      () => home(tester).read<SettingsCubit>().state.sessionsConfigured,
+    );
+
+    await tester.tap(connectScreenButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(OperatingMode.browse.label));
+    // No settling: a clock sync would spin for as long as it waits.
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(GalleryScreen), findsOneWidget);
+    client
+      ..objects.add(cameraObject(3, 'IMG_0003.JPG'))
+      ..emitAdded(3);
+    await tester.pump();
+
+    expect(sessions.collectors, 0);
+    expect(sessions.clockSyncs, 0);
+    expect(find.byTooltip(QrSessionScreen.sessionsTooltip), findsNothing);
   });
 
   group('the upload indicator', () {

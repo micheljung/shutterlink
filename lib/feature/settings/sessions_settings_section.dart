@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/upload_worker.dart';
+import '../sessions/sessions_screen.dart';
 import '../sessions/sessions_upload_cubit.dart';
 import 'sessions_setup_screen.dart';
 import 'settings_cards.dart';
@@ -24,6 +25,11 @@ class SessionsSettingsSection extends StatelessWidget {
             title: host == null || host.isEmpty ? 'Sessions' : host,
             subtitle: _uploadStatus(context),
             actions: [
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(context).push(SessionsScreen.route()),
+                child: const Text('All Sessions'),
+              ),
               TextButton(
                 onPressed: () => _disconnect(context),
                 child: const Text('Disconnect'),

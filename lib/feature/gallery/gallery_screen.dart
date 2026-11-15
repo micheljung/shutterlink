@@ -10,10 +10,6 @@ import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
 import '../mode/modes_button.dart';
-import '../sessions/active_session_indicator.dart';
-import '../sessions/clock_sync_banner.dart';
-import '../sessions/sessions_connection.dart';
-import '../sessions/sessions_screen.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
 import '../settings/upload_draft_fields.dart';
@@ -35,12 +31,9 @@ class GalleryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => GalleryCubit(client)..load(),
-    child: SessionsConnection(
+    child: _GalleryView(
       client: client,
-      child: _GalleryView(
-        client: client,
-        cameraKey: cameraKeyOf(client.deviceInfo),
-      ),
+      cameraKey: cameraKeyOf(client.deviceInfo),
     ),
   );
 }
@@ -58,9 +51,6 @@ class _GalleryView extends StatelessWidget {
     final history = context.watch<DownloadHistoryCubit>();
     final format = context.select<SettingsCubit, DownloadFormat>(
       (cubit) => cubit.state.format,
-    );
-    final sessionsConfigured = context.select<SettingsCubit, bool>(
-      (cubit) => cubit.state.sessionsConfigured,
     );
     final deletable = canDeleteNow(context, client);
     bool isDownloaded(PhotoGroup group) =>
@@ -97,7 +87,6 @@ class _GalleryView extends StatelessWidget {
                 ? cubit.clearSelection
                 : cubit.selectAll,
           ),
-          const SessionsAction(),
           const ModesButton(),
           IconButton(
             tooltip: 'Settings',
@@ -113,7 +102,7 @@ class _GalleryView extends StatelessWidget {
           ),
         ],
       ),
-      body: _withClockSync(sessionsConfigured, switch (state.status) {
+      body: switch (state.status) {
         GalleryStatus.loading => const Center(
           child: CircularProgressIndicator(),
         ),
@@ -133,21 +122,10 @@ class _GalleryView extends StatelessWidget {
           client: client,
           isDownloaded: isDownloaded,
         ),
-      }),
+      },
       bottomNavigationBar: _DownloadBar(client: client),
     );
   }
-
-  Widget _withClockSync(bool sessionsConfigured, Widget body) =>
-      sessionsConfigured
-      ? Column(
-          children: [
-            ClockSyncBanner(client: client),
-            const ActiveSessionIndicator(),
-            Expanded(child: body),
-          ],
-        )
-      : body;
 }
 
 class _DownloadBar extends StatelessWidget {

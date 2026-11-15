@@ -22,6 +22,7 @@ import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
 import 'feature/mode/mode_cubit.dart';
 import 'feature/mode/mode_host.dart';
+import 'feature/qr_session/qr_session_cubit.dart';
 import 'feature/sessions/sessions_cubit.dart';
 import 'feature/sessions/sessions_dependencies.dart';
 import 'feature/sessions/sessions_upload_cubit.dart';
@@ -145,6 +146,16 @@ class ShutterlinkApp extends StatelessWidget {
               queue: dependencies.uploadQueue,
               coordinator: dependencies.ingestCoordinator,
             ),
+          ),
+        ),
+        BlocProvider(
+          lazy: false,
+          create: (context) => QrSessionCubit(
+            connect: context.read<ConnectCubit>(),
+            modes: context.read<ModeCubit>(),
+            service: dependencies.liveService,
+            sessions: dependencies.sessions,
+            clock: dependencies.sessions.clock,
           ),
         ),
         BlocProvider(
