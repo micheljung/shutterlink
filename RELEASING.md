@@ -62,8 +62,9 @@ Sessions server image from [`server/Dockerfile`](server/Dockerfile) for
 | Push to `main` | `main`, `sha-<commit>` |
 | Pull request | none, build and smoke test only |
 
-A `v*` tag must match the version name in both `pubspec.yaml` and
-`server/pubspec.yaml`, or the workflow fails before pushing. It logs in with
+The server has no version of its own: the image is versioned by the tag,
+which must match the version name in `pubspec.yaml`, or the workflow fails
+before pushing. It logs in with
 the built-in `GITHUB_TOKEN`; no secrets to set up.
 
 The first push creates the package as **private**. Make it public once, or
@@ -81,9 +82,7 @@ up in F-Droid within a few days.
 
 1. Bump `version:` in `pubspec.yaml`, for example `1.1.0+2` → `1.2.0+3`. The
    part before `+` is the version name. The number after `+` is the version
-   code and must always increase. Set `version:` in `server/pubspec.yaml` to
-   the same version name without the code, for example `1.2.0`; CI fails
-   when the two differ.
+   code and must always increase.
 2. Add `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`
    (at most 500 characters).
 3. Merge to `main`.

@@ -27,11 +27,6 @@ jobs:
       - run: flutter test --coverage
       - run: dart test
         working-directory: server
-      - name: Check server version matches the app
-        run: |
-          app=$(sed -n -E 's/^version: ([^+]+).*/\1/p' pubspec.yaml)
-          srv=$(sed -n -E 's/^version: (.+)$/\1/p' server/pubspec.yaml)
-          [ "$app" = "$srv" ] || { echo "server/pubspec.yaml version $srv does not match app version $app"; exit 1; }
       - name: Check lib/ptpip coverage
         run: tool/check_coverage.sh ptpip "$PTPIP_MIN_COVERAGE" coverage/lcov.info
       - name: Install OpenSSH server

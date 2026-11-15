@@ -29,15 +29,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Check the tag matches both versions
+      - name: Check the tag matches the version
         if: github.ref_type == 'tag'
         run: |
-          app=$(sed -n -E 's/^version: ([^+]+).*/\1/p' pubspec.yaml)
-          srv=$(sed -n -E 's/^version: (.+)$/\1/p' server/pubspec.yaml)
-          if [ "v$app" != "$GITHUB_REF_NAME" ] || [ "v$srv" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match pubspec.yaml ($app) and server/pubspec.yaml ($srv)"
-            exit 1
-          fi
+          version=$(sed -n -E 's/^version: ([^+]+).*/\1/p' pubspec.yaml)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME does not match pubspec.yaml version $version"; exit 1; }
       - uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
