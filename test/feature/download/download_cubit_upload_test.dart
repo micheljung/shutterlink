@@ -111,6 +111,61 @@ void main() {
     expect(work.existsSync() ? work.listSync(recursive: true) : [], isEmpty);
   });
 
+  test('download + upload uploads a photo downloaded earlier, '
+      'without saving it again', () async {
+    await setUpQueue(destination);
+    final client = FakeCameraClient([jpeg, raw]);
+    await cubit.start(client, groupPhotos([jpeg, raw]), DownloadFormat.jpeg);
+    cubit.dismiss();
+
+    await cubit.start(
+      client,
+      groupPhotos([jpeg, raw]),
+      DownloadFormat.both,
+      alsoUpload: true,
+    );
+    await queue.idle;
+
+    expect(cubit.state.status, DownloadStatus.completed);
+    expect(cubit.state.alreadyDownloaded, isEmpty);
+    expect(saver.saved, [
+      (jpeg: 'IMG_0001.JPG', raw: null),
+      (jpeg: null, raw: 'IMG_0001.CR3'),
+    ]);
+    expect(server.files.keys.toSet(), {
+      '2026-11-13/IMG_0001.JPG',
+      '2026-11-13/IMG_0001.CR3',
+    });
+    expect(server.files['2026-11-13/IMG_0001.JPG'], contentFor(jpeg));
+  });
+
+  test('download + upload skips a photo that is already uploaded', () async {
+    await setUpQueue(destination);
+    final client = FakeCameraClient([jpeg]);
+    await cubit.start(
+      client,
+      groupPhotos([jpeg]),
+      DownloadFormat.jpeg,
+      alsoUpload: true,
+    );
+    await queue.idle;
+    cubit.dismiss();
+    server.files.clear();
+
+    await cubit.start(
+      client,
+      groupPhotos([jpeg]),
+      DownloadFormat.jpeg,
+      alsoUpload: true,
+    );
+    await queue.idle;
+
+    expect(cubit.state.alreadyDownloaded, hasLength(1));
+    expect(cubit.state.tasks, isEmpty);
+    expect(saver.saved, hasLength(1));
+    expect(server.files, isEmpty);
+  });
+
   test('download + upload without a destination only saves', () async {
     await setUpQueue(null);
 
