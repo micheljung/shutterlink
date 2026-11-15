@@ -50,13 +50,13 @@ class DownloadCubit extends Cubit<DownloadState> {
     await _discardPartialFiles();
     _changedTasks.clear();
     _cameraKey = cameraKeyOf(client.deviceInfo);
-    final recorded = await _history.load();
+    final done = await _doneKeys(
+      groups.expand((group) => group.filesFor(format)),
+    );
     final plan = planDownload(
       groups,
       format,
-      isDownloaded: (object) => recorded.contains(
-        DownloadHistoryRepository.entryKey(_cameraKey, object),
-      ),
+      isDownloaded: (object) => done.contains(_entryKey(object)),
     );
     emit(
       DownloadState(
@@ -210,8 +210,9 @@ class DownloadCubit extends Cubit<DownloadState> {
     var keepFiles = false;
     try {
       final recorded = await _history.load();
+      final done = await _doneKeys(task.files);
       final pending = task.files
-          .where((object) => !recorded.contains(_entryKey(object)))
+          .where((object) => !done.contains(_entryKey(object)))
           .toList();
       for (final object in pending) {
         if (token.isCancelled) throw const TransferCancelledException();
@@ -219,14 +220,19 @@ class DownloadCubit extends Cubit<DownloadState> {
       }
       if (token.isCancelled) throw const TransferCancelledException();
       if (pending.isNotEmpty) {
-        final queue = _alsoUpload ? _uploadQueue : null;
-        final upload = queue != null && queue.destination != null;
-        await _saver.save(
-          jpeg: files[task.group.jpeg],
-          raw: files[task.group.raw],
-          deleteSources: !upload,
-        );
-        if (upload) {
+        final queue = _uploadTarget;
+        // A photo already in the history is in the gallery; it only lacks
+        // the upload.
+        File? unsaved(CameraObject? object) =>
+            object == null || recorded.contains(_entryKey(object))
+            ? null
+            : files[object];
+        final jpeg = unsaved(task.group.jpeg);
+        final raw = unsaved(task.group.raw);
+        if (jpeg != null || raw != null) {
+          await _saver.save(jpeg: jpeg, raw: raw, deleteSources: queue == null);
+        }
+        if (queue != null) {
           for (final object in pending) {
             await queue.add(
               id: _entryKey(object),
@@ -251,6 +257,24 @@ class DownloadCubit extends Cubit<DownloadState> {
     } finally {
       if (!keepFiles) await _deleteTaskFiles(task);
     }
+  }
+
+  UploadQueue? get _uploadTarget {
+    final queue = _alsoUpload ? _uploadQueue : null;
+    return queue?.destination == null ? null : queue;
+  }
+
+  /// Keys of [objects] that need no transfer: downloaded and, when this
+  /// download also uploads, queued or uploaded too.
+  Future<Set<String>> _doneKeys(Iterable<CameraObject> objects) async {
+    final recorded = await _history.load();
+    final queue = _uploadTarget;
+    return {
+      for (final object in objects)
+        if (recorded.contains(_entryKey(object)) &&
+            (queue == null || await queue.contains(_entryKey(object))))
+          _entryKey(object),
+    };
   }
 
   Future<void> _record(List<CameraObject> objects) async {
