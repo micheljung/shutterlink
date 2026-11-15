@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -6,6 +7,7 @@ import 'package:shutterlink_server/shutterlink_server.dart';
 
 const int _usageExitCode = 64;
 const String _tokenEnvironment = 'SHUTTERLINK_UPLOAD_TOKEN';
+const String _tipsEnvironment = 'SHUTTERLINK_TIPS';
 const String _defaultPort = '8080';
 const String _defaultAddress = '127.0.0.1';
 
@@ -27,7 +29,12 @@ final ArgParser _parser = ArgParser()
     'upload-token-file',
     help: 'File holding the upload token (or set $_tokenEnvironment).',
   )
-  ..addMultiOption('tip', help: 'Tip link as "Label=URL"; repeatable.')
+  ..addMultiOption(
+    'tip',
+    help:
+        'Tip link as "Label=URL"; repeatable. Without it, $_tipsEnvironment '
+        'is read, one "Label=URL" per line.',
+  )
   ..addOption(
     'retention-days',
     defaultsTo: '${defaultRetention.inDays}',
@@ -117,11 +124,21 @@ Future<void> main(List<String> arguments) async {
     );
   }
 
+  // Any --tip flag replaces the variable, like the token file replaces the
+  // token variable.
+  final tipFlags = options.multiOption('tip');
+  final tipSpecs = tipFlags.isNotEmpty
+      ? tipFlags
+      : const LineSplitter()
+            .convert(Platform.environment[_tipsEnvironment] ?? '')
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty);
   final List<Tip> tips;
   try {
-    tips = [for (final spec in options.multiOption('tip')) Tip.parse(spec)];
+    tips = [for (final spec in tipSpecs) Tip.parse(spec)];
   } on FormatException catch (e) {
-    _usage('Invalid --tip: ${e.message} (${e.source})');
+    final source = tipFlags.isNotEmpty ? '--tip' : _tipsEnvironment;
+    _usage('Invalid $source: ${e.message} (${e.source})');
   }
 
   // Listen explicitly so both subscriptions can be cancelled: a watch left

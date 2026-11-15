@@ -23,10 +23,11 @@ dart run bin/server.dart \
 | `--data-dir` | required | Where Sessions, tombstones and the server secret live |
 | `--upload-token-file` | `$SHUTTERLINK_UPLOAD_TOKEN` | File holding the operator token the app sends when uploading |
 | `--upload-token` | `--upload-token-file`, then `$SHUTTERLINK_UPLOAD_TOKEN` | The operator token itself. It shows up in `ps` and shell history, so prefer the file or the environment variable in production. Can't be combined with `--upload-token-file` |
-| `--tip "Label=URL"` | none | Tip button on every gallery; repeatable. Only `http`/`https` URLs are accepted, anything else exits with code 64 |
+| `--tip "Label=URL"` | `$SHUTTERLINK_TIPS` | Tip button on every gallery; repeatable. Only `http`/`https` URLs are accepted, anything else exits with code 64. Without any `--tip`, `SHUTTERLINK_TIPS` is read instead: one `Label=URL` per line, blank lines ignored |
 | `--retention-days` | 30 | Days a Session is kept after its first upload |
 | `--port` | 8080 | Listening port |
 | `--address` | 127.0.0.1 | Listening address |
+| `--healthcheck` | off | Don't start a server; ask the one on `--address`/`--port` for `GET /healthz` and exit 0 if it answers, 1 otherwise. A wildcard address (`0.0.0.0`, `::`) is checked on `127.0.0.1` |
 
 Enter the server URL and the same token in the app under
 Settings → Sessions → Connect Sessions. The server stops cleanly on `SIGINT`/`SIGTERM`.
