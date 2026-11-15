@@ -93,6 +93,7 @@ class SessionCollector {
   final _fastHandles = <int>{};
   Future<void>? _fastRunning;
   bool _addedDuringRescan = false;
+  bool _rescanSoon = false;
   bool _rescanning = false;
   List<PhotoGroup>? _groups;
   Future<void>? _running;
@@ -213,10 +214,12 @@ class SessionCollector {
     }
   }
 
+  /// A rescan already brought forward is not pushed back: the detector
+  /// offers a shot again on every diff until a full pass resolves it.
   void _onAdded() {
     if (_rescanning) {
       _addedDuringRescan = true;
-    } else {
+    } else if (!_rescanSoon) {
       _scheduleRescan(collectorAddedDelay);
     }
   }
@@ -224,6 +227,7 @@ class SessionCollector {
   void _scheduleRescan([Duration delay = collectorRescanInterval]) {
     if (_disposed) return;
     _rescanTimer?.cancel();
+    _rescanSoon = delay < collectorRescanInterval;
     _rescanTimer = _timer(delay, () => unawaited(rescan()));
   }
 
