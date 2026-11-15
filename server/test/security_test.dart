@@ -108,6 +108,7 @@ void main() {
         await server.get('/s/$codeA/p/${keyOf(bytes)}.jpg'),
         await server.get('/s/$codeA/all.zip'),
         await server.get('/static/app.css'),
+        await server.get('/healthz'),
         await server.get('/s?code=$codeA'),
         await server.call(putRequest(codeA, keyOf(bytes), bytes, token: 'x')),
         await server.call(Request('POST', origin.resolve('/'))),

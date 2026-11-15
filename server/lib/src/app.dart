@@ -89,6 +89,8 @@ class ShutterlinkApp {
   late final Router _router = Router(notFoundHandler: _notFound)
     ..put('/api/sessions/<code>/photos/<key>', _put)
     ..get('/api/auth', _auth)
+    // Liveness only: no parameters, no Session data, no token.
+    ..get('/healthz', (Request _) => Response(HttpStatus.noContent))
     ..get('/', (Request _) => _html(landingPage))
     ..get('/static/app.css', (Request _) => _css())
     ..get('/s', _redirect)
