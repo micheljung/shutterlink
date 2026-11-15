@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -89,6 +91,49 @@ void main() {
     final link = await platform.open(cameraRef);
     return (link as PassthroughLink).passthrough as IosUsbPassthrough;
   }
+
+  group('UsbCameraRef', () {
+    UsbCameraRef ref(String id, int vendorId, int productId) => UsbCameraRef(
+      platformId: id,
+      vendorId: vendorId,
+      productId: productId,
+      name: 'camera',
+    );
+
+    test('with USB ids, equals on vendor and product', () {
+      expect(ref('a', 1, 2), ref('b', 1, 2));
+      expect(ref('a', 1, 2).hashCode, ref('b', 1, 2).hashCode);
+      expect(ref('a', 1, 2), isNot(ref('a', 1, 3)));
+      expect(ref('a', 0, 2), ref('b', 0, 2));
+    });
+
+    test('without USB ids, equals on the platform id', () {
+      expect(ref('a', 0, 0), isNot(ref('b', 0, 0)));
+      expect(ref('a', 0, 0), ref('a', 0, 0));
+      expect(ref('a', 0, 0).hashCode, ref('a', 0, 0).hashCode);
+      expect(ref('a', 0, 0), isNot(ref('a', 1, 2)));
+      expect(ref('a', 1, 2), isNot(ref('a', 0, 0)));
+    });
+
+    test('a hidden-id camera opens under its own id', () async {
+      platform.watcher.start('connect');
+      await pumpEventQueue();
+      for (final id in ['first', 'second']) {
+        await emit({
+          'type': 'attached',
+          'device': {
+            ...camera,
+            'deviceName': id,
+            'vendorId': 0,
+            'productId': 0,
+          },
+        });
+      }
+      await platform.open(ref('second', 0, 0));
+
+      expect(calls.last.arguments, {'deviceName': 'second'});
+    });
+  });
 
   group('IosUsbCameraWatcher', () {
     test('browses while any owner holds it', () async {
@@ -267,6 +312,42 @@ void main() {
       await platform.open(cameraRef);
 
       expect(calls.last.arguments, {'deviceName': uuid});
+    });
+
+    test('an open that never answers times out and closes', () async {
+      answers['open'] = (_) => Completer<Object?>().future;
+      final platform = IosUsbPlatform(
+        openTimeout: const Duration(milliseconds: 10),
+      );
+      addTearDown(platform.dispose);
+
+      await expectLater(
+        platform.open(cameraRef),
+        throwsA(
+          isA<UsbTransferException>().having(
+            (e) => e.message,
+            'message',
+            contains('timed out'),
+          ),
+        ),
+      );
+      expect(methods(), ['open', 'close']);
+    });
+
+    test('a timed-out open survives a failing close', () async {
+      answers['open'] = (_) => Completer<Object?>().future;
+      answers['close'] = (_) => fail('not_open');
+      final platform = IosUsbPlatform(openTimeout: Duration.zero);
+      addTearDown(platform.dispose);
+
+      await expectLater(
+        platform.open(cameraRef),
+        throwsA(isA<UsbTransferException>()),
+      );
+    });
+
+    test('waits 30 s for the open by default', () {
+      expect(platform.openTimeout, const Duration(seconds: 30));
     });
 
     test('a failed open throws UsbTransferException', () async {

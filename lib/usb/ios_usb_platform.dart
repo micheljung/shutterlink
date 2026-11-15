@@ -5,12 +5,18 @@ import 'package:flutter/services.dart';
 import 'usb_camera_platform.dart';
 import 'usb_pipe.dart';
 
+/// How long [IosUsbPlatform.open] waits for ImageCaptureCore to open the
+/// session.
+const iosUsbOpenTimeout = Duration(seconds: 30);
+
 /// USB cameras through the Swift `UsbCameraBridge` (ImageCaptureCore), as
 /// whole PTP transactions. Experimental: not verified on hardware.
 class IosUsbPlatform implements UsbCameraPlatform {
-  IosUsbPlatform() {
+  IosUsbPlatform({this.openTimeout = iosUsbOpenTimeout}) {
     watcher = IosUsbCameraWatcher._(this);
   }
+
+  final Duration openTimeout;
 
   static const channel = MethodChannel('ch.micheljung.shutterlink/usb');
   static const events = EventChannel('ch.micheljung.shutterlink/usb/events');
@@ -34,9 +40,19 @@ class IosUsbPlatform implements UsbCameraPlatform {
     final deviceName =
         watcher._current(device)?.platformId ?? device.platformId;
     try {
-      await channel.invokeMethod<void>('open', {'deviceName': deviceName});
+      await channel
+          .invokeMethod<void>('open', {'deviceName': deviceName})
+          .timeout(openTimeout);
     } on PlatformException catch (e) {
       throw UsbTransferException('open failed: ${e.code} ${e.message}');
+    } on TimeoutException {
+      // ImageCaptureCore never answered; give up the half-open session.
+      try {
+        await channel.invokeMethod<void>('close');
+      } on PlatformException {
+        // Already gone.
+      }
+      throw const UsbTransferException('open failed: timed out');
     }
     final passthrough = IosUsbPassthrough._(this, deviceName);
     _passthrough = passthrough;
