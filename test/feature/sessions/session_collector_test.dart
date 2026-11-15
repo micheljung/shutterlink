@@ -58,10 +58,17 @@ class _LoggingClient extends FakeCameraClient {
 }
 
 class _FakeTimer implements Timer {
-  _FakeTimer(this.delay);
+  _FakeTimer(this.delay, this._onFire);
 
   final Duration delay;
+  final void Function() _onFire;
   bool _active = true;
+
+  void fire() {
+    if (!_active) return;
+    _active = false;
+    _onFire();
+  }
 
   @override
   bool get isActive => _active;
@@ -153,8 +160,8 @@ void main() {
         log?.add('yield $duration');
         onYield?.call();
       },
-      timer: (delay, _) {
-        final timer = _FakeTimer(delay);
+      timer: (delay, onFire) {
+        final timer = _FakeTimer(delay, onFire);
         timers.add(timer);
         return timer;
       },
@@ -545,6 +552,30 @@ void main() {
     await rescan;
     expect(client.log, ['start 1', 'end 1']);
     expect(timers.last.delay, collectorAddedDelay);
+  });
+
+  test('a queued shot the diff offers again does not postpone the full '
+      'pass', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    collector(await resolvedClock(), detectorInterval: _tick);
+    final added = shot(1, t0.add(second * 10));
+    client.objects.add(added);
+    await _until(
+      () async => await seen.stateOf(keyOf(added)) == SeenState.queued,
+    );
+
+    await Future<void>.delayed(_tick * 10);
+
+    final soon = timers.where((timer) => timer.delay == collectorAddedDelay);
+    expect(soon, hasLength(1));
+    expect(soon.single.isActive, isTrue);
+    soon.single.fire();
+    await _until(() => client.listings == 1);
+    await Future<void>.delayed(_tick * 5);
+    final scheduled = timers.length;
+    await Future<void>.delayed(_tick * 10);
+    expect(timers, hasLength(scheduled), reason: 'the shot is resolved');
   });
 
   test('a camera storage change queues a new shot at once and brings the '
