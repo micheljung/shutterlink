@@ -8,16 +8,6 @@ import 'support.dart';
 
 const int _usageExitCode = 64;
 
-/// Environment without any SHUTTERLINK_ variable, so only the flags count.
-final Map<String, String> _noTokenEnvironment = cleanEnvironment();
-
-Future<ProcessResult> _run(List<String> arguments) => Process.run(
-  Platform.resolvedExecutable,
-  ['bin/server.dart', ...arguments],
-  environment: _noTokenEnvironment,
-  includeParentEnvironment: false,
-);
-
 void main() {
   late Directory dataDir;
 
@@ -36,7 +26,7 @@ void main() {
         '--upload-token',
         '  $uploadToken\n',
       ],
-      environment: _noTokenEnvironment,
+      environment: cleanEnvironment(),
       includeParentEnvironment: false,
     );
     addTearDown(() async {
@@ -70,7 +60,7 @@ void main() {
   test('refuses both --upload-token and --upload-token-file', () async {
     final tokenFile = File('${dataDir.path}/token')
       ..writeAsStringSync(uploadToken);
-    final result = await _run([
+    final result = await runServer([
       '--data-dir',
       dataDir.path,
       '--upload-token',
@@ -83,7 +73,7 @@ void main() {
   });
 
   test('refuses an unreadable --upload-token-file with exit 64', () async {
-    final result = await _run([
+    final result = await runServer([
       '--data-dir',
       dataDir.path,
       '--upload-token-file',
@@ -96,7 +86,7 @@ void main() {
   test('refuses a --upload-token-file that is not UTF-8', () async {
     final tokenFile = File('${dataDir.path}/token')
       ..writeAsBytesSync([0xff, 0xfe, 0x00]);
-    final result = await _run([
+    final result = await runServer([
       '--data-dir',
       dataDir.path,
       '--upload-token-file',
@@ -107,7 +97,7 @@ void main() {
   });
 
   test('refuses a blank --upload-token', () async {
-    final result = await _run([
+    final result = await runServer([
       '--data-dir',
       dataDir.path,
       '--upload-token',

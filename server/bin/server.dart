@@ -115,20 +115,17 @@ Future<void> main(List<String> arguments) async {
   if (tokenArgument != null && tokenFile != null) {
     _usage('Pass either --upload-token or --upload-token-file, not both.');
   }
-  final String tokenFromFile;
+  final String rawToken;
   try {
-    tokenFromFile = tokenFile != null
-        ? await File(tokenFile).readAsString()
-        : '';
+    rawToken =
+        tokenArgument ??
+        (tokenFile != null
+            ? await File(tokenFile).readAsString()
+            : Platform.environment[_tokenEnvironment] ?? '');
   } on FileSystemException catch (e) {
     _usage('Cannot read --upload-token-file: ${e.message} (${e.path})');
   }
-  final token =
-      (tokenArgument ??
-              (tokenFile != null
-                  ? tokenFromFile
-                  : Platform.environment[_tokenEnvironment] ?? ''))
-          .trim();
+  final token = rawToken.trim();
   if (token.isEmpty) {
     _usage(
       'An upload token is required (--upload-token, --upload-token-file or '
