@@ -132,11 +132,15 @@ void main() {
 
     testWidgets('watches the cable while shown', (tester) async {
       await showScreen(tester);
-      expect(watcher.calls, ['start connect']);
+      expect(watcher.calls, ['start connection', 'start connect']);
 
       await tester.pumpWidget(const SizedBox());
 
-      expect(watcher.calls, ['start connect', 'stop connect']);
+      expect(watcher.calls, [
+        'start connection',
+        'start connect',
+        'stop connect',
+      ]);
     });
 
     testWidgets('says when it connects over USB', (tester) async {

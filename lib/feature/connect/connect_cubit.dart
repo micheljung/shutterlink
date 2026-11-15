@@ -8,10 +8,12 @@ import '../../data/camera_host_resolver.dart';
 import '../../data/identity_repository.dart';
 import '../../data/network_binder.dart';
 import '../../data/ssdp_discovery.dart';
+import '../../data/upload_worker.dart';
 import '../../ptpip/camera_client.dart';
 import '../../usb/usb_camera_platform.dart';
 import 'connect_state.dart';
 import 'connect_target.dart';
+import 'connection_supervisor.dart';
 
 export 'connect_target.dart';
 
@@ -32,16 +34,37 @@ class ConnectCubit extends Cubit<ConnectState> {
     required this._claimsUsbVendor,
     this._usbWatcher = const NoUsbCameraWatcher(),
     CameraDiscovery? discovery,
+    DateTime Function()? clock,
+    TimerFactory? timerFactory,
   }) : _discovery = discovery ?? const SsdpDiscovery().discover,
        super(const ConnectIdle()) {
+    _supervisor = ConnectionSupervisor(
+      connector: _connector,
+      identity: _identity,
+      hostResolver: _hostResolver,
+      networkBinder: _networkBinder,
+      usbWatcher: _usbWatcher,
+      onConnected: _onReconnected,
+      onDisconnected: (_) {},
+      onReconnecting: _onReconnecting,
+      releaseStale: _releaseUnused,
+      clock: clock,
+      timerFactory: timerFactory,
+    );
     _attachments = _usbWatcher.attached.listen(_onAttached);
+    _detachments = _usbWatcher.detached.listen(_supervisor.usbDetached);
+    _usbWatcher.start(usbWatchOwner);
   }
 
   static const bindingOwner = 'connect';
+
+  /// Owner of the USB watch for the cubit's life, so a re-plug or a cable
+  /// takeover is seen on every screen. It differs from the connect screen's
+  /// owner, because owners with the same name count once.
+  static const usbWatchOwner = 'connection';
   static const noWifiCode = 'no_wifi';
   static const noWifiMessage =
       "Not connected to Wi-Fi. Join the camera's Wi-Fi network first.";
-  static const disconnectedMessage = 'The camera disconnected.';
   static const busyMessage =
       'The camera is busy with another connection. Close it and try again.';
   static const usbPermissionDeniedMessage =
@@ -56,12 +79,19 @@ class ConnectCubit extends Cubit<ConnectState> {
   final UsbVendorClaim _claimsUsbVendor;
   final UsbCameraWatcher _usbWatcher;
   final CameraDiscovery _discovery;
+  late final ConnectionSupervisor _supervisor;
   late final StreamSubscription<UsbAttachment> _attachments;
-  CameraClient? _handedOver;
+  late final StreamSubscription<UsbCameraRef> _detachments;
+  StreamSubscription<void>? _bindingLost;
   ConnectTarget? _handedOverTarget;
 
-  /// Bumped by every connect, so the last one wins and a late client from
-  /// an earlier one is closed.
+  /// The gateway of the Wi-Fi the last Wi-Fi connect bound to.
+  String? _gateway;
+  bool _holdNetwork = false;
+  bool _watchingUsb = true;
+
+  /// Bumped by every user action, after the supervisor stopped, so the last
+  /// one wins and a late client from an earlier one is closed.
   int _attempt = 0;
   bool _usbAttempt = false;
 
@@ -77,6 +107,7 @@ class ConnectCubit extends Cubit<ConnectState> {
     final previous = state;
     if (previous is ConnectConnecting && !previous.usb) return;
     if (previous is ConnectConnected && previous.target is! UsbTarget) return;
+    _supervisor.stop();
     final attempt = ++_attempt;
     _usbAttempt = false;
     emit(const ConnectConnecting());
@@ -102,6 +133,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       return;
     }
     if (!_isCurrent(attempt)) return _releaseStale();
+    _gateway = gateway;
     if (override != null) return _connectTo(attempt, override);
     await _connectTo(
       attempt,
@@ -113,6 +145,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   /// Connects to [device] on the USB cable; Wi-Fi gives way.
   Future<void> connectUsb(UsbCameraRef device) async {
     final previous = state;
+    _supervisor.stop();
     final attempt = ++_attempt;
     _usbAttempt = true;
     emit(ConnectConnecting(cameraName: device.name, usb: true));
@@ -152,24 +185,147 @@ class ConnectCubit extends Cubit<ConnectState> {
       await client.close();
       return;
     }
-    emit(ConnectConnected(client, target: target));
-    unawaited(_watchDisconnect(client));
+    _connected(client, target);
   }
 
+  void _connected(CameraClient client, ConnectTarget target) {
+    emit(ConnectConnected(client, target: target));
+    _supervise(client, target);
+  }
+
+  /// Keeps [client] connected, retrying [target] after a drop.
+  void _supervise(CameraClient client, ConnectTarget? target) => unawaited(
+    _supervisor.supervise(
+      client,
+      target,
+      bindingOwner: bindingOwner,
+      holdNetwork: _holdNetwork,
+      gateway: target is UsbTarget ? null : _gateway,
+    ),
+  );
+
   void _onAttached(UsbAttachment attachment) {
+    final device = attachment.device;
     final takesOver =
-        !attachment.enumerated && _claimsUsbVendor(attachment.device.vendorId);
-    final connects = switch (state) {
+        !attachment.enumerated && _claimsUsbVendor(device.vendorId);
+    switch (state) {
+      case ConnectIdle() || ConnectFailed() || ConnectPairingRequired():
+        unawaited(connectUsb(device));
+      case ConnectConnecting(usb: false) || ConnectChooseCamera():
+        if (takesOver) unawaited(connectUsb(device));
+      case ConnectConnected() || ConnectReconnecting():
+        if (_supervisor.target is UsbTarget) {
+          _supervisor.usbAttached(device);
+        } else if (takesOver) {
+          unawaited(_takeOver(device));
+        }
+      case ConnectConnecting() || ConnectLiveOwned():
+    }
+  }
+
+  /// Swaps a Wi-Fi camera for the one on the cable, without leaving the
+  /// connected screens.
+  Future<void> _takeOver(UsbCameraRef device) async {
+    final current = state;
+    final client = current is ConnectConnected
+        ? current.client
+        : _supervisor.client;
+    _supervisor.stop();
+    final attempt = ++_attempt;
+    _usbAttempt = true;
+    emit(const ConnectReconnecting(usb: true));
+    unawaited(client?.close());
+    await _unbind();
+    if (!_isCurrent(attempt)) return;
+    await _supervisor.supervise(
+      null,
+      UsbTarget(device),
+      bindingOwner: bindingOwner,
+    );
+  }
+
+  /// A supervised camera came back, maybe over another transport.
+  void _onReconnected(
+    CameraClient client,
+    ConnectTarget? target, {
+    required bool reconnected,
+  }) {
+    if (reconnected && !isClosed) {
+      emit(ConnectConnected(client, target: target));
+    }
+  }
+
+  void _onReconnecting({
+    required bool unreachable,
+    required bool userActionNeeded,
+    required bool usb,
+  }) {
+    if (isClosed) return;
+    emit(
+      ConnectReconnecting(
+        unreachable: unreachable,
+        userActionNeeded: userActionNeeded,
+        usb: usb,
+      ),
+    );
+  }
+
+  /// Asks for USB access again, from the app in the foreground, where the
+  /// system dialog can be answered.
+  void allowUsbAccess() {
+    if (state is ConnectReconnecting) _supervisor.allowUsbAccess();
+  }
+
+  /// Gives up reconnecting and returns to the connect screen. The USB watch
+  /// stays.
+  Future<void> abortReconnect() async {
+    if (state is! ConnectReconnecting) return;
+    final usb = _supervisor.target is UsbTarget;
+    _supervisor.stop();
+    _attempt++;
+    emit(const ConnectIdle());
+    if (!usb) await _unbind();
+  }
+
+  /// Keeps the Wi-Fi up while the screen is off or mobile data is in use,
+  /// for a mode that runs in the background. Clearing it keeps the native
+  /// hold until the binding ends; a USB camera needs no hold.
+  Future<void> setHoldNetwork(bool hold) async {
+    _holdNetwork = hold;
+    _supervisor.holdNetwork = hold;
+    if (!hold) return;
+    _bindingLost ??= _networkBinder.bindingLost.listen(
+      (_) => _supervisor.bindingLost(),
+    );
+    final current = state;
+    if (current is! ConnectConnected || current.target is UsbTarget) return;
+    try {
+      await _networkBinder.acquireBinding(bindingOwner, holdNetwork: true);
+    } on PlatformException {
+      return;
+    }
+  }
+
+  /// In the background without a camera, the cable needs no watching.
+  void appPaused() {
+    final idle = switch (state) {
       ConnectIdle() || ConnectFailed() || ConnectPairingRequired() => true,
-      ConnectConnecting(usb: false) || ConnectChooseCamera() => takesOver,
-      ConnectConnected(:final target) => target is! UsbTarget && takesOver,
-      ConnectConnecting() || ConnectLiveOwned() => false,
+      _ => false,
     };
-    if (connects) unawaited(connectUsb(attachment.device));
+    if (!idle || !_watchingUsb || isClosed) return;
+    _watchingUsb = false;
+    _usbWatcher.stop(usbWatchOwner);
+  }
+
+  void appResumed() {
+    if (_watchingUsb || isClosed) return;
+    _watchingUsb = true;
+    _usbWatcher.start(usbWatchOwner);
   }
 
   Future<void> chooseCamera(DiscoveredCamera camera) async {
     if (state is! ConnectChooseCamera) return;
+    _supervisor.stop();
     emit(ConnectConnecting(cameraName: camera.name));
     await _connectTo(_attempt, camera.host);
   }
@@ -193,8 +349,7 @@ class ConnectCubit extends Cubit<ConnectState> {
         await _releaseStale();
         return;
       }
-      emit(ConnectConnected(client, target: target));
-      unawaited(_watchDisconnect(client));
+      _connected(client, target);
     } on Exception catch (error) {
       if (!_isCurrent(attempt)) return _releaseStale();
       switch (error) {
@@ -220,6 +375,18 @@ class ConnectCubit extends Cubit<ConnectState> {
   /// attempt holds it now.
   Future<void> _releaseStale() async {
     if (isClosed || _usbAttempt) await _unbind();
+  }
+
+  /// Drops a binding a stopped retry acquired, unless a Wi-Fi connection or
+  /// attempt holds it now.
+  Future<void> _releaseUnused() async {
+    final inUse = switch (state) {
+      ConnectConnecting(usb: false) || ConnectChooseCamera() => true,
+      ConnectConnected(:final target) => target is! UsbTarget,
+      ConnectReconnecting(:final usb) => !usb,
+      _ => false,
+    };
+    if (isClosed || !inUse) await _unbind();
   }
 
   Future<void> _discoverAfter(
@@ -262,6 +429,8 @@ class ConnectCubit extends Cubit<ConnectState> {
   Future<void> disconnect() async {
     final current = state;
     if (current is! ConnectConnected) return;
+    _supervisor.stop();
+    _attempt++;
     emit(const ConnectIdle());
     await current.client.close();
     if (current.target is! UsbTarget) await _unbind();
@@ -273,26 +442,25 @@ class ConnectCubit extends Cubit<ConnectState> {
   CameraClient? handOver(String owner) {
     final current = state;
     if (current is! ConnectConnected) return null;
+    _supervisor.stop();
     final target = _handedOverTarget = current.target;
     if (target is! UsbTarget) {
       _networkBinder.transferBinding(bindingOwner, owner);
     }
-    _handedOver = current.client;
     emit(const ConnectLiveOwned());
     return current.client;
   }
 
   /// Takes back a live [client], reached through [target], and [owner]'s
   /// Wi-Fi binding; without a client the owner releases its binding itself.
-  /// Returns whether [client] was taken.
+  /// [client] is supervised as reached through [target], which may differ
+  /// from the target handed over. Returns whether [client] was taken.
   bool takeBack(
     CameraClient? client, {
     required String owner,
     ConnectTarget? target,
   }) {
     if (isClosed || state is! ConnectLiveOwned) return false;
-    final handedOver = _handedOver;
-    _handedOver = null;
     _handedOverTarget = null;
     if (client == null) {
       emit(const ConnectIdle());
@@ -302,18 +470,8 @@ class ConnectCubit extends Cubit<ConnectState> {
       _networkBinder.transferBinding(owner, bindingOwner);
     }
     emit(ConnectConnected(client, target: target));
-    if (client != handedOver) unawaited(_watchDisconnect(client));
+    _supervise(client, target);
     return true;
-  }
-
-  Future<void> _watchDisconnect(CameraClient client) async {
-    await client.disconnected;
-    final current = state;
-    if (isClosed || current is! ConnectConnected || current.client != client) {
-      return;
-    }
-    emit(const ConnectFailed(disconnectedMessage));
-    if (current.target is! UsbTarget) await _unbind();
   }
 
   Future<void> _unbind() async {
@@ -334,9 +492,17 @@ class ConnectCubit extends Cubit<ConnectState> {
 
   @override
   Future<void> close() async {
+    _supervisor.stop();
+    _attempt++;
     final current = state;
     await _attachments.cancel();
+    await _detachments.cancel();
+    await _bindingLost?.cancel();
     await super.close();
     if (current is ConnectConnected) await current.client.close();
+    if (_watchingUsb) {
+      _watchingUsb = false;
+      _usbWatcher.stop(usbWatchOwner);
+    }
   }
 }

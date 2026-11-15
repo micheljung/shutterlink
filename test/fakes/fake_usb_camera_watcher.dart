@@ -21,6 +21,9 @@ UsbCameraRef usbCamera({
 bool claimsCanonOnly(int vendorId) => vendorId == canonUsbVendor;
 
 /// A cable the test plugs and unplugs, with permission answers it chooses.
+///
+/// Like iOS, the first [start] after the owners ran out reports every camera
+/// still plugged in again, as enumerated.
 class FakeUsbCameraWatcher implements UsbCameraWatcher {
   final _attached = StreamController<UsbAttachment>.broadcast(sync: true);
   final _detached = StreamController<UsbCameraRef>.broadcast(sync: true);
@@ -35,10 +38,22 @@ class FakeUsbCameraWatcher implements UsbCameraWatcher {
   /// 'start owner' and 'stop owner', in order.
   final calls = <String>[];
 
-  void attach(UsbCameraRef device, {bool enumerated = false}) =>
-      _attached.add(UsbAttachment(device, enumerated: enumerated));
+  /// Who watches the cable now.
+  final owners = <String>{};
+
+  /// Whether [owners] ran out after someone had watched.
+  bool ownersEmptied = false;
+
+  /// Cameras on the cable.
+  final plugged = <UsbCameraRef>{};
+
+  void attach(UsbCameraRef device, {bool enumerated = false}) {
+    plugged.add(device);
+    _attached.add(UsbAttachment(device, enumerated: enumerated));
+  }
 
   void detach(UsbCameraRef device) {
+    plugged.remove(device);
     permitted.remove(device);
     _detached.add(device);
   }
@@ -63,8 +78,19 @@ class FakeUsbCameraWatcher implements UsbCameraWatcher {
   }
 
   @override
-  void start(String owner) => calls.add('start $owner');
+  void start(String owner) {
+    calls.add('start $owner');
+    final first = owners.isEmpty;
+    owners.add(owner);
+    if (!first) return;
+    for (final device in plugged.toList()) {
+      _attached.add(UsbAttachment(device, enumerated: true));
+    }
+  }
 
   @override
-  void stop(String owner) => calls.add('stop $owner');
+  void stop(String owner) {
+    calls.add('stop $owner');
+    if (owners.remove(owner) && owners.isEmpty) ownersEmptied = true;
+  }
 }

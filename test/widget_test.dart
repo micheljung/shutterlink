@@ -1,6 +1,9 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/app.dart';
+import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
+import 'package:shutterlink/feature/connect/connect_state.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 import 'package:shutterlink/usb/ios_usb_platform.dart';
 
@@ -24,7 +27,7 @@ void main() {
     expect(find.text('Pair this phone on the camera'), findsOneWidget);
   });
 
-  testWidgets('returns to the connect screen when the camera drops', (
+  testWidgets('reconnects when the camera drops, until aborted', (
     tester,
   ) async {
     final client = FakeCameraClient([cameraObject(1, 'IMG_0001.JPG')]);
@@ -33,11 +36,16 @@ void main() {
     await tester.tap(find.text('Connect'));
     await tester.pumpAndSettle();
     expect(find.text('Photos (1)'), findsOneWidget);
+    final connect = tester
+        .element(find.text('Photos (1)'))
+        .read<ConnectCubit>();
 
     client.simulateDisconnect();
-    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(connect.state, const ConnectReconnecting());
 
-    expect(find.text('The camera disconnected.'), findsOneWidget);
+    await connect.abortReconnect();
+    await tester.pumpAndSettle();
     expect(find.text('Connect'), findsOneWidget);
   });
 

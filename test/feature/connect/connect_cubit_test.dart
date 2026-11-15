@@ -154,7 +154,7 @@ void main() {
   });
 
   blocTest<ConnectCubit, ConnectState>(
-    'reports a camera drop',
+    'reconnects after a camera drop',
     build: () => build((_) async => client),
     act: (cubit) async {
       await cubit.connect();
@@ -164,7 +164,7 @@ void main() {
     expect: () => [
       const ConnectConnecting(),
       ConnectConnected(client),
-      const ConnectFailed(ConnectCubit.disconnectedMessage),
+      const ConnectReconnecting(),
     ],
   );
 
@@ -390,10 +390,7 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       },
       skip: 3,
-      expect: () => [
-        isA<ConnectConnected>(),
-        const ConnectFailed(ConnectCubit.disconnectedMessage),
-      ],
+      expect: () => [isA<ConnectConnected>(), const ConnectReconnecting()],
     );
 
     blocTest<ConnectCubit, ConnectState>(

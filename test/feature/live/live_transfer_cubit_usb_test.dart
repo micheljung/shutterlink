@@ -160,11 +160,11 @@ void main() {
 
   test('USB Live never binds and gives the camera back on stop', () async {
     final client = await startOverUsb();
-    expect(watcher.calls, ['start live']);
+    expect(watcher.calls, ['start connection', 'start live']);
 
     await live.stop();
 
-    expect(watcher.calls, ['start live', 'stop live']);
+    expect(watcher.calls, ['start connection', 'start live', 'stop live']);
     expect(connect.state, ConnectConnected(client));
     expect((connect.state as ConnectConnected).target, isA<UsbTarget>());
     expect(binder.calls, isEmpty);

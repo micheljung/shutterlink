@@ -11,6 +11,7 @@ import 'package:shutterlink/usb/usb_camera_platform.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/fake_usb_camera_watcher.dart';
+import '../../upload/upload_fakes.dart';
 import '../live/live_transfer_cubit_test.dart'
     show RecordingBinder, cameraGateway;
 
@@ -36,6 +37,7 @@ void main() {
   late List<ConnectTarget> targets;
   late Map<Type, List<FutureOr<FakeCameraClient>>> answers;
   late int discoveries;
+  late FakeTimers timers;
   late ConnectCubit cubit;
 
   Future<FakeCameraClient> answer(Type kind) async =>
@@ -49,6 +51,7 @@ void main() {
     targets = [];
     answers = {WifiTarget: [], UsbTarget: []};
     discoveries = 0;
+    timers = FakeTimers();
     cubit = ConnectCubit(
       connector: (target) {
         targets.add(target);
@@ -66,6 +69,7 @@ void main() {
         discoveries++;
         return const [];
       },
+      timerFactory: timers.create,
     );
   });
 
@@ -95,6 +99,25 @@ void main() {
   Future<void> plug(UsbCameraRef device, {bool enumerated = false}) async {
     watcher.attach(device, enumerated: enumerated);
     await pumpEventQueue();
+  }
+
+  Future<FakeCameraClient> connectUsb() async {
+    final client = next(UsbTarget);
+    await plug(canon);
+    expect(cubit.state, ConnectConnected(client));
+    return client;
+  }
+
+  Future<void> unplug(FakeCameraClient client) async {
+    client.simulateDisconnect();
+    watcher.detach(canon);
+    await pumpEventQueue();
+  }
+
+  List<ConnectState> record() {
+    final states = <ConnectState>[];
+    cubit.stream.listen(states.add);
+    return states;
   }
 
   test(
@@ -139,15 +162,38 @@ void main() {
     expect(binder.calls, contains('release connect'));
   });
 
-  test('USB takes over a connected Wi-Fi camera', () async {
+  test('USB takes over a connected Wi-Fi camera in place', () async {
     final wifi = await connectWifi();
     final usb = next(UsbTarget);
+    final states = record();
 
     await plug(canon);
 
     expect(wifi.closed, isTrue);
-    expect(cubit.state, ConnectConnected(usb));
+    expect(states, [
+      const ConnectReconnecting(usb: true),
+      ConnectConnected(usb),
+    ]);
+    expect((cubit.state as ConnectConnected).target, isA<UsbTarget>());
     expect(binder.owners, isEmpty);
+  });
+
+  test('USB takes over a Wi-Fi camera that is reconnecting', () async {
+    final wifi = await connectWifi();
+    wifi.simulateDisconnect();
+    await pumpEventQueue();
+    expect(cubit.state, const ConnectReconnecting());
+    final usb = next(UsbTarget);
+    final states = record();
+
+    await plug(canon);
+
+    expect(states, [
+      const ConnectReconnecting(usb: true),
+      ConnectConnected(usb),
+    ]);
+    expect(binder.owners, isEmpty);
+    expect(timers.active, isNull, reason: 'no Wi-Fi retry is left');
   });
 
   test(
@@ -175,26 +221,26 @@ void main() {
   );
 
   test(
-    'a Wi-Fi tap while USB closes the old Wi-Fi client keeps its binding',
+    'a Wi-Fi tap during a USB takeover wins and keeps its binding',
     () async {
       final slow = _SlowClosingClient();
       answers[WifiTarget]!.add(slow);
       await cubit.connect();
       expect(cubit.state, ConnectConnected(slow));
+      final usbGate = gated(UsbTarget);
 
       await plug(canon);
-      expect(
-        cubit.state,
-        const ConnectConnecting(cameraName: 'Canon EOS R', usb: true),
-      );
+      expect(cubit.state, const ConnectReconnecting(usb: true));
       final wifi = await connectWifi();
+      final lateUsb = FakeCameraClient([]);
+      usbGate.complete(lateUsb);
       slow.closing.complete();
       await pumpEventQueue();
 
+      expect(lateUsb.closed, isTrue);
       expect(cubit.state, ConnectConnected(wifi));
       expect(binder.owners, {'connect'});
       expect(binder.calls.last, 'acquire connect');
-      expect(targets.whereType<UsbTarget>(), isEmpty);
     },
   );
 
@@ -259,14 +305,17 @@ void main() {
       expect(targets.whereType<UsbTarget>(), isEmpty);
     });
 
-    test('while Live owns the camera', () async {
-      await connectWifi();
+    test('while Live owns the camera, and leaves its drops to Live', () async {
+      final wifi = await connectWifi();
       cubit.handOver('live');
 
       await plug(canon);
+      wifi.simulateDisconnect();
+      await pumpEventQueue();
 
       expect(cubit.state, const ConnectLiveOwned());
       expect(targets.whereType<UsbTarget>(), isEmpty);
+      expect(timers.all, isEmpty, reason: 'the supervisor is paused');
     });
 
     test('while another USB camera is connected', () async {
@@ -291,20 +340,146 @@ void main() {
     expect(cubit.state, ConnectConnected(second));
   });
 
-  test('unplug fails the connection, and a re-plug connects again', () async {
-    final first = next(UsbTarget);
-    await plug(canon);
+  test('unplug reconnects, and a re-plug connects at once', () async {
+    final first = await connectUsb();
 
-    first.simulateDisconnect();
-    watcher.detach(canon);
-    await pumpEventQueue();
-    expect(cubit.state, const ConnectFailed(ConnectCubit.disconnectedMessage));
+    await unplug(first);
+    expect(cubit.state, const ConnectReconnecting(usb: true));
 
     watcher.permitted.add(canon);
     final second = next(UsbTarget);
     await plug(canon);
     expect(cubit.state, ConnectConnected(second));
+    expect((cubit.state as ConnectConnected).target, isA<UsbTarget>());
+    expect(timers.active, isNull);
     expect(binder.calls, isEmpty);
+  });
+
+  test('a re-plug of the camera while reconnecting retries at once', () async {
+    final first = await connectUsb();
+    await unplug(first);
+    final retry = timers.active!;
+
+    watcher.permitted.add(canon);
+    final second = next(UsbTarget);
+    await plug(canon);
+
+    expect(retry.isActive, isFalse);
+    expect(cubit.state, ConnectConnected(second));
+  });
+
+  test('another camera plugged in while reconnecting is ignored', () async {
+    final first = await connectUsb();
+    await unplug(first);
+
+    await plug(usbCamera(productId: 2));
+
+    expect(cubit.state, const ConnectReconnecting(usb: true));
+    expect(targets, hasLength(1));
+  });
+
+  test('USB access from the background waits for the user', () async {
+    final first = await connectUsb();
+    await unplug(first);
+    watcher.permissionAnswers.add(UsbPermission.userActionNeeded);
+
+    await plug(canon);
+    expect(
+      cubit.state,
+      const ConnectReconnecting(userActionNeeded: true, usb: true),
+    );
+
+    final second = next(UsbTarget);
+    cubit.allowUsbAccess();
+    await pumpEventQueue();
+    expect(watcher.permissionRequests, [canon, canon]);
+    expect(cubit.state, ConnectConnected(second));
+  });
+
+  test('abort while reconnecting over USB goes idle', () async {
+    final first = await connectUsb();
+    await unplug(first);
+
+    await cubit.abortReconnect();
+
+    expect(cubit.state, const ConnectIdle());
+    expect(timers.active, isNull);
+    expect(binder.calls, isEmpty);
+  });
+
+  group('the USB watch', () {
+    test('starts with the cubit, before the connect screen', () {
+      expect(watcher.calls.first, 'start ${ConnectCubit.usbWatchOwner}');
+      expect(ConnectCubit.usbWatchOwner, isNot('connect'));
+    });
+
+    test('survives failures, drops and abort, and ends on close', () async {
+      watcher
+        ..permitted.clear()
+        ..permissionAnswers.add(UsbPermission.denied);
+      await plug(canon);
+      expect(cubit.state, isA<ConnectFailed>());
+      watcher.permitted.add(canon);
+      final first = await connectUsb();
+      await unplug(first);
+      await cubit.abortReconnect();
+
+      expect(watcher.calls, isNot(contains('stop connection')));
+      await cubit.close();
+      expect(watcher.calls.last, 'stop connection');
+    });
+
+    test('keeps an aborted camera idle with the cable still in', () async {
+      watcher.start('connect');
+      final first = await connectUsb();
+      first.simulateDisconnect();
+      await pumpEventQueue();
+      expect(cubit.state, const ConnectReconnecting(usb: true));
+
+      await cubit.abortReconnect();
+      // The connect screen comes back.
+      watcher
+        ..stop('connect')
+        ..start('connect');
+      await pumpEventQueue();
+
+      expect(cubit.state, const ConnectIdle());
+      expect(watcher.ownersEmptied, isFalse);
+      expect(targets, hasLength(1));
+    });
+
+    test('a fresh watch reports a plugged camera, which connects', () async {
+      // Guards the test above: without the cubit's watch, it would fail.
+      final first = await connectUsb();
+      first.simulateDisconnect();
+      await pumpEventQueue();
+      await cubit.abortReconnect();
+      next(UsbTarget);
+
+      watcher
+        ..stop(ConnectCubit.usbWatchOwner)
+        ..start('connect');
+      await pumpEventQueue();
+
+      expect(cubit.state, isA<ConnectConnected>());
+    });
+
+    test('is released in the background without a camera', () async {
+      cubit.appPaused();
+      expect(watcher.calls.last, 'stop connection');
+
+      cubit.appResumed();
+      expect(watcher.calls.last, 'start connection');
+    });
+
+    test('is kept in the background with a camera', () async {
+      await connectUsb();
+
+      cubit.appPaused();
+      cubit.appResumed();
+
+      expect(watcher.calls, ['start connection']);
+    });
   });
 
   group('permission', () {
@@ -363,6 +538,34 @@ void main() {
     expect(usb.closed, isTrue);
     expect(cubit.state, const ConnectIdle());
     expect(binder.calls, isEmpty);
+  });
+
+  test('a take-back over USB after a Wi-Fi hand-over supervises USB', () async {
+    final wifi = await connectWifi();
+    expect(cubit.handOver('live'), wifi);
+    // Live switched to the cable and released its Wi-Fi binding.
+    await binder.releaseBinding('live');
+    final usb = FakeCameraClient([]);
+
+    expect(
+      cubit.takeBack(usb, owner: 'live', target: UsbTarget(canon)),
+      isTrue,
+    );
+    await pumpEventQueue();
+    expect(binder.owners, isEmpty);
+
+    final states = record();
+    await unplug(usb);
+    watcher.permitted.add(canon);
+    final again = next(UsbTarget);
+    await plug(canon);
+
+    expect(states, [
+      const ConnectReconnecting(usb: true),
+      ConnectConnected(again),
+    ]);
+    expect(targets.whereType<WifiTarget>(), hasLength(1));
+    expect(binder.owners, isEmpty);
   });
 
   test('hand-over and take-back of a USB camera move no binding', () async {

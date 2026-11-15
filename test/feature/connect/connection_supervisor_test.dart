@@ -49,6 +49,9 @@ class SupervisorEvents {
 
 const retrying = (unreachable: false, userActionNeeded: false, usb: false);
 
+/// A camera on the home Wi-Fi, found by discovery rather than the gateway.
+const stationHost = '192.168.1.50';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final old = cameraObject(1, 'IMG_0001.JPG');
@@ -108,6 +111,13 @@ void main() {
 
   Future<void> superviseFirst() =>
       supervisor.supervise(first, null, bindingOwner: owner, holdNetwork: true);
+
+  Future<void> superviseAt(String host) async => supervisor.supervise(
+    first,
+    WifiTarget(host, await IdentityRepository(prefs).identity()),
+    bindingOwner: owner,
+    holdNetwork: true,
+  );
 
   Future<void> fire() async {
     timers.active!.fire();
@@ -194,23 +204,63 @@ void main() {
     ));
   });
 
-  // live_transfer_cubit_test.dart:346
-  test('slows down on a Wi-Fi without the camera', () async {
+  // live_transfer_cubit_test.dart:346, rewritten: the camera is retried
+  // where it was reached, and only a new gateway means another network.
+  test('slows down after the phone joins another Wi-Fi', () async {
     connections.add(unreachable);
-    await superviseFirst();
+    await superviseAt(stationHost);
     binder.gateway = () => homeGateway;
     first.simulateDisconnect();
     await pumpEventQueue();
 
     await fire();
 
-    expect(hosts.last, homeGateway);
+    expect(hosts.last, stationHost);
     expect(
       timers.active!.delay,
       ConnectionSupervisor.unreachableReconnectDelay,
     );
     expect(events.reconnecting.last.unreachable, isTrue);
   });
+
+  test('retries a camera on the home Wi-Fi at its own address', () async {
+    connections.addAll([unreachable, unreachable]);
+    await superviseAt(stationHost);
+    first.simulateDisconnect();
+    await pumpEventQueue();
+
+    await fire();
+    await fire();
+
+    expect(hosts, [stationHost, stationHost]);
+    expect(events.reconnecting.toSet(), {retrying});
+    expect(delays(), [
+      const Duration(seconds: 2),
+      const Duration(seconds: 4),
+      const Duration(seconds: 8),
+    ]);
+  });
+
+  test(
+    'a given gateway binds no second time and escalates on change',
+    () async {
+      connections.add(unreachable);
+      await supervisor.supervise(
+        first,
+        WifiTarget(stationHost, await IdentityRepository(prefs).identity()),
+        bindingOwner: owner,
+        gateway: homeGateway,
+      );
+      expect(binder.calls, isEmpty);
+      first.simulateDisconnect();
+      await pumpEventQueue();
+
+      await fire();
+
+      expect(hosts, [stationHost]);
+      expect(events.reconnecting.last.unreachable, isTrue);
+    },
+  );
 
   // live_transfer_cubit_test.dart:360
   test('a lost Wi-Fi binding reconnects', () async {

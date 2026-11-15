@@ -343,7 +343,7 @@ void main() {
     expect(service.statuses.last.state, LiveServiceState.unreachable);
   });
 
-  test('slows down on a Wi-Fi without the camera', () async {
+  test('slows down after the phone joins another Wi-Fi', () async {
     connections.add(unreachable);
     await live.start();
     binder.gateway = () => homeGateway;
@@ -352,7 +352,7 @@ void main() {
 
     await fire();
 
-    expect(hosts.last, homeGateway);
+    expect(hosts.last, cameraGateway);
     expect(timers.active!.delay, LiveTransferCubit.unreachableReconnectDelay);
     expect(live.state, const LiveReconnecting(unreachable: true));
   });
