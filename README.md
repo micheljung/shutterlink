@@ -332,11 +332,19 @@ to view and download their photos for 30 days.
 2. In the app, open Settings → Sessions, tap **Connect Sessions**, and enter
    the server URL (`https://`; `http://` only for `localhost`) and the upload
    token. The app checks the token with the server before saving it.
-3. Tap the QR icon on the connect or gallery screen to start a Session and show
-   its code. Tap a past Session to show its code again.
-4. On connect the app reads the camera clock. If the camera does not report its
-   time, tap **Sync clock** and take a photo, or tap **Mark now** on the
-   Sessions screen, take a photo, and confirm it on the next connect.
+3. Connect the camera and pick **QR Session**. The mode starts a Session, or
+   asks whether to resume the last one, and shows its QR code and Session
+   Code. **Stop**, **Start new Session** and **Resume** are on the same
+   screen. Leaving the mode closes the Session window. Past Sessions are
+   listed under **Sessions** in the mode and under Settings → Sessions.
+4. In QR Session the app reads the camera clock. If the camera does not report
+   its time, tap **Sync clock** and take a photo, or tap **Mark now**, take a
+   photo, and confirm it.
+
+Photos are collected only in QR Session, and they go only to the Sessions
+server: nothing is saved to the phone or sent to the upload destination. On
+Android the mode keeps working with the screen off, with a QR Session
+notification whose **Stop** goes back to the mode picker.
 
 ### v1 limitations
 
@@ -346,9 +354,10 @@ to view and download their photos for 30 days.
   offset. Connect, or do a sync shot, before changing the camera clock.
 - While the phone is connected to the camera's Wi-Fi, uploads need another
   network with internet access, such as mobile data.
-- New photos are detected about 2 seconds after the camera reports a new
-  object or a change on the card, which the EOS R does for each shot. On
-  cameras that report neither, they are detected up to 30 seconds late.
+- New photos are found within about 2 seconds: the app checks the newest
+  folder on the card every 2 seconds, and at once when the camera reports a
+  change, which the EOS R does for each shot. A RAW shot without a JPEG is
+  held about 3 seconds in case its JPEG follows.
 - Sessions whose server copy expired cannot be resumed; a new Session is
   offered instead.
 - An open Session only takes photos up to 2 seconds past the phone's current
