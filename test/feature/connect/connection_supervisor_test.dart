@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
 import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/data/ssdp_discovery.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connection_supervisor.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
@@ -52,6 +53,20 @@ const retrying = (unreachable: false, userActionNeeded: false, usb: false);
 /// A camera on the home Wi-Fi, found by discovery rather than the gateway.
 const stationHost = '192.168.1.50';
 
+/// Another camera that happens to have the same name.
+class _OtherCamera extends FakeCameraClient {
+  _OtherCamera() : super([]);
+
+  @override
+  CameraDeviceInfo get deviceInfo => const CameraDeviceInfo(
+    manufacturer: 'Canon Inc.',
+    model: 'Canon EOS R',
+    deviceVersion: '1-0',
+    serialNumber: '2',
+    operationsSupported: [],
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final old = cameraObject(1, 'IMG_0001.JPG');
@@ -66,6 +81,8 @@ void main() {
   late SupervisorEvents events;
   late ClientValidator validate;
   late Completer<void>? connectGate;
+  late List<DiscoveredCamera> discovered;
+  late int discoveries;
   late ConnectionSupervisor supervisor;
 
   setUp(() async {
@@ -80,6 +97,8 @@ void main() {
     events = SupervisorEvents();
     validate = (_) async => true;
     connectGate = null;
+    discovered = [];
+    discoveries = 0;
     supervisor = ConnectionSupervisor(
       connector: (target) async {
         hosts.add((target as WifiTarget).host);
@@ -101,6 +120,10 @@ void main() {
       releaseStale: () async {
         events.staleBindings++;
         await binder.releaseBinding(owner);
+      },
+      discovery: () async {
+        discoveries++;
+        return discovered;
       },
       clock: () => now,
       timerFactory: timers.create,
@@ -405,6 +428,83 @@ void main() {
       expect(timers.active, isNull);
     },
   );
+
+  group('a camera found by discovery', () {
+    const name = 'EOS R';
+    const moved = DiscoveredCamera(host: '192.168.1.60', name: name);
+    const namesake = DiscoveredCamera(host: '192.168.1.61', name: 'EOS R6');
+
+    Future<void> superviseFound({String? discoveredName = name}) async =>
+        supervisor.supervise(
+          first,
+          WifiTarget(stationHost, await IdentityRepository(prefs).identity()),
+          bindingOwner: owner,
+          discoveredName: discoveredName,
+        );
+
+    Future<void> failTimes(int count) async {
+      for (var i = 0; i < count; i++) {
+        await fire();
+      }
+    }
+
+    test('is found again at a new address after three failures', () async {
+      final second = FakeCameraClient([old]);
+      final third = FakeCameraClient([old]);
+      connections.addAll([unreachable, unreachable, unreachable, second]);
+      discovered = [namesake, moved];
+      await superviseFound();
+      first.simulateDisconnect();
+      await pumpEventQueue();
+
+      await failTimes(2);
+      expect(discoveries, 0);
+      await fire();
+
+      expect(discoveries, 1);
+      expect(hosts, [stationHost, stationHost, stationHost, moved.host]);
+      expect(events.connected, [first, second]);
+      expect((supervisor.target! as WifiTarget).host, moved.host);
+
+      connections.add(third);
+      second.simulateDisconnect();
+      await pumpEventQueue();
+      await fire();
+      expect(hosts.last, moved.host);
+      expect(events.connected.last, third);
+    });
+
+    test('ignores another camera under the same name', () async {
+      final other = _OtherCamera();
+      connections.addAll([unreachable, unreachable, unreachable, other]);
+      connections.add(unreachable);
+      discovered = [moved];
+      await superviseFound();
+      first.simulateDisconnect();
+      await pumpEventQueue();
+
+      await failTimes(3);
+      expect(other.closed, isTrue);
+      expect(events.connected, [first]);
+      await fire();
+
+      expect(hosts.last, stationHost);
+      expect((supervisor.target! as WifiTarget).host, stationHost);
+    });
+
+    test('is not looked for when the address was set by hand', () async {
+      connections.addAll(List.filled(6, unreachable));
+      discovered = [moved];
+      await superviseFound(discoveredName: null);
+      first.simulateDisconnect();
+      await pumpEventQueue();
+
+      await failTimes(6);
+
+      expect(discoveries, 0);
+      expect(hosts.toSet(), {stationHost});
+    });
+  });
 
   test('stop while connected leaves the client open', () async {
     await superviseFirst();

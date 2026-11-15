@@ -31,6 +31,7 @@ void main() {
   late List<String> hosts;
   late Completer<void>? connectGate;
   late List<DiscoveredCamera> discovered;
+  late int discoveries;
   late ConnectCubit cubit;
   late List<ConnectState> states;
 
@@ -51,6 +52,7 @@ void main() {
     hosts = [];
     connectGate = null;
     discovered = [];
+    discoveries = 0;
     cubit = ConnectCubit(
       connector: (target) async {
         if (target is UsbTarget) return answer(usbAnswers);
@@ -68,7 +70,10 @@ void main() {
       networkBinder: binder,
       claimsUsbVendor: claimsCanonOnly,
       usbWatcher: watcher,
-      discovery: () async => discovered,
+      discovery: () async {
+        discoveries++;
+        return discovered;
+      },
       timerFactory: timers.create,
     );
     states = [];
@@ -270,6 +275,27 @@ void main() {
       );
     });
 
+    test('is found again after it moved to another address', () async {
+      final first = await connectStation(station);
+      final second = FakeCameraClient([]);
+      wifiAnswers.addAll([unreachable, unreachable, unreachable, second]);
+      discovered = [
+        const DiscoveredCamera(host: '192.168.1.60', name: 'EOS R'),
+      ];
+
+      await drop(first);
+      for (var i = 0; i < ConnectionSupervisor.rediscoverAfter; i++) {
+        await fire();
+      }
+
+      expect(cubit.state, ConnectConnected(second));
+      expect(hosts.last, '192.168.1.60');
+      expect(
+        (cubit.state as ConnectConnected).target,
+        isA<WifiTarget>().having((t) => t.host, 'host', '192.168.1.60'),
+      );
+    });
+
     test('does not escalate on the same Wi-Fi', () async {
       final first = await connectStation(station);
       wifiAnswers.add(unreachable);
@@ -279,6 +305,20 @@ void main() {
 
       expect(cubit.state, const ConnectReconnecting());
     });
+  });
+
+  test('a camera at the gateway is never looked for', () async {
+    final first = await connectWifi();
+    wifiAnswers.addAll(List.filled(4, unreachable));
+    discovered = [station];
+
+    await drop(first);
+    for (var i = 0; i < 4; i++) {
+      await fire();
+    }
+
+    expect(discoveries, 0);
+    expect(hosts.toSet(), {cameraGateway});
   });
 
   test('a take-back without a target retries the resolved host', () async {
