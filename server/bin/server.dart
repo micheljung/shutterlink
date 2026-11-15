@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -85,9 +86,20 @@ Future<void> main(List<String> arguments) async {
     port: port,
   );
   stdout.writeln('Shutterlink server listening on ${server.url}');
-  await Future.any([
-    ProcessSignal.sigint.watch().first,
-    if (!Platform.isWindows) ProcessSignal.sigterm.watch().first,
-  ]);
+  // Listen explicitly so both subscriptions can be cancelled: a watch left
+  // open keeps the process alive after the server has closed.
+  final stopRequested = Completer<void>();
+  final signals = [
+    ProcessSignal.sigint,
+    if (!Platform.isWindows) ProcessSignal.sigterm,
+  ];
+  final subscriptions = [
+    for (final signal in signals)
+      signal.watch().listen((_) {
+        if (!stopRequested.isCompleted) stopRequested.complete();
+      }),
+  ];
+  await stopRequested.future;
+  await Future.wait([for (final s in subscriptions) s.cancel()]);
   await server.close();
 }
