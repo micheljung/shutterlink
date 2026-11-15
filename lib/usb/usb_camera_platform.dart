@@ -7,7 +7,8 @@ import 'usb_pipe.dart';
 /// Two refs are equal when vendor and product match: reading the serial
 /// needs permission, and a re-plug changes [platformId]. Telling apart two
 /// identical cameras is not supported. When the platform hides both ids
-/// (both 0), refs are equal only when their [platformId]s are.
+/// (both 0), refs are equal only when their [platformId]s are, so such a
+/// camera counts as a different one after a re-plug.
 @immutable
 class UsbCameraRef {
   const UsbCameraRef({

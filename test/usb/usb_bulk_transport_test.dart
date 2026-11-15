@@ -269,6 +269,33 @@ void main() {
       expect(received.params, [0x21]);
     });
 
+    test('decodes events in interrupt-sized packets', () async {
+      final small = UsbContainer.withParams(UsbContainerType.event, 0x4002, 6, [
+        0x22,
+      ]).encode();
+      final large = UsbContainer.withParams(UsbContainerType.event, 0x400C, 7, [
+        1,
+        2,
+        3,
+      ]).encode();
+      expect(small, hasLength(16));
+      final pipe = FakeUsbPipe(
+        device,
+        interruptEvents: [
+          small,
+          Uint8List.sublistView(large, 0, 16),
+          Uint8List.sublistView(large, 16),
+        ],
+      );
+      final transport = await UsbBulkTransport.open(pipe);
+      addTearDown(transport.close);
+      final received = await transport.events.take(2).toList();
+      expect(received.map((e) => e.params), [
+        [0x22],
+        [1, 2, 3],
+      ]);
+    });
+
     test('a detach disconnects it', () async {
       final pipe = FakeUsbPipe(device);
       final transport = await UsbBulkTransport.open(pipe);

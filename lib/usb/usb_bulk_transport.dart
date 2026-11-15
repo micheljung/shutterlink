@@ -27,7 +27,7 @@ const _deviceStatusPollInterval = Duration(milliseconds: 50);
 class UsbBulkTransport implements PtpTransport {
   UsbBulkTransport._(this._pipe) {
     _reader = UsbContainerReader(maxPacketSize: _pipe.maxPacketSize);
-    _interruptReader = UsbContainerReader(maxPacketSize: _pipe.maxPacketSize);
+    _interruptReader = _newInterruptReader();
     _interrupts = _pipe.interrupt.listen(_onInterrupt);
     _pipe.detached.then(
       (_) => _shutDown(const UsbTransferException('USB device detached')),
@@ -224,6 +224,11 @@ class UsbBulkTransport implements PtpTransport {
     }
   }
 
+  /// The interrupt endpoint has its own, smaller packet size, so its
+  /// transfers are not judged against the bulk one.
+  static UsbContainerReader _newInterruptReader() =>
+      UsbContainerReader(rejectShortTransfers: false);
+
   void _onInterrupt(Uint8List bytes) {
     try {
       for (final container in _interruptReader.add(bytes)) {
@@ -239,7 +244,7 @@ class UsbBulkTransport implements PtpTransport {
       }
     } on PtpProtocolException {
       // A garbled event is dropped; the camera keeps its session.
-      _interruptReader = UsbContainerReader(maxPacketSize: _pipe.maxPacketSize);
+      _interruptReader = _newInterruptReader();
     }
   }
 
