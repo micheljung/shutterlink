@@ -80,6 +80,10 @@ class ConnectionSupervisor {
   String _bindingOwner = '';
   bool _holdNetwork = false;
 
+  /// The Wi-Fi gateway when supervision began; another one means the phone
+  /// joined a different network.
+  String? _gateway;
+
   /// How the camera is reached; null counts as Wi-Fi.
   ConnectTarget? _target;
   CameraClient? _client;
@@ -88,7 +92,6 @@ class ConnectionSupervisor {
   bool _usbPresent = true;
   bool _userActionNeeded = false;
   bool _permissionRequested = false;
-  String? _cameraHost;
   Timer? _retryTimer;
   Duration _reconnectDelay = initialReconnectDelay;
   DateTime? _failingSince;
@@ -101,14 +104,19 @@ class ConnectionSupervisor {
 
   ConnectTarget? get target => _target;
 
+  /// Whether Wi-Fi retries keep the Wi-Fi up while the screen is off.
+  set holdNetwork(bool hold) => _holdNetwork = hold;
+
   /// Keeps [client], or a camera reached through [target] when [client] is
-  /// null, connected until [stop]. A Wi-Fi target binds as [bindingOwner].
+  /// null, connected until [stop]. A Wi-Fi target binds as [bindingOwner],
+  /// unless [gateway] says the owner is bound already and to which network.
   /// Completes after the first attach or connection attempt.
   Future<void> supervise(
     CameraClient? client,
     ConnectTarget? target, {
     required String bindingOwner,
     bool holdNetwork = false,
+    String? gateway,
   }) async {
     _reset();
     final session = ++_session;
@@ -116,26 +124,28 @@ class ConnectionSupervisor {
     _target = target;
     _bindingOwner = bindingOwner;
     _holdNetwork = holdNetwork;
+    _gateway = gateway;
     if (client == null) return _tryReconnect(session);
     _client = client;
-    if (target is UsbTarget) {
+    if (target is UsbTarget || gateway != null) {
       if (!await _attach(client, reconnected: false)) {
         _scheduleReconnect(session);
       }
       return;
     }
-    String? gateway;
+    String? bound;
     try {
-      gateway = await _networkBinder.acquireBinding(
+      bound = await _networkBinder.acquireBinding(
         bindingOwner,
         holdNetwork: holdNetwork,
       );
     } on PlatformException {
-      gateway = null;
+      bound = null;
     }
     if (!_isCurrent(session)) return _staleBinding(bindingOwner);
-    _cameraHost = await _hostResolver.resolve(boundGateway: gateway);
+    final resolved = await _gatewayOf(bound);
     if (!_isCurrent(session)) return;
+    _gateway ??= resolved;
     if (!await _attach(client, reconnected: false)) {
       _scheduleReconnect(session);
     }
@@ -193,7 +203,7 @@ class ConnectionSupervisor {
     _usbPresent = true;
     _userActionNeeded = false;
     _permissionRequested = false;
-    _cameraHost = null;
+    _gateway = null;
     _reconnectDelay = initialReconnectDelay;
     _failingSince = null;
     _unreachable = false;
@@ -280,13 +290,15 @@ class ConnectionSupervisor {
     if (!attached || _client == null) _scheduleReconnect(session);
   }
 
+  /// Retries the Wi-Fi camera where it was reached; without a target, at
+  /// the resolved host.
   Future<bool> _reconnect(int session) async {
     final target = _target;
     if (target is UsbTarget) return _reconnectUsb(session, target.device);
     final owner = _bindingOwner;
-    String? host;
+    String? gateway;
     try {
-      final gateway = await _networkBinder.acquireBinding(
+      final bound = await _networkBinder.acquireBinding(
         owner,
         holdNetwork: _holdNetwork,
       );
@@ -294,7 +306,10 @@ class ConnectionSupervisor {
         await _staleBinding(owner);
         return false;
       }
-      host = await _hostResolver.resolve(boundGateway: gateway);
+      gateway = await _gatewayOf(bound);
+      final host = target is WifiTarget
+          ? target.host
+          : await _hostResolver.resolve(boundGateway: bound);
       final client = await _connector(
         WifiTarget(host, await _identity.identity()),
       );
@@ -302,16 +317,25 @@ class ConnectionSupervisor {
         await client.close();
         return false;
       }
-      _cameraHost ??= host;
+      _gateway ??= gateway;
       if (await _attach(client, reconnected: true)) return true;
     } on Exception {
       if (!_isCurrent(session)) return false;
     }
-    final cameraHost = _cameraHost;
-    if (host != null && cameraHost != null && host != cameraHost) {
+    final known = _gateway;
+    if (gateway != null && known != null && gateway != known) {
       _unreachable = true;
     }
     return false;
+  }
+
+  /// The gateway of the bound Wi-Fi, or null when it cannot be looked up.
+  Future<String?> _gatewayOf(String? bound) async {
+    try {
+      return await _hostResolver.gateway(boundGateway: bound);
+    } on PlatformException {
+      return null;
+    }
   }
 
   /// A binding acquired for an ended session: a session now running over

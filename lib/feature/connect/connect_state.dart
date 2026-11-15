@@ -48,6 +48,27 @@ class ConnectConnected extends ConnectState {
   List<Object?> get props => [client];
 }
 
+/// The camera dropped; the connection is being re-established in place.
+class ConnectReconnecting extends ConnectState {
+  const ConnectReconnecting({
+    this.unreachable = false,
+    this.userActionNeeded = false,
+    this.usb = false,
+  });
+
+  /// Retries have slowed down because the camera stayed away.
+  final bool unreachable;
+
+  /// The USB camera is back, but the user must allow access in the app.
+  final bool userActionNeeded;
+
+  /// Reconnecting over the USB cable rather than Wi-Fi.
+  final bool usb;
+
+  @override
+  List<Object?> get props => [unreachable, userActionNeeded, usb];
+}
+
 /// Live transfer owns the camera connection and the Wi-Fi binding.
 class ConnectLiveOwned extends ConnectState {
   const ConnectLiveOwned();
