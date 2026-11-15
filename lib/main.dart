@@ -19,7 +19,6 @@ import 'data/photo_saver.dart';
 import 'data/session_repository.dart';
 import 'data/session_seen_store.dart';
 import 'data/sessions_credentials.dart';
-import 'data/sessions_prefetch.dart';
 import 'data/sessions_upload_queue.dart';
 import 'data/settings_repository.dart';
 import 'data/upload_transport.dart';
@@ -93,13 +92,9 @@ Future<void> main() async {
     transport: TunnelTransport(networkStatus, connector: tcpConnector),
     settings: settings,
     ingestCoordinator: ingestCoordinator,
-    prefetch: SessionsPrefetch(
-      Directory(p.join(supportDirectory.path, SessionsPrefetch.directoryName)),
-    ),
     stagedFileOf: uploadQueue.stagingFileFor,
     uploadDirectory: sessionsUploadDirectory,
   );
-  unawaited(sessions.sweepPrefetch());
 
   final UsbCameraPlatform usb = Platform.isAndroid
       ? AndroidUsbPlatform()

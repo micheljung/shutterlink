@@ -5,7 +5,6 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
 import 'package:shutterlink/data/session_repository.dart';
 import 'package:shutterlink/data/session_seen_store.dart';
-import 'package:shutterlink/data/sessions_prefetch.dart';
 import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_worker.dart';
@@ -60,9 +59,6 @@ class SpySessionsDependencies extends SessionsDependencies {
           p.join(directory.path, SessionsDependencies.uploadDirectoryName),
         ),
         ingestCoordinator: coordinator,
-        prefetch: SessionsPrefetch(
-          Directory(p.join(directory.path, SessionsPrefetch.directoryName)),
-        ),
       );
 
   final FakeSessionsCredentials fakeCredentials;
