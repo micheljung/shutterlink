@@ -148,20 +148,3 @@ class _SessionTile extends StatelessWidget {
   Future<void> _reactivate(BuildContext context) =>
       context.read<SessionsCubit>().reactivate(session);
 }
-
-class SessionsAction extends StatelessWidget {
-  const SessionsAction({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final configured = context.select<SettingsCubit, bool>(
-      (cubit) => cubit.state.sessionsConfigured,
-    );
-    if (!configured) return const SizedBox.shrink();
-    return IconButton(
-      tooltip: 'Sessions',
-      icon: const Icon(Icons.qr_code_2),
-      onPressed: () => Navigator.of(context).push(SessionsScreen.route()),
-    );
-  }
-}

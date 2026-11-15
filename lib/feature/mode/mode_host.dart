@@ -9,10 +9,10 @@ import '../connect/connect_cubit.dart';
 import '../connect/connect_state.dart';
 import '../download/download_cubit.dart';
 import '../gallery/gallery_screen.dart';
+import '../qr_session/qr_session_screen.dart';
 import 'attached_client.dart';
 import 'mode_cubit.dart';
 import 'mode_picker_screen.dart';
-import 'mode_placeholder_screen.dart';
 import 'operating_mode.dart';
 import 'reconnecting_overlay.dart';
 
@@ -76,6 +76,6 @@ class _ModeHostState extends State<ModeHost> {
           client: client,
         ),
         OperatingMode.autoUpload => const AutoUploadScreen(),
-        OperatingMode.qrSession => ModePlaceholderScreen(mode: mode),
+        OperatingMode.qrSession => const QrSessionScreen(),
       };
 }

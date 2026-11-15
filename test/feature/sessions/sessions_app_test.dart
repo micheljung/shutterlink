@@ -9,10 +9,12 @@ import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_worker.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
+import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
+import 'package:shutterlink/feature/mode/modes_button.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
-import 'package:shutterlink/feature/sessions/clock_sync_banner.dart';
+import 'package:shutterlink/feature/sessions/session_collector.dart';
 import 'package:shutterlink/feature/sessions/session_qr_sheet.dart';
-import 'package:shutterlink/feature/sessions/sessions_cubit.dart';
+import 'package:shutterlink/feature/sessions/sessions_screen.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
@@ -44,6 +46,7 @@ void main() {
     WidgetTester tester, {
     required Map<String, Object> prefs,
     String? token,
+    void Function(AppDependencies dependencies)? onDependencies,
   }) async {
     final client = FakeCameraClient([
       cameraObject(1, 'IMG_0001.JPG', captureDate: DateTime.utc(2026)),
@@ -59,6 +62,7 @@ void main() {
             token: token,
           ),
     );
+    onDependencies?.call(dependencies);
     await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
     await tester.pump();
     return client;
@@ -79,9 +83,9 @@ void main() {
     );
   }
 
-  testWidgets('a configured app syncs the clock and starts Sessions', (
-    tester,
-  ) async {
+  testWidgets('QR Session syncs the clock, shows the code and sends a shot '
+      'to the Sessions server only (AC15, AC16, AC20)', (tester) async {
+    late AppDependencies dependencies;
     final client = await pumpApp(
       tester,
       prefs: {
@@ -89,45 +93,62 @@ void main() {
         SettingsRepository.sessionsServerUrlKey: _serverUrl,
       },
       token: 'token',
+      onDependencies: (built) => dependencies = built,
     );
-    await pumpUntil(
-      tester,
-      () => find.byTooltip('Sessions').evaluate().isNotEmpty,
-    );
-    expect(sessions.workers, 1);
+    await pumpUntil(tester, () => sessions.workers == 1);
+    final destinationQueue = dependencies.uploadQueue;
+    final saver = dependencies.photoSaver as RecordingPhotoSaver;
 
     await tester.tap(find.text('Connect'));
     await pumpUntil(
       tester,
-      () => find.text(OperatingMode.browse.label).evaluate().isNotEmpty,
+      () => find.text(OperatingMode.qrSession.label).evaluate().isNotEmpty,
     );
-    await tester.tap(find.text(OperatingMode.browse.label));
-    await pumpUntil(
-      tester,
-      () => find.byType(ClockSyncBanner).evaluate().isNotEmpty,
-    );
+    await tester.tap(find.text(OperatingMode.qrSession.label));
     await pumpUntil(
       tester,
       () => find.textContaining('90 s behind').evaluate().isNotEmpty,
     );
+    await pumpUntil(
+      tester,
+      () => find.byType(SessionQrCode).evaluate().isNotEmpty,
+    );
     expect(sessions.clockSyncs, 1);
     expect(sessions.collectors, 1);
+    final active = (await tester.runAsync(sessions.repository.active))!;
+    expect(find.text(active.code), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Sessions'));
-    await tester.pumpAndSettle();
-    final cubit = tester
-        .element(find.text('Start Session'))
-        .read<SessionsCubit>();
-    await pumpUntil(tester, () => cubit.state.loaded);
-    await tester.tap(find.text('Start Session'));
-    await pumpUntil(tester, () => cubit.state.active != null);
-    await tester.pumpAndSettle();
-    expect(find.byType(SessionQrSheet), findsOneWidget);
+    final shot = cameraObject(
+      2,
+      'IMG_0002.JPG',
+      captureDate: DateTime.now().subtract(const Duration(seconds: 89)),
+    );
+    client
+      ..objects.add(shot)
+      ..emitAdded(shot.handle);
+    await tester.pump();
+    await tester.pump(collectorAddedDelay);
+    List<Object> queued = const [];
+    await pumpUntil(tester, () {
+      unawaited(sessions.queue.items().then((items) => queued = [...items]));
+      return queued.isNotEmpty;
+    });
+    expect(queued, hasLength(1));
+    expect(destinationQueue.snapshot.items, isEmpty);
+    expect(saver.saved, isEmpty);
 
-    await tester.tapAt(Offset.zero);
-    await tester.pumpAndSettle();
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip(ModesButton.tooltip));
+    await pumpUntil(
+      tester,
+      () => find.byType(ModePickerScreen).evaluate().isNotEmpty,
+    );
+    Object? stillActive = active;
+    await pumpUntil(tester, () {
+      unawaited(
+        sessions.repository.active().then((session) => stillActive = session),
+      );
+      return stillActive == null;
+    });
     await tester.tap(find.byTooltip('Disconnect'));
     await tester.pumpAndSettle();
     expect(client.closed, isTrue);
@@ -331,5 +352,25 @@ void main() {
     expect(settings.state.sessionsServerUrl, _serverUrl);
     expect(sessions.fakeCredentials.storedToken, 'token');
     expect(find.text('Connect Sessions'), findsOneWidget);
+  });
+
+  testWidgets('Settings lists all Sessions', (tester) async {
+    await pumpApp(
+      tester,
+      prefs: {
+        SettingsRepository.sessionsEnabledKey: true,
+        SettingsRepository.sessionsServerUrlKey: _serverUrl,
+      },
+      token: 'token',
+    );
+    await openSessionsSettings(tester);
+
+    await tester.ensureVisible(find.text('All Sessions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All Sessions'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byType(SessionsScreen), findsOneWidget);
   });
 }

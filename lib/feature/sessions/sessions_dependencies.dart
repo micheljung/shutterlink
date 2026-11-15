@@ -64,9 +64,8 @@ class SessionsDependencies {
 
   SessionCollector createCollector(
     CameraClient client,
-    ClockSyncCubit clockSync, {
-    required bool Function() isBusy,
-  }) => SessionCollector(
+    ClockSyncCubit clockSync,
+  ) => SessionCollector(
     client: client,
     cameraKey: cameraKeyOf(client.deviceInfo),
     clockSync: clockSync,
@@ -76,7 +75,6 @@ class SessionsDependencies {
     uploadDirectory: uploadDirectory,
     coordinator: ingestCoordinator,
     stagedFileOf: stagedFileOf,
-    isBusy: isBusy,
     clock: clock,
   );
 }

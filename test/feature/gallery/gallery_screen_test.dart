@@ -11,6 +11,9 @@ import 'package:shutterlink/feature/download/download_state.dart';
 import 'package:shutterlink/feature/gallery/gallery_cubit.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
 import 'package:shutterlink/feature/history/download_history_cubit.dart';
+import 'package:shutterlink/feature/mode/operating_mode.dart';
+import 'package:shutterlink/feature/sessions/clock_sync_banner.dart';
+import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
 import 'package:shutterlink/feature/settings/upload_setup_screen.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
@@ -18,6 +21,7 @@ import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
 
 import '../../fakes/fake_camera_client.dart';
+import '../../fakes/spy_sessions_dependencies.dart';
 import '../../fakes/test_app.dart';
 
 const _pollInterval = Duration(milliseconds: 5);
@@ -77,6 +81,47 @@ void main() {
     expect(find.text('RAW+JPEG'), findsOneWidget);
     expect(find.text('JPEG'), findsOneWidget);
     expect(find.text('RAW'), findsOneWidget);
+  });
+
+  testWidgets('offers no Live transfer and no Sessions, even when Sessions '
+      'are set up (AC9, AC23)', (tester) async {
+    late SpySessionsDependencies sessions;
+    final client = FakeCameraClient(objects);
+    final dependencies = await testDependencies(
+      (_) async => client,
+      prefs: {
+        SettingsRepository.sessionsEnabledKey: true,
+        SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
+      },
+      sessions: (settings, directory, coordinator) =>
+          sessions = SpySessionsDependencies(
+            settings,
+            directory,
+            coordinator: coordinator,
+            token: 'token',
+          ),
+    );
+    await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
+    await pumpUntil(
+      tester,
+      () => tester
+          .element(find.byType(Navigator).first)
+          .read<SettingsCubit>()
+          .state
+          .sessionsConfigured,
+    );
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(OperatingMode.browse.label));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Photos (3)'), findsOneWidget);
+    expect(find.byTooltip('Start Live transfer'), findsNothing);
+    expect(find.byTooltip('Sessions'), findsNothing);
+    expect(find.byIcon(Icons.qr_code_2), findsNothing);
+    expect(find.byType(ClockSyncBanner), findsNothing);
+    expect(sessions.collectors, 0);
   });
 
   testWidgets('long-press, tap and select all update the selection', (
