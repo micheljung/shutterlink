@@ -93,6 +93,19 @@ void main() {
     expect('${result.stderr}', contains('Cannot read --upload-token-file'));
   });
 
+  test('refuses a --upload-token-file that is not UTF-8', () async {
+    final tokenFile = File('${dataDir.path}/token')
+      ..writeAsBytesSync([0xff, 0xfe, 0x00]);
+    final result = await _run([
+      '--data-dir',
+      dataDir.path,
+      '--upload-token-file',
+      tokenFile.path,
+    ]);
+    expect(result.exitCode, _usageExitCode, reason: '${result.stderr}');
+    expect('${result.stderr}', contains('Cannot read --upload-token-file'));
+  });
+
   test('refuses a blank --upload-token', () async {
     final result = await _run([
       '--data-dir',
