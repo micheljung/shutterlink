@@ -42,5 +42,7 @@ app.*.map.json
 # FVM Version Cache
 .fvm/
 
-# OMC state
-.omc/
+# OMC runtime state (prompts, transcripts, absolute paths): local only.
+# .omc/skills/ is OMC's committable exception for shared project skills.
+**/.omc/*
+!**/.omc/skills/
