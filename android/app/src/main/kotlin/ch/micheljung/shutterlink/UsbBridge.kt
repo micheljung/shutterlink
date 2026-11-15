@@ -38,6 +38,7 @@ class UsbBridge(private val context: Context) {
     /** Devices already announced, so the manifest intent and the receiver report a device once. */
     private val reported = mutableSetOf<String>()
     private var session: Session? = null
+    private var lastSessionId = 0
     private var receiverRegistered = false
 
     private val receiver = object : BroadcastReceiver() {
@@ -100,16 +101,20 @@ class UsbBridge(private val context: Context) {
             "requestPermission" -> requestPermission(call, result)
             "open" -> open(call, result)
             "close" -> {
-                session?.close()
-                session = null
+                // A pipe that a later open replaced must not close its successor.
+                if (UsbSessionGate.check(session?.id, call.argument<Int>("sessionId")) == null) {
+                    session?.close()
+                    session = null
+                }
                 result.success(null)
             }
             "bulkOut", "bulkIn", "clearHalt", "classRequest", "drainIn" -> {
                 val session = session
-                if (session == null) {
-                    result.error(NOT_OPEN, "No USB device is open", null)
-                } else {
-                    session.handle(call, result)
+                when (UsbSessionGate.check(session?.id, call.argument<Int>("sessionId"))) {
+                    UsbSessionGate.Rejection.NOT_OPEN ->
+                        result.error(NOT_OPEN, "No USB device is open", null)
+                    UsbSessionGate.Rejection.STALE -> result.error(USB_IO, "stale session", null)
+                    null -> session!!.handle(call, result)
                 }
             }
             else -> result.notImplemented()
@@ -162,6 +167,7 @@ class UsbBridge(private val context: Context) {
             return
         }
         val opened = Session(
+            id = ++lastSessionId,
             deviceName = device.deviceName,
             connection = connection,
             usbInterface = usbInterface,
@@ -172,7 +178,11 @@ class UsbBridge(private val context: Context) {
         )
         session = opened
         result.success(
-            mapOf("maxPacketSize" to opened.maxPacketSize, "maxTransfer" to opened.maxTransfer),
+            mapOf(
+                "sessionId" to opened.id,
+                "maxPacketSize" to opened.maxPacketSize,
+                "maxTransfer" to opened.maxTransfer,
+            ),
         )
     }
 
@@ -272,6 +282,7 @@ class UsbBridge(private val context: Context) {
      * connection, and no result is posted as success after it.
      */
     private inner class Session(
+        val id: Int,
         val deviceName: String,
         private val connection: UsbDeviceConnection,
         private val usbInterface: UsbInterface,

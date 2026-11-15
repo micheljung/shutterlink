@@ -248,8 +248,9 @@ A new maker or model is one profile file plus one entry in
 `lib/ptp/profile_registry.dart`. A camera no profile matches still works
 through the generic PTP profile. The Android USB filter
 (`android/app/src/main/res/xml/usb_device_filter.xml`) matches the PTP
-still-image class, so a new maker's camera needs no edit there, unless you
-want Android to launch Shutterlink for that vendor specifically.
+still-image class only, so any PTP camera offers to open Shutterlink and a
+new maker's camera needs no edit there. It deliberately lists no vendor IDs,
+which would also match that maker's printers and scanners.
 
 ## Project structure
 
