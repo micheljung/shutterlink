@@ -58,9 +58,10 @@ add a destination in Settings.
 - **Immich:** photos go to the timeline, not an album. Use an API key with
   the `asset.upload` permission. A photo Immich already has is not uploaded
   again.
-- **Live transfer:** a toggle in the gallery. While on, new photos are uploaded
-  in the background, and the connection to the camera is kept and restored
-  after drops.
+- **Auto Upload:** a mode picked after connecting. New shots are uploaded,
+  on Android also in the background, and the photos already on the card can
+  be included on entry. On iPhone, keep the app open; the screen stays on
+  while the mode is open.
 - **Network policy:** uploads over mobile data are `off`, `jpeg` only, or
   `all`. Wi-Fi is always allowed.
 - **Trust on first use:** the first time you connect to an SFTP host or a
@@ -95,7 +96,7 @@ Reports from real hardware are very welcome.
 |---|---|
 | Canon EOS R | Protocol verified with the probe CLI (firmware 3-1.8.0); app untested on hardware |
 | Other Canon EOS bodies with Wi-Fi "Remote control (EOS Utility)" | Untested; may work |
-| Other PTP cameras | Basic support: JPEG only, no instant new-shot events (Live and Sessions find new shots by re-scanning) |
+| Other PTP cameras | Basic support: JPEG only, no instant new-shot events (Auto Upload and Sessions find new shots by re-scanning) |
 
 ## Camera setup
 
@@ -121,9 +122,9 @@ after auto power off.
 
 1. Plug the camera into the phone with a USB cable and switch it on.
 2. **Android:** allow Shutterlink to access the camera. Tick **Always open**,
-   so that Live can reconnect on its own after a re-plug; without it, the
-   notification asks you to open the app. Shutterlink goes straight to the
-   gallery, and Live keeps running over the cable.
+   so that Shutterlink can reconnect on its own after a re-plug; without it,
+   the app asks you to allow access again. Shutterlink goes straight to the
+   mode picker, and a running mode keeps going over the cable.
 3. **iOS (experimental):** allow Shutterlink to control the camera. This uses
    ImageCaptureCore and has not been verified on hardware.
 
@@ -347,9 +348,7 @@ to view and download their photos for 30 days.
   network with internet access, such as mobile data.
 - New photos are detected about 2 seconds after the camera reports a new
   object or a change on the card, which the EOS R does for each shot. On
-  cameras that report neither, they are detected up to 30 seconds late. While
-  Live transfer owns the camera they are not detected at all; they are picked
-  up once Live hands the camera back.
+  cameras that report neither, they are detected up to 30 seconds late.
 - Sessions whose server copy expired cannot be resumed; a new Session is
   offered instead.
 - An open Session only takes photos up to 2 seconds past the phone's current
