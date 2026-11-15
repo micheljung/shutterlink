@@ -17,7 +17,9 @@ import '../sessions/sessions_connection.dart';
 import '../sessions/sessions_screen.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
+import '../settings/upload_draft_fields.dart';
 import '../settings/upload_settings_cubit.dart';
+import '../settings/upload_setup_screen.dart';
 import '../spacing.dart';
 import '../upload/upload_status_sheet.dart';
 import 'delete_photos.dart';
@@ -179,6 +181,8 @@ class _DownloadBar extends StatelessWidget {
       (cubit) => cubit.state.deleting,
     );
     final download = context.watch<DownloadCubit>().state;
+    final upload = context.watch<UploadSettingsCubit>().state;
+    final target = upload.destination;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(Spacing.medium),
@@ -197,12 +201,31 @@ class _DownloadBar extends StatelessWidget {
             ),
             onPressed: () => DownloadSheet.show(context),
           ),
-          _ => FilledButton.icon(
-            icon: const Icon(Icons.download),
-            label: Text('Download ($selected)'),
-            onPressed: selected == 0 || deleting
-                ? null
-                : () => _download(context),
+          _ => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              FilledButton.icon(
+                icon: const Icon(Icons.download),
+                label: Text('Download ($selected)'),
+                onPressed: selected == 0 || deleting
+                    ? null
+                    : () => _download(context),
+              ),
+              const SizedBox(height: Spacing.small),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: Text(
+                  target == null
+                      ? 'Download + upload'
+                      : 'Download + upload to '
+                            '${destinationTitle(target, upload.preset)}',
+                ),
+                onPressed: selected == 0 || deleting
+                    ? null
+                    : () => _downloadAndUpload(context, target != null),
+              ),
+            ],
           ),
         },
       ),
@@ -211,11 +234,27 @@ class _DownloadBar extends StatelessWidget {
 
   static const _percent = 100;
 
-  void _download(BuildContext context) {
+  void _download(BuildContext context, {bool alsoUpload = false}) {
     final groups = context.read<GalleryCubit>().state.selectedGroups;
     final format = context.read<SettingsCubit>().state.format;
-    context.read<DownloadCubit>().start(client, groups, format);
+    context.read<DownloadCubit>().start(
+      client,
+      groups,
+      format,
+      alsoUpload: alsoUpload,
+    );
     context.read<GalleryCubit>().clearSelection();
     DownloadSheet.show(context);
+  }
+
+  /// Without a destination, sets one up first and downloads only if that
+  /// completes.
+  Future<void> _downloadAndUpload(BuildContext context, bool configured) async {
+    if (!configured) {
+      final settings = context.read<UploadSettingsCubit>();
+      await Navigator.of(context).push(UploadSetupScreen.route(settings));
+      if (!context.mounted || settings.state.destination == null) return;
+    }
+    _download(context, alsoUpload: true);
   }
 }

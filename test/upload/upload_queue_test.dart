@@ -194,6 +194,62 @@ void main() {
     expect(await queue.contains(idOf('IMG_0001.JPG')), isTrue);
   });
 
+  group('skipGallery', () {
+    Future<UploadItem> addSkipping(UploadQueue queue, String name) async =>
+        queue.add(
+          id: idOf(name),
+          file: await photo(name),
+          filename: name,
+          kind: CameraObjectKind.jpeg,
+          captureDate: captureDate,
+          skipGallery: true,
+        );
+
+    test('never calls the media saver and uploads', () async {
+      final queue = await started();
+
+      final item = await addSkipping(queue, 'IMG_0001.JPG');
+      expect(item.state, UploadState.savedToGallery);
+      expect(item.mediaRef, isNull);
+      await queue.idle;
+
+      expect(media.calls, isEmpty);
+      expect(server().files.keys, ['2026-11-13/IMG_0001.JPG']);
+      expect(await stored(), isEmpty);
+    });
+
+    test('without keeping the local copy, it still deletes nothing', () async {
+      const removing = Destination(
+        type: DestinationType.webdav,
+        endpoint: 'https://a.example.com/dav',
+        username: 'me',
+        keepLocalCopy: false,
+      );
+      final queue = await started(target: removing);
+
+      await addSkipping(queue, 'IMG_0001.JPG');
+      await queue.idle;
+
+      expect(server(removing).files.keys, ['2026-11-13/IMG_0001.JPG']);
+      expect(media.calls, isEmpty);
+      expect(await stored(), isEmpty);
+      expect(await queue.contains(idOf('IMG_0001.JPG')), isTrue);
+    });
+
+    test('a restart while saved resumes the upload', () async {
+      final offline = await started(initialNetwork: NetworkStatus.offline);
+      await addSkipping(offline, 'IMG_0001.JPG');
+      await offline.idle;
+      await offline.close();
+      expect((await stored()).values.single.state, UploadState.savedToGallery);
+
+      await started();
+
+      expect(server().files.keys, ['2026-11-13/IMG_0001.JPG']);
+      expect(media.calls, isEmpty);
+    });
+  });
+
   test('persists items across restarts', () async {
     final offline = await started(initialNetwork: NetworkStatus.offline);
     await add(offline, 'IMG_0001.JPG');

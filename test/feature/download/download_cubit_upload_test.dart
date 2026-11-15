@@ -7,6 +7,7 @@ import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
 import 'package:shutterlink/feature/gallery/photo_group.dart';
+import 'package:shutterlink/ptpip/camera_client.dart';
 import 'package:shutterlink/upload/destination.dart';
 import 'package:shutterlink/upload/upload_queue.dart';
 
@@ -66,7 +67,7 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  test('with a destination, downloads go through the queue', () async {
+  test('a plain download with a destination only saves to the phone', () async {
     await setUpQueue(destination);
     final client = FakeCameraClient([jpeg, raw]);
 
@@ -74,9 +75,31 @@ void main() {
     await queue.idle;
 
     expect(cubit.state.status, DownloadStatus.completed);
+    expect(saver.saved, [(jpeg: 'IMG_0001.JPG', raw: 'IMG_0001.CR3')]);
+    expect(media.calls, isEmpty);
+    expect(server.files, isEmpty);
+    expect(await queue.contains(_entryKey(client, jpeg)), isFalse);
+    final cameraKey = cameraKeyOf(client.deviceInfo);
+    expect(await history.contains(cameraKey, jpeg), isTrue);
+    expect(await history.contains(cameraKey, raw), isTrue);
+  });
+
+  test('download + upload saves the pair once, then only uploads', () async {
+    await setUpQueue(destination);
+    final client = FakeCameraClient([jpeg, raw]);
+
+    await cubit.start(
+      client,
+      groupPhotos([jpeg, raw]),
+      DownloadFormat.both,
+      alsoUpload: true,
+    );
+    await queue.idle;
+
+    expect(cubit.state.status, DownloadStatus.completed);
     expect(cubit.state.saved, hasLength(1));
-    expect(saver.saved, isEmpty);
-    expect(media.published, hasLength(2));
+    expect(saver.saved, [(jpeg: 'IMG_0001.JPG', raw: 'IMG_0001.CR3')]);
+    expect(media.calls, isEmpty, reason: 'the queue never saves or deletes');
     expect(server.files.keys.toSet(), {
       '2026-11-13/IMG_0001.JPG',
       '2026-11-13/IMG_0001.CR3',
@@ -88,36 +111,50 @@ void main() {
     expect(work.existsSync() ? work.listSync(recursive: true) : [], isEmpty);
   });
 
-  test('without a destination, the gallery saver is used', () async {
+  test('download + upload without a destination only saves', () async {
     await setUpQueue(null);
 
     await cubit.start(
       FakeCameraClient([jpeg]),
       groupPhotos([jpeg]),
       DownloadFormat.jpeg,
+      alsoUpload: true,
     );
 
     expect(saver.saved, hasLength(1));
     expect(media.calls, isEmpty);
+    expect(server.files, isEmpty);
   });
 
-  test('a failed gallery save reports the photo as failed', () async {
-    await setUpQueue(destination);
-    media.failFinish = 1;
+  test(
+    'a failed phone save reports the photo as failed and uploads nothing',
+    () async {
+      await setUpQueue(destination);
+      saver.failFor = {'IMG_0001.JPG'};
 
-    await cubit.start(
-      FakeCameraClient([jpeg]),
-      groupPhotos([jpeg]),
-      DownloadFormat.jpeg,
-    );
+      await cubit.start(
+        FakeCameraClient([jpeg]),
+        groupPhotos([jpeg]),
+        DownloadFormat.jpeg,
+        alsoUpload: true,
+      );
+      await queue.idle;
 
-    expect(cubit.state.failed.single.reason, DownloadFailureReason.saveFailed);
-    expect(
-      await history.contains(
-        cameraKeyOf(FakeCameraClient([]).deviceInfo),
-        jpeg,
-      ),
-      isFalse,
-    );
-  });
+      expect(
+        cubit.state.failed.single.reason,
+        DownloadFailureReason.saveFailed,
+      );
+      expect(server.files, isEmpty);
+      expect(
+        await history.contains(
+          cameraKeyOf(FakeCameraClient([]).deviceInfo),
+          jpeg,
+        ),
+        isFalse,
+      );
+    },
+  );
 }
+
+String _entryKey(FakeCameraClient client, CameraObject object) =>
+    DownloadHistoryRepository.entryKey(cameraKeyOf(client.deviceInfo), object);
