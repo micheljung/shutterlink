@@ -34,6 +34,7 @@ import 'upload/network_policy.dart';
 import 'upload/platform_tcp_connector.dart';
 import 'upload/upload_queue.dart';
 import 'usb/android_usb_platform.dart';
+import 'usb/ios_usb_platform.dart';
 import 'usb/usb_camera_platform.dart';
 
 Future<void> main() async {
@@ -102,6 +103,8 @@ Future<void> main() async {
 
   final UsbCameraPlatform usb = Platform.isAndroid
       ? AndroidUsbPlatform()
+      : Platform.isIOS
+      ? IosUsbPlatform()
       : const NoUsbCameraPlatform();
 
   runApp(

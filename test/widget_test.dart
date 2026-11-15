@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/app.dart';
+import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/usb/ios_usb_platform.dart';
 
 import 'fakes/fake_camera_client.dart';
 import 'fakes/test_app.dart';
@@ -37,5 +39,30 @@ void main() {
 
     expect(find.text('The camera disconnected.'), findsOneWidget);
     expect(find.text('Connect'), findsOneWidget);
+  });
+
+  testWidgets('labels USB as experimental on iOS (U7)', (tester) async {
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(IosUsbPlatform.channel, (_) async {
+      return null;
+    });
+    messenger.setMockStreamHandler(
+      IosUsbPlatform.events,
+      MockStreamHandler.inline(onListen: (_, _) {}),
+    );
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(IosUsbPlatform.channel, null);
+      messenger.setMockStreamHandler(IosUsbPlatform.events, null);
+    });
+    final usb = IosUsbPlatform();
+    addTearDown(usb.dispose);
+    final dependencies = await testDependencies(
+      (_) => throw const PairingRequiredException(),
+      usb: usb,
+    );
+    await tester.pumpWidget(ShutterlinkApp(dependencies: dependencies));
+    await tester.ensureVisible(find.text(ConnectScreen.usbExperimentalLabel));
+
+    expect(find.text(ConnectScreen.usbExperimentalLabel), findsOneWidget);
   });
 }

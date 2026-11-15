@@ -30,6 +30,7 @@ import 'package:shutterlink/upload/media_saver.dart';
 import 'package:shutterlink/upload/network_policy.dart';
 import 'package:shutterlink/upload/tcp_connector.dart';
 import 'package:shutterlink/upload/upload_queue.dart';
+import 'package:shutterlink/usb/usb_camera_platform.dart';
 
 import 'fake_camera_client.dart';
 import 'fake_sessions_credentials.dart';
@@ -138,6 +139,7 @@ Future<AppDependencies> testDependencies(
   CameraConnector connector, {
   Map<String, Object> prefs = const {},
   SessionsDependenciesFactory sessions = testSessionsDependencies,
+  UsbCameraPlatform usb = const NoUsbCameraPlatform(),
 }) async {
   SharedPreferences.setMockInitialValues(prefs);
   final preferences = await SharedPreferences.getInstance();
@@ -174,5 +176,6 @@ Future<AppDependencies> testDependencies(
     liveService: upload.liveService,
     connectionTester: noConnectionTest,
     sessions: sessions(settings, historyDirectory, upload.ingestCoordinator),
+    usb: usb,
   );
 }
