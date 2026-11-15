@@ -408,6 +408,16 @@ void main() {
     expect(disabled, [true, false]);
   });
 
+  test('an iPhone without the screen channel still uploads', () async {
+    await cubit.close();
+    cubit = build(PlatformLiveService(isAndroid: false, isIOS: true));
+
+    await enter();
+    await shoot(first, shot);
+
+    expect(server.files.keys, ['2026-11-13/IMG_0002.JPG']);
+  });
+
   test('AC4: the notification follows ingest, upload and reconnect', () async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
