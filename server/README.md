@@ -35,6 +35,78 @@ Settings → Sessions → Connect Sessions. The server stops cleanly on `SIGINT`
 Tips never gate anything: every download works the same with or without
 tip links.
 
+## Docker
+
+Images for `linux/amd64` and `linux/arm64` are published to
+`ghcr.io/micheljung/shutterlink-server`:
+
+| Tag | Contents |
+|---|---|
+| `latest`, `X.Y.Z`, `X.Y` | Releases, versioned like the app |
+| `main`, `sha-<commit>` | The latest commit on `main` |
+
+```bash
+docker run -d --name shutterlink --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  -v shutterlink-data:/data \
+  -e SHUTTERLINK_UPLOAD_TOKEN='a-long-random-token' \
+  ghcr.io/micheljung/shutterlink-server:latest \
+  --tip "PayPal=https://paypal.me/you"
+```
+
+Or with Docker Compose, keeping the token in a file:
+
+```yaml
+services:
+  shutterlink:
+    image: ghcr.io/micheljung/shutterlink-server:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - shutterlink-data:/data
+    secrets:
+      - shutterlink_token
+    command: ["--upload-token-file=/run/secrets/shutterlink_token"]
+    environment:
+      SHUTTERLINK_TIPS: |
+        PayPal=https://paypal.me/you
+        TWINT=https://example.com/twint
+
+secrets:
+  shutterlink_token:
+    file: ./token
+
+volumes:
+  shutterlink-data:
+```
+
+- The image starts the server with `--address=0.0.0.0 --data-dir=/data`.
+  Arguments after the image name (or in `command:`) are appended and can
+  override either, for example `--retention-days 14`.
+- Inside the container the server listens on all interfaces. Publish the
+  port on `127.0.0.1` as above and keep the reverse proxy below in front of
+  it.
+- All data lives in `/data`, including `secret`, without which existing
+  galleries can't be found. Back up the volume.
+- The server runs as UID 10001. A named volume gets the right owner
+  automatically. For a bind mount, make the directory writable first:
+  `chown 10001:10001 /srv/shutterlink`.
+- Run one container per data volume (see [Limits](#limits)).
+- The health check runs `/app/server --healthcheck` against port 8080. If
+  you change `--port`, override the check too:
+
+  ```yaml
+      healthcheck:
+        test: ["CMD", "/app/server", "--healthcheck", "--port=9000"]
+  ```
+
+To build the image yourself, from the repository root:
+
+```bash
+docker build -f server/Dockerfile -t shutterlink-server .
+```
+
 ## Reverse proxy
 
 The server speaks plain HTTP and is meant to sit behind a TLS-terminating
@@ -111,6 +183,8 @@ body.
 `GET /api/auth` checks the token without uploading: `204` when it is right,
 `401 {"error": "unauthorized"}` when it is missing or wrong. The app uses it
 to check the token during setup.
+
+`GET /healthz` answers `204` without a token, for health checks.
 
 ## Development
 
