@@ -48,7 +48,6 @@ void main() {
 
   Future<SessionsCubit> pumpScreen(WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({
-      SettingsRepository.sessionsEnabledKey: true,
       SettingsRepository.sessionsServerUrlKey: serverUrl,
     });
     final settings = SettingsCubit(

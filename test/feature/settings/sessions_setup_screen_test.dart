@@ -94,7 +94,7 @@ void main() {
   }
 
   void expectNothingSaved() {
-    expect(repository.sessionsEnabled, isFalse);
+    expect(settings.state.sessionsConfigured, isFalse);
     expect(repository.sessionsServerUrl, isNull);
     expect(credentials.storedToken, isNull);
   }
@@ -126,7 +126,7 @@ void main() {
     expect(requests.single.url.toString(), '$_serverUrl/api/auth');
     expect(requests.single.headers['authorization'], 'Bearer secret');
     expect(find.byType(SessionsSetupScreen), findsNothing);
-    expect(repository.sessionsEnabled, isTrue);
+    expect(settings.state.sessionsConfigured, isTrue);
     expect(repository.sessionsServerUrl, _serverUrl);
     expect(credentials.storedToken, 'secret');
     expect(settings.state.sessionsConfigured, isTrue);
@@ -160,7 +160,7 @@ void main() {
 
     await tester.tap(find.text('Save anyway'));
     await tester.pumpAndSettle();
-    expect(repository.sessionsEnabled, isTrue);
+    expect(settings.state.sessionsConfigured, isTrue);
     expect(credentials.storedToken, 'secret');
   });
 
@@ -181,10 +181,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
-        SettingsRepository.sessionsServerUrlKey: _serverUrl,
-      },
+      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
       token: 'stored',
     );
     expect(find.text('Edit Sessions'), findsOneWidget);
@@ -210,16 +207,13 @@ void main() {
     expectNothingSaved();
     await tester.tap(find.text('Save anyway'));
     await tester.pumpAndSettle();
-    expect(repository.sessionsEnabled, isTrue);
+    expect(settings.state.sessionsConfigured, isTrue);
   });
 
   testWidgets('an unreadable saved token asks for it again', (tester) async {
     await pump(
       tester,
-      prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
-        SettingsRepository.sessionsServerUrlKey: _serverUrl,
-      },
+      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
       token: 'stored',
     );
     credentials.readError = Exception('Keystore key invalidated');

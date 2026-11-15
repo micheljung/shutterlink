@@ -110,7 +110,6 @@ void main() {
     final clock = Clock(() => now);
     File file(String name) => File(p.join(root.path, 'app', name));
     SharedPreferences.setMockInitialValues({
-      SettingsRepository.sessionsEnabledKey: true,
       SettingsRepository.sessionsServerUrlKey: server.url.toString(),
     });
     final settings = SettingsRepository(await SharedPreferences.getInstance());

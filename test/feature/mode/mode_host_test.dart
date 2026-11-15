@@ -231,7 +231,6 @@ void main() {
       await tester.runAsync(() async {
         await settings.setSessionsServerUrl('https://photos.example.com');
         await settings.setSessionsToken('token');
-        await settings.setSessionsEnabled(true);
       });
       expect(settings.state.sessionsConfigured, isTrue);
       tester.state<NavigatorState>(find.byType(Navigator).first).pop();
@@ -258,7 +257,6 @@ void main() {
     final dependencies = await testDependencies(
       connector,
       prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
         SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
       },
       sessions: (settings, directory, coordinator) =>

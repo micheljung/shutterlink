@@ -196,9 +196,9 @@ class _SessionsUploadsState extends State<_SessionsUploads>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final enabled = context.read<SettingsCubit>().state.sessionsEnabled;
-    if (enabled) {
-      context.read<SessionsUploadCubit>().setEnabled(enabled: enabled);
+    final configured = context.read<SettingsCubit>().state.sessionsConfigured;
+    if (configured) {
+      context.read<SessionsUploadCubit>().setEnabled(enabled: configured);
     }
   }
 
@@ -211,7 +211,7 @@ class _SessionsUploadsState extends State<_SessionsUploads>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed &&
-        context.read<SettingsCubit>().state.sessionsEnabled) {
+        context.read<SettingsCubit>().state.sessionsConfigured) {
       context.read<SessionsUploadCubit>().resumed();
     }
   }
@@ -220,13 +220,12 @@ class _SessionsUploadsState extends State<_SessionsUploads>
   Widget build(BuildContext context) =>
       BlocListener<SettingsCubit, SettingsState>(
         listenWhen: (previous, current) =>
-            previous.sessionsEnabled != current.sessionsEnabled ||
             previous.sessionsServerUrl != current.sessionsServerUrl ||
             previous.sessionsConfigured != current.sessionsConfigured ||
             previous.sessionsTokenRevision != current.sessionsTokenRevision,
         listener: (context, state) => context
             .read<SessionsUploadCubit>()
-            .setEnabled(enabled: state.sessionsEnabled),
+            .setEnabled(enabled: state.sessionsConfigured),
         child: widget.child,
       );
 }

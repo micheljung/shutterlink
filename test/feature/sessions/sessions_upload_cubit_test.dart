@@ -22,7 +22,6 @@ void main() {
   setUp(() async {
     root = await Directory.systemTemp.createTemp('sessions_upload');
     SharedPreferences.setMockInitialValues({
-      SettingsRepository.sessionsEnabledKey: true,
       SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
     });
     sessions = SpySessionsDependencies(

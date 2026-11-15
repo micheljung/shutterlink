@@ -119,13 +119,13 @@ class _SessionsSetupScreenState extends State<SessionsSetupScreen> {
     }
   }
 
-  /// Enabling last means uploads never start with a half-saved setup.
+  /// The token goes last: without it, uploads never start with a
+  /// half-saved setup.
   Future<void> _finish() async {
     setState(() => _busy = true);
     try {
       await _settings.setSessionsServerUrl(_url.text.trim());
       if (_newToken) await _settings.setSessionsToken(_token.text);
-      await _settings.setSessionsEnabled(true);
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _busy = false);

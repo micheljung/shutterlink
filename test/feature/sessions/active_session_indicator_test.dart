@@ -47,7 +47,6 @@ void main() {
     String? token = 'token',
   }) async {
     SharedPreferences.setMockInitialValues({
-      SettingsRepository.sessionsEnabledKey: true,
       SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
     });
     final settings = SettingsCubit(

@@ -312,10 +312,11 @@ fvm flutter test --tags screenshots --run-skipped
 
 ## Sessions
 
-Sessions mode is off by default. With it off, the app reads no credentials,
-starts no uploads and shows no Sessions UI.
+Sessions need a server URL and an upload token. Without both, the app reads
+no credentials and starts no uploads; removing the token in Settings stops
+Sessions uploads and keeps the server URL.
 
-When it is on, you start a Session for each person you photograph. The app
+You start a Session for each person you photograph. The app
 shows a QR code for `<server>/s/<code>` and a readable Session Code such as
 `apple-banana-cherry-delta`; both work offline. Photos are assigned to the
 Session that was active when they were taken, by the camera's capture time

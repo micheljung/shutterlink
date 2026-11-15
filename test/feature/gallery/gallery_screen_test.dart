@@ -90,7 +90,6 @@ void main() {
     final dependencies = await testDependencies(
       (_) async => client,
       prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
         SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
       },
       sessions: (settings, directory, coordinator) =>

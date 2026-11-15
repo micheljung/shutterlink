@@ -88,10 +88,7 @@ void main() {
     late AppDependencies dependencies;
     final client = await pumpApp(
       tester,
-      prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
-        SettingsRepository.sessionsServerUrlKey: _serverUrl,
-      },
+      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
       token: 'token',
       onDependencies: (built) => dependencies = built,
     );
@@ -196,7 +193,7 @@ void main() {
       () => find.textContaining("can't check tokens").evaluate().isNotEmpty,
     );
     expect(sessions.requests.single.url.path, '/api/auth');
-    expect(settings.state.sessionsEnabled, isFalse);
+    expect(settings.state.sessionsConfigured, isFalse);
     expect(settings.state.sessionsServerUrl, isNull);
 
     await tester.tap(find.text('Save anyway'));
@@ -216,10 +213,7 @@ void main() {
   ) async {
     await pumpApp(
       tester,
-      prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
-        SettingsRepository.sessionsServerUrlKey: _serverUrl,
-      },
+      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
       token: 'wrong',
     );
     await pumpUntil(tester, () => sessions.workers == 1);
@@ -256,10 +250,7 @@ void main() {
     const typed = 'https://other.example.com';
     await pumpApp(
       tester,
-      prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
-        SettingsRepository.sessionsServerUrlKey: _serverUrl,
-      },
+      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
       token: 'token',
     );
     await pumpUntil(tester, () => sessions.workers == 1);
@@ -323,13 +314,10 @@ void main() {
     await pumpUntil(tester, () => uploads.isClosed);
   });
 
-  testWidgets('disconnecting keeps the server URL and token', (tester) async {
+  testWidgets('removing the token keeps the server URL', (tester) async {
     await pumpApp(
       tester,
-      prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
-        SettingsRepository.sessionsServerUrlKey: _serverUrl,
-      },
+      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
       token: 'token',
     );
     await openSessionsSettings(tester);
@@ -338,29 +326,30 @@ void main() {
         .read<SettingsCubit>();
     expect(find.text('photos.example.com'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Disconnect'));
+    await tester.ensureVisible(find.text('Remove token'));
     await tester.pumpAndSettle();
-    await tapAndSettle(tester, 'Disconnect');
+    await tapAndSettle(tester, 'Remove token');
     await tester.tap(
       find.descendant(
         of: find.byType(AlertDialog),
-        matching: find.text('Disconnect'),
+        matching: find.text('Remove token'),
       ),
     );
-    await pumpUntil(tester, () => !settings.state.sessionsEnabled);
+    await pumpUntil(tester, () => !settings.state.sessionsConfigured);
 
     expect(settings.state.sessionsServerUrl, _serverUrl);
-    expect(sessions.fakeCredentials.storedToken, 'token');
-    expect(find.text('Connect Sessions'), findsOneWidget);
+    expect(sessions.fakeCredentials.storedToken, isNull);
+    expect(find.text('photos.example.com'), findsOneWidget);
+    expect(
+      find.text('Enter a server URL and an upload token.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Settings lists all Sessions', (tester) async {
     await pumpApp(
       tester,
-      prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
-        SettingsRepository.sessionsServerUrlKey: _serverUrl,
-      },
+      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
       token: 'token',
     );
     await openSessionsSettings(tester);

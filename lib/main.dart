@@ -88,7 +88,7 @@ Future<void> main() async {
       supportFile(SessionsUploadQueue.fileName),
       uploadDirectory: sessionsUploadDirectory,
     ),
-    credentials: SecureSessionsCredentials(settings),
+    credentials: SecureSessionsCredentials(),
     transport: TunnelTransport(networkStatus, connector: tcpConnector),
     settings: settings,
     ingestCoordinator: ingestCoordinator,

@@ -19,7 +19,7 @@ class SessionsSettingsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SettingsSectionHeader('Sessions'),
-        if (state.sessionsEnabled)
+        if (state.sessionsServerUrl != null)
           SettingsSummaryCard(
             icon: Icons.photo_library_outlined,
             title: host == null || host.isEmpty ? 'Sessions' : host,
@@ -31,8 +31,8 @@ class SessionsSettingsSection extends StatelessWidget {
                 child: const Text('All Sessions'),
               ),
               TextButton(
-                onPressed: () => _disconnect(context),
-                child: const Text('Disconnect'),
+                onPressed: () => _removeToken(context),
+                child: const Text('Remove token'),
               ),
               FilledButton.tonalIcon(
                 onPressed: () =>
@@ -82,17 +82,17 @@ class SessionsSettingsSection extends StatelessWidget {
     ].join(' ');
   }
 
-  Future<void> _disconnect(BuildContext context) async {
+  Future<void> _removeToken(BuildContext context) async {
     final settings = context.read<SettingsCubit>();
     if (await confirmDialog(
       context,
-      title: 'Disconnect Sessions?',
+      title: 'Remove the upload token?',
       content:
           'Photos stop uploading to Sessions. The server address stays '
-          'filled in for when you connect again.',
-      action: 'Disconnect',
+          'filled in for when you add a token again.',
+      action: 'Remove token',
     )) {
-      await settings.setSessionsEnabled(false);
+      await settings.setSessionsToken(null);
     }
   }
 }
