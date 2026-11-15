@@ -20,8 +20,8 @@ disagree with `test/ptpip/fake_camera.dart`, these notes are correct.
 - **New shots:** shooting to the card produces no ObjectAddedEx (0xC181 or
   0xC1A7), even with SetRemoteMode and SetEventMode set. The camera only sends
   0xC185 StorageInfoChanged and the 0xC18B and 0xD11B property changes.
-  Sessions rescans on 0xC185 (the `storageChanged` stream). Auto Upload diffs
-  the newest folder every 2 s and at once on 0xC185.
+  Auto Upload and QR Session diff the newest folder every 2 s and at once on
+  0xC185 (the `storageChanged` stream).
 - **Download speed:** 0.13 MB/s with a weak signal, 3.57 MB/s near the
   router. Speed depends on the signal, not on the app.
 - **Reconnect gap:** after any TCP connection to port 15740 closes, the camera

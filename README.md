@@ -339,7 +339,7 @@ to view and download their photos for 30 days.
    listed under **Sessions** in the mode and under Settings → Sessions.
 4. In QR Session the app reads the camera clock. If the camera does not report
    its time, tap **Sync clock** and take a photo, or tap **Mark now**, take a
-   photo, and confirm it.
+   photo, and confirm it on the next connect.
 
 Photos are collected only in QR Session, and they go only to the Sessions
 server: nothing is saved to the phone or sent to the upload destination. On
