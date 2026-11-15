@@ -15,6 +15,7 @@ import 'package:shutterlink/upload/destination.dart';
 import 'package:shutterlink/upload/upload_queue.dart';
 
 import '../../fakes/fake_camera_client.dart';
+import '../../fakes/fake_periodic_timer.dart';
 import '../../upload/upload_fakes.dart';
 
 /// Answers objectInfo from a script before falling back to the real objects.
@@ -64,7 +65,6 @@ class _ScriptedClient extends FakeCameraClient {
 }
 
 const noRescan = Duration(days: 1);
-const testRescanInterval = Duration(milliseconds: 20);
 
 void main() {
   const destination = Destination(
@@ -84,6 +84,7 @@ void main() {
   late UploadQueue queue;
   late _ScriptedClient client;
   late List<LiveIngestor> ingestors;
+  late FakePeriodicTimers timers;
 
   final cameraKey = cameraKeyOf(FakeCameraClient(const []).deviceInfo);
   String keyOf(CameraObject object) =>
@@ -92,7 +93,6 @@ void main() {
   LiveIngestor ingestor({
     DownloadFormat format = DownloadFormat.both,
     Set<String> baseline = const {},
-    Duration rescanInterval = noRescan,
   }) {
     final created = LiveIngestor(
       client: client,
@@ -102,15 +102,39 @@ void main() {
       queue: queue,
       coordinator: coordinator,
       infoRetryDelay: Duration.zero,
-      rescanInterval: rescanInterval,
+      rescanInterval: noRescan,
+      periodicTimer: timers.create,
     );
     ingestors.add(created);
     return created..start();
   }
 
+  /// Waits on the wall clock, not on a count of event-loop turns, so a loaded
+  /// machine only makes it slower. With [tick] it fires the rescan timer on
+  /// every poll, which the detector coalesces while it is busy.
+  Future<void> eventually(
+    bool Function() condition, {
+    bool tick = false,
+  }) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    while (!condition()) {
+      if (DateTime.now().isAfter(deadline)) fail('condition never became true');
+      if (tick) timers.tick();
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+    }
+  }
+
   Future<void> settle() async {
     await pumpEventQueue();
     await queue.idle;
+  }
+
+  /// Fires [count] rescan ticks, letting each diff and its ingest finish.
+  Future<void> tickAndSettle(int count) async {
+    for (var i = 0; i < count; i++) {
+      timers.tick();
+      await settle();
+    }
   }
 
   setUp(() async {
@@ -131,6 +155,7 @@ void main() {
     await queue.start();
     client = _ScriptedClient([old, jpeg, raw]);
     ingestors = [];
+    timers = FakePeriodicTimers();
   });
 
   tearDown(() async {
@@ -237,7 +262,7 @@ void main() {
     ingestor();
 
     client.emitAdded(1);
-    await until(() => server.files.isNotEmpty);
+    await eventually(() => server.files.isNotEmpty);
 
     expect(client.infoCalls, 3);
   });
@@ -254,7 +279,7 @@ void main() {
     expect(client.infoCalls, LiveIngestor.infoRetries + 1);
 
     await live.catchUp();
-    await until(() => server.files.length == 2);
+    await eventually(() => server.files.length == 2);
     expect(server.files.keys.toSet(), {
       '2026-11-13/IMG_0001.JPG',
       '2026-11-13/IMG_0001.CR3',
@@ -270,31 +295,28 @@ void main() {
     expect(client.infoCalls, 1);
 
     await live.catchUp();
-    await until(() => server.files.isNotEmpty);
+    await eventually(() => server.files.isNotEmpty);
     expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
   });
 
   test('the rescan finds shots the camera never announced', () async {
     final shot = cameraObject(4, 'IMG_0002.JPG', captureDate: date);
-    ingestor(
-      baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)},
-      rescanInterval: testRescanInterval,
-    );
+    ingestor(baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)});
 
     client.objects.add(shot);
-    await until(() => server.files.isNotEmpty);
+    await eventually(() => server.files.isNotEmpty, tick: true);
 
     expect(server.files.keys, ['2026-11-13/IMG_0002.JPG']);
     expect(client.requestedOffsets.keys, [shot.handle]);
   });
 
   test('the rescan asks for each handle once', () async {
-    ingestor(
-      baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)},
-      rescanInterval: testRescanInterval,
+    ingestor(baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)});
+    await eventually(
+      () => client.infoCalls == client.objects.length,
+      tick: true,
     );
-    await until(() => client.infoCalls == client.objects.length);
-    await Future<void>.delayed(testRescanInterval * 3);
+    await tickAndSettle(3);
 
     client.emitAdded(jpeg.handle);
     await settle();
@@ -307,13 +329,10 @@ void main() {
     client.script.addAll(
       List.filled(LiveIngestor.infoRetries + 1, Exception('busy')),
     );
-    ingestor(
-      baseline: {keyOf(old), keyOf(raw)},
-      rescanInterval: testRescanInterval,
-    );
+    ingestor(baseline: {keyOf(old), keyOf(raw)});
 
     client.emitAdded(jpeg.handle);
-    await until(() => server.files.isNotEmpty);
+    await eventually(() => server.files.isNotEmpty, tick: true);
 
     expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
   });
@@ -323,12 +342,9 @@ void main() {
       for (var i = 0; i <= LiveIngestor.infoRetries; i++)
         cameraObject(1, 'IMG_0001.JPG', size: 0, captureDate: date),
     ]);
-    ingestor(
-      baseline: {keyOf(old), keyOf(raw)},
-      rescanInterval: testRescanInterval,
-    );
+    ingestor(baseline: {keyOf(old), keyOf(raw)});
 
-    await until(() => server.files.isNotEmpty);
+    await eventually(() => server.files.isNotEmpty, tick: true);
 
     expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
     expect(client.infoCalls, greaterThan(LiveIngestor.infoRetries + 1));
@@ -336,25 +352,23 @@ void main() {
 
   test('a slow ingest does not pile up rescans behind it', () async {
     client.chunkGate = Completer<void>();
-    ingestor(
-      baseline: {keyOf(old), keyOf(raw)},
-      rescanInterval: testRescanInterval,
-    );
-    await until(() => client.requestedOffsets.isNotEmpty);
+    ingestor(baseline: {keyOf(old), keyOf(raw)});
+    await eventually(() => client.requestedOffsets.isNotEmpty, tick: true);
     final rescans = client.rescans;
 
-    await Future<void>.delayed(testRescanInterval * 5);
+    await tickAndSettle(5);
     expect(client.rescans, rescans);
 
     client.chunkGate!.complete();
     client.chunkGate = null;
-    await until(() => server.files.isNotEmpty);
+    await eventually(() => server.files.isNotEmpty);
   });
 
   test('the rescan stops once the camera disconnects', () async {
-    ingestor(rescanInterval: testRescanInterval);
+    ingestor();
     client.simulateDisconnect();
-    await Future<void>.delayed(testRescanInterval * 3);
+    await pumpEventQueue();
+    await tickAndSettle(3);
 
     expect(client.infoCalls, 0);
   });
@@ -418,7 +432,8 @@ void main() {
         history: history,
         queue: queue,
         coordinator: coordinator,
-        rescanInterval: testRescanInterval,
+        rescanInterval: noRescan,
+        periodicTimer: timers.create,
       );
       ingestors.add(created);
       return created..start();
@@ -426,10 +441,10 @@ void main() {
 
     final first = rescanning();
     client.objects.add(shot);
-    await until(() => server.files.isNotEmpty);
+    await eventually(() => server.files.isNotEmpty, tick: true);
     await first.close();
     await rescanning().catchUp();
-    await Future<void>.delayed(testRescanInterval * 3);
+    await tickAndSettle(3);
 
     expect(client.infoCalls, 1);
   });
@@ -442,23 +457,22 @@ void main() {
       history: history,
       queue: queue,
       coordinator: coordinator,
-      rescanInterval: testRescanInterval,
+      rescanInterval: noRescan,
+      periodicTimer: timers.create,
     );
     ingestors.add(live);
     await live.close();
 
     live.start();
-    await Future<void>.delayed(testRescanInterval * 3);
+    await tickAndSettle(3);
 
+    expect(timers.created, isEmpty);
     expect(client.rescans, 0);
   });
 
   test('the catch-up resolves the handles it lists', () async {
-    ingestor(
-      baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)},
-      rescanInterval: testRescanInterval,
-    ).catchUp();
-    await until(() => client.rescans > 1);
+    ingestor(baseline: {keyOf(old), keyOf(jpeg), keyOf(raw)}).catchUp();
+    await eventually(() => client.rescans > 1, tick: true);
 
     expect(client.infoCalls, 0);
   });
@@ -467,7 +481,7 @@ void main() {
     final live = ingestor();
     client.chunkGate = Completer<void>();
     final catchUp = live.catchUp();
-    await until(() => client.requestedOffsets.isNotEmpty);
+    await eventually(() => client.requestedOffsets.isNotEmpty);
 
     final closed = live.close();
     client.chunkGate!.complete();
@@ -490,7 +504,7 @@ void main() {
     );
     ingestor(format: DownloadFormat.jpeg);
     client.emitAdded(1);
-    await until(() => coordinator.isInFlight(keyOf(jpeg)));
+    await eventually(() => coordinator.isInFlight(keyOf(jpeg)));
 
     final manual = cubit.start(
       client,

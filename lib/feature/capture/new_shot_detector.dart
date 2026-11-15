@@ -2,6 +2,13 @@ import 'dart:async';
 
 import '../../ptpip/camera_client.dart';
 
+/// Starts the repeating timer that triggers a diff. Injectable so tests drive
+/// ticks without waiting on the clock.
+typedef PeriodicTimerFactory = Timer Function(
+  Duration interval,
+  void Function() onTick,
+);
+
 /// Finds shots a camera has taken, as candidate handles only. It does no
 /// objectInfo, no fetch and no format filtering; the consumer does.
 ///
@@ -18,15 +25,20 @@ class NewShotDetector {
     required this._isResolved,
     required this._consumerBusy,
     this._interval = defaultInterval,
-  });
+    PeriodicTimerFactory? periodicTimer,
+  }) : _periodicTimer = periodicTimer ?? _realPeriodicTimer;
 
   static const defaultInterval = Duration(seconds: 2);
+
+  static Timer _realPeriodicTimer(Duration interval, void Function() onTick) =>
+      Timer.periodic(interval, (_) => onTick());
 
   final CameraClient _client;
   final Set<int> _baseline;
   final bool Function(int handle) _isResolved;
   final bool Function() _consumerBusy;
   final Duration _interval;
+  final PeriodicTimerFactory _periodicTimer;
   final _handles = StreamController<int>.broadcast(sync: true);
   final _changed = StreamController<void>.broadcast(sync: true);
   StreamSubscription<int>? _subscription;
@@ -50,7 +62,7 @@ class NewShotDetector {
       if (!_closed) _handles.add(handle);
     });
     _storageSubscription = _client.storageChanged.listen((_) => _trigger());
-    final timer = Timer.periodic(_interval, (_) => _trigger());
+    final timer = _periodicTimer(_interval, _trigger);
     _timer = timer;
     _client.disconnected.then((_) => timer.cancel());
   }
