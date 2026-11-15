@@ -47,6 +47,12 @@ void main() {
       expect('${result.stderr}', contains('Health check failed'));
     });
 
+    test('exits 1, not 64, on an invalid --port', () async {
+      final result = await runServer(['--healthcheck', '--port', 'abc']);
+
+      expect(result.exitCode, 1);
+    });
+
     test('checks a wildcard bind address on loopback', () async {
       final server = await ServerProcess.start(
         dataDir,

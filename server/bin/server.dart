@@ -55,7 +55,11 @@ const Duration _healthcheckTimeout = Duration(seconds: 3);
 /// on loopback.
 Future<int> _healthcheck(String address, String portOption) async {
   final port = int.tryParse(portOption);
-  if (port == null) _usage('Invalid --port');
+  if (port == null) {
+    // A health check only ever reports healthy (0) or not (1).
+    stderr.writeln('Health check failed: invalid --port $portOption');
+    return 1;
+  }
   final host = address == '0.0.0.0' || address == '::' ? '127.0.0.1' : address;
   final client = HttpClient()..connectionTimeout = _healthcheckTimeout;
   try {
@@ -111,10 +115,18 @@ Future<void> main(List<String> arguments) async {
   if (tokenArgument != null && tokenFile != null) {
     _usage('Pass either --upload-token or --upload-token-file, not both.');
   }
+  final String tokenFromFile;
+  try {
+    tokenFromFile = tokenFile != null
+        ? await File(tokenFile).readAsString()
+        : '';
+  } on FileSystemException catch (e) {
+    _usage('Cannot read --upload-token-file: ${e.message} (${e.path})');
+  }
   final token =
       (tokenArgument ??
               (tokenFile != null
-                  ? await File(tokenFile).readAsString()
+                  ? tokenFromFile
                   : Platform.environment[_tokenEnvironment] ?? ''))
           .trim();
   if (token.isEmpty) {

@@ -20,7 +20,7 @@ current=$name
 tmp=$(mktemp -d)
 
 cleanup() {
-  docker rm -f "$name" "$tips_name" >/dev/null 2>&1 || true
+  docker rm -fv "$name" "$tips_name" >/dev/null 2>&1 || true
   docker volume rm "$volume" >/dev/null 2>&1 || true
   rm -rf "$tmp"
 }
@@ -39,8 +39,11 @@ ok() { echo "ok: $*"; }
 start() {
   local container=$1
   shift
+  current=$container
+  # Runs inside $(...), where errexit does not apply: fail explicitly.
   docker run -d --name "$container" -p 127.0.0.1::8080 \
-    -e SHUTTERLINK_UPLOAD_TOKEN="$token" "$@" "$image" >/dev/null
+    -e SHUTTERLINK_UPLOAD_TOKEN="$token" "$@" "$image" >/dev/null ||
+    fail "docker run $image failed"
   local port
   port=$(docker port "$container" 8080/tcp | head -n1 | sed 's/.*://')
   local url="http://127.0.0.1:$port"
@@ -51,7 +54,6 @@ start() {
     fi
     sleep 0.5
   done
-  current=$container
   fail "$container did not answer within 20 s"
 }
 
@@ -59,7 +61,7 @@ start() {
 status() {
   local url=$1
   shift
-  curl -s -o /dev/null -w '%{http_code}' "$@" "$url" || true
+  curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$@" "$url" || true
 }
 
 expect_status() {
@@ -109,12 +111,12 @@ current=$tips_name
 tips_url=$(start "$tips_name" \
   -e SHUTTERLINK_TIPS=$'PayPal=https://example.com/paypal\nTWINT=https://example.com/twint')
 upload "$tips_url"
-page=$(curl -sf "$tips_url/s/$code") || fail "tips gallery did not load"
+page=$(curl -sf --max-time 5 "$tips_url/s/$code") || fail "tips gallery did not load"
 for tip in https://example.com/paypal https://example.com/twint; do
   grep -qF "href=\"$tip\"" <<<"$page" || fail "gallery lacks tip $tip"
 done
 ok "tips from SHUTTERLINK_TIPS shown"
-docker rm -f "$tips_name" >/dev/null
+docker rm -fv "$tips_name" >/dev/null
 current=$name
 
 started=$(date +%s%N)

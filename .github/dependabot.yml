@@ -4,12 +4,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
-  # Base images in server/Dockerfile, pinned by digest. Keep the dart image
-  # on the Dart version bundled with FLUTTER_VERSION.
+  # Base images in server/Dockerfile, pinned by digest. The dart image only
+  # gets digest updates: its version follows the Dart bundled with
+  # FLUTTER_VERSION and is bumped by hand together with it.
   - package-ecosystem: docker
     directory: /server
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: dart
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+          - version-update:semver-patch
   - package-ecosystem: github-actions
     directory: /
     schedule:
