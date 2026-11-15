@@ -37,13 +37,16 @@ class DownloadCubit extends Cubit<DownloadState> {
   final _changedTasks = <int>{};
   CancelToken? _cancelToken;
   String _cameraKey = '';
+  bool _alsoUpload = false;
 
   Future<void> start(
     CameraClient client,
     List<PhotoGroup> groups,
-    DownloadFormat format,
-  ) async {
+    DownloadFormat format, {
+    bool alsoUpload = false,
+  }) async {
     if (state.status == DownloadStatus.running) return;
+    _alsoUpload = alsoUpload;
     await _discardPartialFiles();
     _changedTasks.clear();
     _cameraKey = cameraKeyOf(client.deviceInfo);
@@ -215,23 +218,26 @@ class DownloadCubit extends Cubit<DownloadState> {
         files[object] = await _fetch(client, object, token);
       }
       if (token.isCancelled) throw const TransferCancelledException();
-      final queue = _uploadQueue;
-      if (queue != null && queue.destination != null) {
-        for (final object in pending) {
-          await queue.add(
-            id: _entryKey(object),
-            file: files[object]!,
-            filename: object.filename,
-            kind: object.kind,
-            captureDate: object.captureDate,
-          );
-          await _record([object]);
-        }
-      } else if (pending.isNotEmpty) {
+      if (pending.isNotEmpty) {
+        final queue = _alsoUpload ? _uploadQueue : null;
+        final upload = queue != null && queue.destination != null;
         await _saver.save(
           jpeg: files[task.group.jpeg],
           raw: files[task.group.raw],
+          deleteSources: !upload,
         );
+        if (upload) {
+          for (final object in pending) {
+            await queue.add(
+              id: _entryKey(object),
+              file: files[object]!,
+              filename: object.filename,
+              kind: object.kind,
+              captureDate: object.captureDate,
+              skipGallery: true,
+            );
+          }
+        }
         await _record(pending);
       }
       return null;

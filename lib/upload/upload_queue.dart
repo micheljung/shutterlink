@@ -272,12 +272,17 @@ class UploadQueue {
   /// Moves [file] into staging, saves it to the gallery and queues the
   /// upload. Completes once the gallery copy exists. On failure the item is
   /// dropped so the photo is offered again.
+  ///
+  /// With [skipGallery] the caller has already saved the photo to the
+  /// gallery: the item starts at [UploadState.savedToGallery] without a
+  /// media reference, so the queue only uploads and never deletes the copy.
   Future<UploadItem> add({
     required String id,
     required File file,
     required String filename,
     required CameraObjectKind kind,
     required DateTime? captureDate,
+    bool skipGallery = false,
   }) async {
     await _ready.future;
     final destination = _destination;
@@ -301,10 +306,11 @@ class UploadQueue {
         sha256: (await sha256.bind(staged.openRead()).first).toString(),
         localPath: staged.path,
         destinationFingerprint: destination.fingerprint,
+        state: skipGallery ? UploadState.savedToGallery : UploadState.staged,
       );
       await _put(item);
       try {
-        item = await _saveToGallery(item);
+        if (!skipGallery) item = await _saveToGallery(item);
       } on Object {
         await _remove(id);
         await _deleteStaging(staged.path);

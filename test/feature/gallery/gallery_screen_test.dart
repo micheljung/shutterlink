@@ -12,7 +12,10 @@ import 'package:shutterlink/feature/gallery/gallery_cubit.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
 import 'package:shutterlink/feature/history/download_history_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
+import 'package:shutterlink/feature/settings/upload_setup_screen.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/upload/backend_factory.dart';
+import 'package:shutterlink/upload/destination.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/test_app.dart';
@@ -44,11 +47,11 @@ void main() {
     WidgetTester tester, {
     List<CameraObject> downloaded = const [],
     bool canDelete = true,
-    void Function(AppDependencies dependencies)? onDependencies,
+    FutureOr<void> Function(AppDependencies dependencies)? onDependencies,
   }) async {
     final client = FakeCameraClient(objects, canDelete: canDelete);
     final dependencies = await testDependencies((_) async => client);
-    onDependencies?.call(dependencies);
+    await tester.runAsync(() async => onDependencies?.call(dependencies));
     await tester.runAsync(
       () => dependencies.downloadHistory.record(
         cameraKeyOf(client.deviceInfo),
@@ -318,6 +321,55 @@ void main() {
     );
 
     expect(find.text('1 already downloaded, skipped'), findsOneWidget);
+    expect(saver.saved, [(jpeg: 'IMG_0001.JPG', raw: null)]);
+  });
+
+  testWidgets('download + upload without a destination opens the setup', (
+    tester,
+  ) async {
+    late RecordingPhotoSaver saver;
+    await pumpGallery(
+      tester,
+      onDependencies: (dependencies) =>
+          saver = dependencies.photoSaver as RecordingPhotoSaver,
+    );
+
+    await tester.longPress(find.byType(ThumbnailTile).first);
+    await tester.pump();
+    await tester.tap(find.text('Download + upload'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(UploadSetupScreen), findsOneWidget);
+    expect(find.text('Download finished'), findsNothing);
+    expect(saver.saved, isEmpty);
+  });
+
+  testWidgets('download + upload names the destination and saves', (
+    tester,
+  ) async {
+    late RecordingPhotoSaver saver;
+    await pumpGallery(
+      tester,
+      onDependencies: (dependencies) async {
+        saver = dependencies.photoSaver as RecordingPhotoSaver;
+        await dependencies.destinations.save(
+          const Destination(
+            type: DestinationType.webdav,
+            endpoint: 'https://a.example.com/dav',
+          ),
+          const DestinationSecrets(),
+        );
+      },
+    );
+
+    await tester.longPress(tileOf('IMG_0001'));
+    await tester.pump();
+    await tester.tap(find.text('Download + upload to WebDAV server'));
+    await pumpUntil(
+      tester,
+      () => find.text('Download finished').evaluate().isNotEmpty,
+    );
+
     expect(saver.saved, [(jpeg: 'IMG_0001.JPG', raw: null)]);
   });
 
