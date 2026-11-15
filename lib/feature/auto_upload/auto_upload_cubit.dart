@@ -191,9 +191,11 @@ class AutoUploadCubit extends Cubit<AutoUploadState> {
   }
 
   /// The notification's Stop leaves the mode, with the camera connected.
+  /// With no mode open, a leftover service stops; another mode's Stop is
+  /// that mode's to handle.
   void _onStopRequest() {
     if (_active) return _modes.leave();
-    unawaited(_guard(_service.stop));
+    if (_modes.state == null) unawaited(_guard(_service.stop));
   }
 
   Future<void> _enter() async {
