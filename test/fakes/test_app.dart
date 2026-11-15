@@ -23,6 +23,7 @@ import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_transport.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/live/ingest_coordinator.dart';
+import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/sessions_dependencies.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
@@ -85,6 +86,8 @@ testUploadDependencies(SharedPreferences prefs, Directory root) {
   );
 }
 
+bool _claimsNone(int vendorId) => false;
+
 Future<void> noConnectionTest(
   Destination destination,
   DestinationSecrets secrets,
@@ -135,11 +138,20 @@ SessionsDependencies testSessionsDependencies(
   ),
 );
 
+/// Taps Connect on the connect screen, then picks Browse & Download.
+Future<void> connectAndBrowse(WidgetTester tester) async {
+  await tester.tap(find.text('Connect'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(OperatingMode.browse.label));
+  await tester.pumpAndSettle();
+}
+
 Future<AppDependencies> testDependencies(
   CameraConnector connector, {
   Map<String, Object> prefs = const {},
   SessionsDependenciesFactory sessions = testSessionsDependencies,
   UsbCameraPlatform usb = const NoUsbCameraPlatform(),
+  UsbVendorClaim claimsUsbVendor = _claimsNone,
 }) async {
   SharedPreferences.setMockInitialValues(prefs);
   final preferences = await SharedPreferences.getInstance();
@@ -158,7 +170,7 @@ Future<AppDependencies> testDependencies(
   });
   final upload = testUploadDependencies(preferences, historyDirectory);
   return AppDependencies(
-    claimsUsbVendor: (_) => false,
+    claimsUsbVendor: claimsUsbVendor,
     settings: settings,
     identity: IdentityRepository(preferences),
     hostResolver: CameraHostResolver(settings, wifiGateway: () async => null),

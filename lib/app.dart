@@ -15,13 +15,14 @@ import 'feature/connect/connect_cubit.dart';
 import 'feature/connect/connect_screen.dart';
 import 'feature/connect/connect_state.dart';
 import 'feature/download/download_cubit.dart';
-import 'feature/gallery/gallery_screen.dart';
 import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/history/download_history_cubit.dart';
 import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
 import 'feature/live/live_screen.dart';
 import 'feature/live/live_transfer_cubit.dart';
+import 'feature/mode/mode_cubit.dart';
+import 'feature/mode/mode_host.dart';
 import 'feature/sessions/sessions_cubit.dart';
 import 'feature/sessions/sessions_dependencies.dart';
 import 'feature/sessions/sessions_upload_cubit.dart';
@@ -107,6 +108,7 @@ class ShutterlinkApp extends StatelessWidget {
             usbWatcher: dependencies.usb.watcher,
           ),
         ),
+        BlocProvider(create: (_) => ModeCubit()),
         BlocProvider(
           create: (_) => DownloadCubit(
             saver: dependencies.photoSaver,
@@ -228,32 +230,67 @@ class _SessionsUploadsState extends State<_SessionsUploads>
       );
 }
 
-class _Home extends StatelessWidget {
+class _Home extends StatefulWidget {
   const _Home({required this.usbExperimental});
 
   final bool usbExperimental;
 
   @override
+  State<_Home> createState() => _HomeState();
+}
+
+enum _HomeScreen { connect, modes, live }
+
+class _HomeState extends State<_Home> {
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    final connect = context.read<ConnectCubit>();
+    _lifecycle = AppLifecycleListener(
+      onPause: connect.appPaused,
+      onResume: connect.appResumed,
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  static _HomeScreen _screenOf(ConnectState state) => switch (state) {
+    ConnectConnected() || ConnectReconnecting() => _HomeScreen.modes,
+    ConnectLiveOwned() => _HomeScreen.live,
+    _ => _HomeScreen.connect,
+  };
+
+  /// No camera any more: back to the connect screen, and a fresh connect
+  /// shows the picker again.
+  static bool _lost(ConnectState previous, ConnectState current) =>
+      _screenOf(previous) != _HomeScreen.connect &&
+      switch (current) {
+        ConnectIdle() || ConnectFailed() || ConnectPairingRequired() => true,
+        _ => false,
+      };
+
+  @override
   Widget build(BuildContext context) =>
       BlocConsumer<ConnectCubit, ConnectState>(
-        listenWhen: (previous, current) =>
-            (previous is ConnectConnected || previous is ConnectLiveOwned) &&
-            current.runtimeType != previous.runtimeType,
-        listener: (context, _) =>
-            Navigator.of(context).popUntil((route) => route.isFirst),
+        listenWhen: _lost,
+        listener: (context, _) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          context.read<ModeCubit>().leave();
+        },
         buildWhen: (previous, current) =>
-            (previous is ConnectConnected) != (current is ConnectConnected) ||
-            (previous is ConnectLiveOwned) != (current is ConnectLiveOwned) ||
-            (previous is ConnectConnected &&
-                current is ConnectConnected &&
-                previous.client != current.client),
-        builder: (context, state) => switch (state) {
-          ConnectConnected(:final client) => GalleryScreen(
-            key: ObjectKey(client),
-            client: client,
+            _screenOf(previous) != _screenOf(current),
+        builder: (context, state) => switch (_screenOf(state)) {
+          _HomeScreen.modes => const ModeHost(),
+          _HomeScreen.live => const LiveScreen(),
+          _HomeScreen.connect => ConnectScreen(
+            usbExperimental: widget.usbExperimental,
           ),
-          ConnectLiveOwned() => const LiveScreen(),
-          _ => ConnectScreen(usbExperimental: usbExperimental),
         },
       );
 }

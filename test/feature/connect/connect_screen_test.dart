@@ -143,6 +143,25 @@ void main() {
       ]);
     });
 
+    testWidgets('stops watching in the background and resumes after', (
+      tester,
+    ) async {
+      await showScreen(tester);
+      watcher.calls.clear();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      expect(watcher.calls, ['stop connect']);
+
+      for (final state in [
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      expect(watcher.calls, ['stop connect', 'start connect']);
+    });
+
     testWidgets('says when it connects over USB', (tester) async {
       await showScreen(tester);
 

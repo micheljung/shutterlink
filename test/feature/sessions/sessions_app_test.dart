@@ -9,6 +9,7 @@ import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_worker.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
+import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/clock_sync_banner.dart';
 import 'package:shutterlink/feature/sessions/session_qr_sheet.dart';
 import 'package:shutterlink/feature/sessions/sessions_cubit.dart';
@@ -96,6 +97,11 @@ void main() {
     expect(sessions.workers, 1);
 
     await tester.tap(find.text('Connect'));
+    await pumpUntil(
+      tester,
+      () => find.text(OperatingMode.browse.label).evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text(OperatingMode.browse.label));
     await pumpUntil(
       tester,
       () => find.byType(ClockSyncBanner).evaluate().isNotEmpty,

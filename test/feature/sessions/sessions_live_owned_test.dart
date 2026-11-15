@@ -5,6 +5,7 @@ import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/gallery/gallery_screen.dart';
 import 'package:shutterlink/feature/live/live_screen.dart';
+import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/clock_sync_banner.dart';
 
 import '../../fakes/fake_camera_client.dart';
@@ -43,6 +44,11 @@ void main() {
     await pumpUntil(tester, () => find.text('Connect').evaluate().isNotEmpty);
 
     await tester.tap(find.text('Connect'));
+    await pumpUntil(
+      tester,
+      () => find.text(OperatingMode.browse.label).evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text(OperatingMode.browse.label));
     await pumpUntil(
       tester,
       () => find.textContaining('90 s behind').evaluate().isNotEmpty,

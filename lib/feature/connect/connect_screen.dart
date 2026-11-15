@@ -30,14 +30,22 @@ class ConnectScreen extends StatefulWidget {
 class _ConnectScreenState extends State<ConnectScreen> {
   late final _usbWatcher = context.read<ConnectCubit>().usbWatcher;
 
+  /// In the background the cable needs no watching, so the watch can end.
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
     _usbWatcher.start(ConnectScreen.usbWatchOwner);
+    _lifecycle = AppLifecycleListener(
+      onPause: () => _usbWatcher.stop(ConnectScreen.usbWatchOwner),
+      onResume: () => _usbWatcher.start(ConnectScreen.usbWatchOwner),
+    );
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _usbWatcher.stop(ConnectScreen.usbWatchOwner);
     super.dispose();
   }
