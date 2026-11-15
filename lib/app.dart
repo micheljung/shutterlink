@@ -275,13 +275,19 @@ class _HomeState extends State<_Home> {
         _ => false,
       };
 
+  /// The camera dropped. Pushed screens go, since they would cover the
+  /// overlay and may hold the dead client.
+  static bool _dropped(ConnectState previous, ConnectState current) =>
+      current is ConnectReconnecting && previous is! ConnectReconnecting;
+
   @override
   Widget build(BuildContext context) =>
       BlocConsumer<ConnectCubit, ConnectState>(
-        listenWhen: _lost,
-        listener: (context, _) {
+        listenWhen: (previous, current) =>
+            _lost(previous, current) || _dropped(previous, current),
+        listener: (context, state) {
           Navigator.of(context).popUntil((route) => route.isFirst);
-          context.read<ModeCubit>().leave();
+          if (state is! ConnectReconnecting) context.read<ModeCubit>().leave();
         },
         buildWhen: (previous, current) =>
             _screenOf(previous) != _screenOf(current),
