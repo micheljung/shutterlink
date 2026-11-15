@@ -93,8 +93,9 @@ volumes:
   automatically. For a bind mount, make the directory writable first:
   `chown 10001:10001 /srv/shutterlink`.
 - Compose mounts the `./token` secret with its host owner and mode, so UID
-  10001 must be able to read it: `sudo chown 10001 token && chmod 600 token`.
-  Otherwise the server exits with "Cannot read --upload-token-file".
+  10001 must be able to read it: `chmod 600 token && sudo chown 10001 token`.
+  Otherwise the server exits with "Cannot read --upload-token-file". To read
+  the token back later, use `sudo cat token`.
 - Run one container per data volume (see [Limits](#limits)).
 - The health check runs `/app/server --healthcheck` against port 8080. If
   you change `--port`, override the check too:
