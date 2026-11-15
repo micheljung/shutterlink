@@ -48,6 +48,28 @@ It needs these GitHub Actions settings:
 Keep a backup of the release keystore. Android only installs updates signed
 with the same key, so losing it means every user has to uninstall first.
 
+## Server image on GHCR
+
+[`.github/workflows/docker.yml`](.github/workflows/docker.yml) builds the
+Sessions server image from [`server/Dockerfile`](server/Dockerfile) for
+`linux/amd64` and `linux/arm64`, runs
+[`server/docker/smoke.sh`](server/docker/smoke.sh) on both, and pushes to
+`ghcr.io/micheljung/shutterlink-server`:
+
+| Event | Tags pushed |
+|---|---|
+| `v*` tag, e.g. `v1.2.0` | `1.2.0`, `1.2`, `latest` |
+| Push to `main` | `main`, `sha-<commit>` |
+| Pull request | none, build and smoke test only |
+
+A `v*` tag must match the version name in both `pubspec.yaml` and
+`server/pubspec.yaml`, or the workflow fails before pushing. It logs in with
+the built-in `GITHUB_TOKEN`; no secrets to set up.
+
+The first push creates the package as **private**. Make it public once, or
+nobody can pull it: GitHub → the repository's Packages →
+`shutterlink-server` → Package settings → Change visibility → Public.
+
 ## Submission
 
 Submitted for 1.1.0 in
@@ -59,7 +81,9 @@ up in F-Droid within a few days.
 
 1. Bump `version:` in `pubspec.yaml`, for example `1.1.0+2` → `1.2.0+3`. The
    part before `+` is the version name. The number after `+` is the version
-   code and must always increase.
+   code and must always increase. Set `version:` in `server/pubspec.yaml` to
+   the same version name without the code, for example `1.2.0`; CI fails
+   when the two differ.
 2. Add `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`
    (at most 500 characters).
 3. Merge to `main`.
