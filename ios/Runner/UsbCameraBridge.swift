@@ -75,7 +75,7 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
         enumerating = true
         browseGeneration += 1
         let generation = browseGeneration
-        // Bounds the enumeration in case the browser never says it is done.
+        // Ends the enumeration when no device is plugged in to report.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
           if self.browseGeneration == generation { self.enumerating = false }
         }
@@ -189,6 +189,9 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
 
   func deviceBrowser(_ browser: ICDeviceBrowser, didAdd device: ICDevice, moreComing: Bool) {
     UsbCameraBridge.onMain {
+      // iOS lacks deviceBrowserDidEnumerateLocalDevices; the end of the first
+      // batch marks the end of the cameras already plugged in.
+      defer { if !moreComing { self.enumerating = false } }
       guard let camera = device as? ICCameraDevice else { return }
       let id = self.identifier(of: camera)
       self.cameras[id] = camera
@@ -204,12 +207,6 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
         "enumerated": self.enumerating,
       ])
     }
-  }
-
-  /// Optional in ICDeviceBrowserDelegate: the cameras already plugged in are
-  /// all reported.
-  func deviceBrowserDidEnumerateLocalDevices(_ browser: ICDeviceBrowser) {
-    UsbCameraBridge.onMain { self.enumerating = false }
   }
 
   func deviceBrowser(_ browser: ICDeviceBrowser, didRemove device: ICDevice, moreGoing: Bool) {
