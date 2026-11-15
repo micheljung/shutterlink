@@ -248,6 +248,37 @@ void main() {
     expect((await sessions.repository.active())?.id, isNot(previous.id));
   });
 
+  test('a window that fails to open still runs the mode, and Start new '
+      'can be retried', () async {
+    // A directory where the store writes its temporary file fails saving.
+    final blocker = Directory('${root.path}/sessions.json.tmp')..createSync();
+    cubit = build();
+
+    await enter();
+
+    expect(service.calls.first, 'start');
+    expect(sessions.collectors, 1);
+    await expectLater(cubit.startNew(), completes);
+
+    blocker.deleteSync();
+    await cubit.startNew();
+    expect(await windowOpen(), isTrue);
+  });
+
+  test('a failed Resume clears the prompt', () async {
+    final previous = await sessions.repository.start();
+    await sessions.repository.stop();
+    cubit = build();
+    await enter();
+    expect(cubit.state.resumable?.id, previous.id);
+    final blocker = Directory('${root.path}/sessions.json.tmp')..createSync();
+
+    await expectLater(cubit.resume(), completes);
+
+    expect(cubit.state.resumable, isNull);
+    blocker.deleteSync();
+  });
+
   test('a reconnect collects from the new client only', () async {
     final second = FakeCameraClient([cameraObject(1, 'IMG_0001.JPG')]);
     connections.add(second);

@@ -106,18 +106,30 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     final resumable = state.resumable;
     if (resumable == null || !_active) return;
     _emit(_copy(resumable: () => null));
-    try {
-      await _repository.reactivate(resumable.id);
-    } on ReactivationBlockedException {
-      await _repository.start();
-    }
+    await _openWindow(() async {
+      try {
+        await _repository.reactivate(resumable.id);
+      } on ReactivationBlockedException {
+        await _repository.start();
+      }
+    });
   }
 
   /// Starts a new Session instead of the offered one.
   Future<void> startNew() async {
     if (!_active) return;
     _emit(_copy(resumable: () => null));
-    await _repository.start();
+    await _openWindow(_repository.start);
+  }
+
+  /// A window that fails to open leaves the mode running with none open;
+  /// the screen then offers to open one again.
+  Future<void> _openWindow(Future<void> Function() open) async {
+    try {
+      await open();
+    } on Exception {
+      // Shown as no open window.
+    }
   }
 
   /// A window left open by a crash or a kill collects nothing any more.
@@ -148,13 +160,16 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     final session = ++_session;
     _emit(const QrSessionState(active: true));
     await _cleanup;
-    final resumable = await _resumable();
+    await _openWindow(() async {
+      final resumable = await _resumable();
+      if (!_isCurrent(session)) return;
+      if (resumable == null) {
+        await _repository.start();
+      } else {
+        _emit(_copy(resumable: () => resumable));
+      }
+    });
     if (!_isCurrent(session)) return;
-    if (resumable == null) {
-      await _repository.start();
-    } else {
-      _emit(_copy(resumable: () => resumable));
-    }
     final permitted = await _notificationsPermitted();
     if (!_isCurrent(session)) return;
     _emit(_copy(notificationsDenied: permitted ? null : true));
