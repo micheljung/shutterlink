@@ -145,6 +145,7 @@ class UsbContainerReader {
         payloadRead = true;
         if (_payloadFilled == payload.length) {
           done.add(_finish(payload));
+          payloadRead = false;
         }
       }
     }
