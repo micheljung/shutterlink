@@ -119,7 +119,8 @@ class ConnectCubit extends Cubit<ConnectState> {
     switch (previous) {
       case ConnectConnected(:final client, :final target):
         await client.close();
-        if (target is! UsbTarget) await _unbind();
+        // A Wi-Fi tap during the close holds the binding by now.
+        if (target is! UsbTarget) await _releaseStale();
       case ConnectConnecting(usb: false) || ConnectChooseCamera():
         await _unbind();
       default:

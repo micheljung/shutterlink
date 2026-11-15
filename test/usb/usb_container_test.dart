@@ -139,7 +139,41 @@ void main() {
     expect(reader.add(Uint8List(0)).single.payload, payload);
   });
 
+  test('a container may end inside a short transfer with the response', () {
+    final reader = UsbContainerReader();
+    final data = _dataContainer(patternBytes(1000));
+    final tail = _concat([
+      Uint8List.sublistView(data, 512),
+      UsbContainer.withParams(UsbContainerType.response, 0x2001, 7).encode(),
+    ]);
+    expect(reader.add(Uint8List.sublistView(data, 0, 512)), isEmpty);
+    expect(reader.add(tail).map((c) => c.type), [
+      UsbContainerType.data,
+      UsbContainerType.response,
+    ]);
+  });
+
   group('rejects', () {
+    test('a short transfer inside a container', () {
+      final data = _dataContainer(patternBytes(2000));
+      final reader = UsbContainerReader();
+      expect(reader.add(Uint8List.sublistView(data, 0, 512)), isEmpty);
+      expect(
+        () => reader.add(Uint8List.sublistView(data, 512, 612)),
+        throwsA(isA<PtpProtocolException>()),
+      );
+    });
+
+    test('a zero-length packet inside a container', () {
+      final data = _dataContainer(patternBytes(2000));
+      final reader = UsbContainerReader();
+      expect(reader.add(Uint8List.sublistView(data, 0, 1024)), isEmpty);
+      expect(
+        () => reader.add(Uint8List(0)),
+        throwsA(isA<PtpProtocolException>()),
+      );
+    });
+
     test('data larger than the limit', () {
       final header = ByteData(usbContainerHeaderSize)
         ..setUint32(0, 1000 + usbContainerHeaderSize + 1, Endian.little)

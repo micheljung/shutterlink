@@ -49,11 +49,18 @@ class FakeUsbPipe implements UsbBulkPipe {
   /// exactly at the requested length on a packet boundary.
   final bool zlpOnExactMultiple;
 
-  /// Unplug once this many IN bytes were delivered.
+  /// Unplug once this many IN bytes, rounded down to whole packets, were
+  /// delivered.
   final int? unplugAfterBytes;
 
-  /// After this many IN bytes, [bulkIn] never completes until [close].
+  /// After this many IN bytes, rounded down to whole packets, [bulkIn] never
+  /// completes until [close].
   final int? stallAfterBytes;
+
+  /// A cable pull or stall interrupts on a packet boundary, so a cut read is
+  /// never mistaken for a short packet ending the transfer.
+  int? _packets(int? bytes) =>
+      bytes == null ? null : bytes - bytes % maxPacketSize;
 
   /// Device Reset (0x66) stalls, so the host must Cancel (0x64) instead.
   final bool resetStalls;
@@ -165,12 +172,12 @@ class FakeUsbPipe implements UsbBulkPipe {
         _zeroLengthPending = false;
         return const UsbZeroLength();
       }
-      final unplugAt = unplugAfterBytes;
+      final unplugAt = _packets(unplugAfterBytes);
       if (unplugAt != null && bytesDelivered >= unplugAt) {
         unplug();
         continue;
       }
-      final stall = stallAfterBytes;
+      final stall = _packets(stallAfterBytes);
       if (_transfers.isEmpty || stall != null && bytesDelivered >= stall) {
         await (_dataArrived = Completer<void>()).future;
         continue;
@@ -182,7 +189,10 @@ class FakeUsbPipe implements UsbBulkPipe {
   UsbRead _take(int maxLength) {
     final transfer = _transfers.first;
     var length = min(maxLength, transfer.remaining);
-    for (final limit in [stallAfterBytes, unplugAfterBytes]) {
+    for (final limit in [
+      _packets(stallAfterBytes),
+      _packets(unplugAfterBytes),
+    ]) {
       if (limit != null) {
         length = min(length, limit - bytesDelivered);
       }
