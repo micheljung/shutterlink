@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../ptpip/camera_client.dart';
+import '../auto_upload/auto_upload_screen.dart';
 import '../connect/connect_cubit.dart';
 import '../connect/connect_state.dart';
 import '../download/download_cubit.dart';
@@ -74,7 +75,7 @@ class _ModeHostState extends State<ModeHost> {
           key: ObjectKey(client),
           client: client,
         ),
-        OperatingMode.autoUpload ||
+        OperatingMode.autoUpload => const AutoUploadScreen(),
         OperatingMode.qrSession => ModePlaceholderScreen(mode: mode),
       };
 }

@@ -69,11 +69,6 @@ class ConnectReconnecting extends ConnectState {
   List<Object?> get props => [unreachable, userActionNeeded, usb];
 }
 
-/// Live transfer owns the camera connection and the Wi-Fi binding.
-class ConnectLiveOwned extends ConnectState {
-  const ConnectLiveOwned();
-}
-
 class ConnectPairingRequired extends ConnectState {
   const ConnectPairingRequired();
 }

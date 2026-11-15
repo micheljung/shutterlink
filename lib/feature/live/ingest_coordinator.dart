@@ -1,8 +1,9 @@
 import 'dart:async';
 
 /// Serializes ingest work per download history entry key, so a manual
-/// download and a Live ingest of the same file never run at once. A later
-/// requester waits for the earlier one and then re-checks what is left.
+/// download and an Auto Upload ingest of the same file never run at once. A
+/// later requester waits for the earlier one and then re-checks what is
+/// left.
 class IngestCoordinator {
   final _inFlight = <String, Future<void>>{};
 

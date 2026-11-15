@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -10,7 +9,6 @@ import '../download/download_cubit.dart';
 import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
-import '../live/live_transfer_cubit.dart';
 import '../mode/modes_button.dart';
 import '../sessions/active_session_indicator.dart';
 import '../sessions/clock_sync_banner.dart';
@@ -61,9 +59,6 @@ class _GalleryView extends StatelessWidget {
     final format = context.select<SettingsCubit, DownloadFormat>(
       (cubit) => cubit.state.format,
     );
-    final uploads = context.select<UploadSettingsCubit, bool>(
-      (cubit) => cubit.state.destination != null,
-    );
     final sessionsConfigured = context.select<SettingsCubit, bool>(
       (cubit) => cubit.state.sessionsConfigured,
     );
@@ -78,14 +73,6 @@ class _GalleryView extends StatelessWidget {
               : '${state.selected.length} selected',
         ),
         actions: [
-          if (uploads && defaultTargetPlatform == TargetPlatform.android)
-            IconButton(
-              tooltip: 'Start Live transfer',
-              icon: const Icon(Icons.sensors),
-              onPressed: state.deleting
-                  ? null
-                  : context.read<LiveTransferCubit>().start,
-            ),
           const UploadStatusIndicator(),
           if (client.canDelete && state.selected.isNotEmpty)
             IconButton(

@@ -8,7 +8,7 @@ import '../capture/new_shot_detector.dart';
 import '../download/object_fetcher.dart';
 import 'ingest_coordinator.dart';
 
-/// The card as it was when Live started.
+/// The card as it was when Auto Upload started.
 class LiveBaseline {
   const LiveBaseline({required this.keys, this.handles = const {}});
 

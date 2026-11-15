@@ -19,7 +19,7 @@ import 'package:shutterlink/usb/usb_pipe.dart';
 
 import '../fakes/fake_ptp_device.dart';
 import '../fakes/fake_usb_camera_watcher.dart' show claimsCanonOnly;
-import '../feature/live/live_transfer_cubit_test.dart' show RecordingBinder;
+import '../fakes/recording_binder.dart' show RecordingBinder;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

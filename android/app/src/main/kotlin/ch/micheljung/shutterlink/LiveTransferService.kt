@@ -18,7 +18,7 @@ import android.os.PowerManager
  * Dart keeps transferring with the screen off or the app swiped away.
  */
 class LiveTransferService : Service() {
-    data class Status(val text: String)
+    data class Status(val title: String, val text: String)
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -95,7 +95,7 @@ class LiveTransferService : Service() {
         var isRunning = false
             private set
 
-        private var status = Status(text = "")
+        private var status = Status(title = "", text = "")
         private var inForeground = false
         private var stopPending = false
 
@@ -163,7 +163,11 @@ class LiveTransferService : Service() {
             }
             return builder
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
-                .setContentTitle(context.applicationInfo.loadLabel(context.packageManager))
+                .setContentTitle(
+                    status.title.ifEmpty {
+                        context.applicationInfo.loadLabel(context.packageManager)
+                    },
+                )
                 .setContentText(status.text)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
