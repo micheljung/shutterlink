@@ -82,9 +82,10 @@ class SpySessionsDependencies extends SessionsDependencies {
   @override
   SessionCollector createCollector(
     CameraClient client,
-    ClockSyncCubit clockSync,
-  ) {
+    ClockSyncCubit clockSync, {
+    required Set<int> baseline,
+  }) {
     collectors++;
-    return super.createCollector(client, clockSync);
+    return super.createCollector(client, clockSync, baseline: baseline);
   }
 }

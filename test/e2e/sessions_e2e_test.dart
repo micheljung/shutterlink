@@ -170,6 +170,7 @@ void main() {
       seen: seen,
       queue: queue,
       uploadDirectory: Directory(p.join(root.path, 'app', 'upload')),
+      baseline: (await cameraClient.newestFolderHandles()).toSet(),
       clock: clock,
       delay: (_) async {},
       timer: (_, _) => _IdleTimer(),

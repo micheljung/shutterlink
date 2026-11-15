@@ -62,10 +62,13 @@ class SessionsDependencies {
     clock: clock,
   );
 
+  /// [baseline] is the newest folder's handles at attach; new shots are
+  /// looked for among the others.
   SessionCollector createCollector(
     CameraClient client,
-    ClockSyncCubit clockSync,
-  ) => SessionCollector(
+    ClockSyncCubit clockSync, {
+    required Set<int> baseline,
+  }) => SessionCollector(
     client: client,
     cameraKey: cameraKeyOf(client.deviceInfo),
     clockSync: clockSync,
@@ -73,6 +76,7 @@ class SessionsDependencies {
     seen: seen,
     queue: queue,
     uploadDirectory: uploadDirectory,
+    baseline: baseline,
     coordinator: ingestCoordinator,
     stagedFileOf: stagedFileOf,
     clock: clock,

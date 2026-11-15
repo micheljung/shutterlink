@@ -19,6 +19,14 @@ import '../../fakes/recording_binder.dart';
 import '../../fakes/spy_sessions_dependencies.dart';
 import '../../upload/upload_fakes.dart';
 
+class _UnreadableClient extends FakeCameraClient {
+  _UnreadableClient() : super(const []);
+
+  @override
+  Future<List<int>> newestFolderHandles() =>
+      Future.error(const PtpResponseException(0x1008, 0x2019));
+}
+
 /// Waits in real time, since the Sessions stores write files.
 Future<void> _until(FutureOr<bool> Function() condition) async {
   final deadline = DateTime.now().add(const Duration(seconds: 20));
@@ -256,5 +264,24 @@ void main() {
     expect(sessions.collectors, 2);
     expect(sessions.clockSyncs, 2);
     expect(await windowOpen(), isTrue);
+  });
+
+  test('a failed read of the card closes the client, so the camera '
+      'reconnects', () async {
+    final unreadable = _UnreadableClient();
+    final second = FakeCameraClient(const []);
+    connections.addAll([unreadable, second]);
+    cubit = build();
+    await enter();
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    await fire();
+    await _until(() => unreadable.closed);
+
+    expect(cubit.state.client, isNull);
+    expect(sessions.collectors, 1);
+    await fire();
+    await _until(() => cubit.state.client == second);
+    expect(sessions.collectors, 2);
   });
 }
