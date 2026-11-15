@@ -9,7 +9,7 @@ import ImageCaptureCore
 /// Methods: `start` and `stop` browse for cameras, `requestPermission` asks for
 /// control authorization (app-wide on iOS), `open{deviceName}` opens a session,
 /// `send{bytes}` runs one transaction and returns `{data, response}`, and
-/// `close` closes the session. Events: `attached{device}`,
+/// `close` closes the session. Events: `attached{device, enumerated}`,
 /// `detached{deviceName}`, `closed{deviceName}` and `interrupt{bytes}`.
 final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDelegate,
   ICDeviceDelegate
@@ -19,6 +19,9 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
 
   private let browser = ICDeviceBrowser()
   private var browsing = false
+  /// While true, added cameras were already plugged in when browsing started.
+  private var enumerating = false
+  private var browseGeneration = 0
   private var sink: FlutterEventSink?
   private var authorized = false
   /// Cameras the browser reported, by the id Dart knows them by.
@@ -62,12 +65,20 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
     case "start":
       if !browsing {
         browsing = true
+        enumerating = true
+        browseGeneration += 1
+        let generation = browseGeneration
+        // Bounds the enumeration in case the browser never says it is done.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+          if self.browseGeneration == generation { self.enumerating = false }
+        }
         browser.start()
       }
       result(nil)
     case "stop":
       if browsing {
         browsing = false
+        enumerating = false
         browser.stop()
       }
       // Unplugs go unreported while not browsing; the next start reports
@@ -165,8 +176,15 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
           "product": camera.name ?? "USB camera",
           "hasPermission": self.authorized,
         ] as [String: Any],
+        "enumerated": self.enumerating,
       ])
     }
+  }
+
+  /// Optional in ICDeviceBrowserDelegate: the cameras already plugged in are
+  /// all reported.
+  func deviceBrowserDidEnumerateLocalDevices(_ browser: ICDeviceBrowser) {
+    UsbCameraBridge.onMain { self.enumerating = false }
   }
 
   func deviceBrowser(_ browser: ICDeviceBrowser, didRemove device: ICDevice, moreGoing: Bool) {

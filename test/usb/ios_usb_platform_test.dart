@@ -1,6 +1,14 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shutterlink/camera_connector.dart';
+import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/identity_repository.dart';
+import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/connect/connect_cubit.dart';
+import 'package:shutterlink/feature/connect/connect_state.dart';
 import 'package:shutterlink/ptp/camera_client.dart';
+import 'package:shutterlink/ptp/ptp_camera_client.dart';
 import 'package:shutterlink/usb/ios_usb_platform.dart';
 import 'package:shutterlink/usb/usb_camera_client.dart';
 import 'package:shutterlink/usb/usb_camera_platform.dart';
@@ -8,6 +16,8 @@ import 'package:shutterlink/usb/usb_container.dart';
 import 'package:shutterlink/usb/usb_pipe.dart';
 
 import '../fakes/fake_ptp_device.dart';
+import '../fakes/fake_usb_camera_watcher.dart' show claimsCanonOnly;
+import '../feature/live/live_transfer_cubit_test.dart' show RecordingBinder;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -104,7 +114,7 @@ void main() {
       final watcher = platform.watcher;
       final attached = <UsbCameraRef>[];
       final detached = <UsbCameraRef>[];
-      watcher.attached.listen(attached.add);
+      watcher.attached.listen((a) => attached.add(a.device));
       watcher.detached.listen(detached.add);
       await attach();
       await emit({'type': 'attached', 'device': camera});
@@ -118,9 +128,27 @@ void main() {
       expect(detached, [cameraRef]);
     });
 
+    test('marks cameras plugged in before browsing as enumerated', () async {
+      final attached = <UsbAttachment>[];
+      platform.watcher.attached.listen(attached.add);
+      platform.watcher.start('connect');
+      await pumpEventQueue();
+      await emit({'type': 'attached', 'device': camera, 'enumerated': true});
+      await emit({
+        'type': 'attached',
+        'device': {...camera, 'deviceName': 'second', 'productId': 1},
+      });
+
+      expect(attached.map((a) => a.enumerated), [true, false]);
+    });
+
+    test('is experimental', () {
+      expect(platform.isExperimental, isTrue);
+    });
+
     test('names a camera without a product name', () async {
       final attached = <UsbCameraRef>[];
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.listen((a) => attached.add(a.device));
       platform.watcher.start('connect');
       await pumpEventQueue();
       await emit({
@@ -133,7 +161,7 @@ void main() {
 
     test('reports cameras again after browsing restarts', () async {
       final attached = <UsbCameraRef>[];
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.listen((a) => attached.add(a.device));
       await attach();
       platform.watcher.stop('connect');
       await attach();
@@ -144,7 +172,7 @@ void main() {
     test('keeps the open camera when browsing stops', () async {
       final attached = <UsbCameraRef>[];
       final detached = <UsbCameraRef>[];
-      platform.watcher.attached.listen(attached.add);
+      platform.watcher.attached.listen((a) => attached.add(a.device));
       platform.watcher.detached.listen(detached.add);
       await attach();
       final passthrough = await openPassthrough();
@@ -357,8 +385,8 @@ void main() {
     });
   });
 
-  test('connects a client through the bridge', () async {
-    final device = FakePtpDevice();
+  /// Answers `send` from a fake camera, as ImageCaptureCore would.
+  void answerFrom(FakePtpDevice device) {
     answers['send'] = (call) {
       final command = UsbContainerReader()
           .add((call.arguments as Map)['bytes'] as Uint8List)
@@ -375,6 +403,10 @@ void main() {
         ).encode(),
       };
     };
+  }
+
+  test('connects a client through the bridge', () async {
+    answerFrom(FakePtpDevice());
     final watcher = await attach();
     expect(await watcher.requestPermission(cameraRef), UsbPermission.granted);
 
@@ -389,5 +421,37 @@ void main() {
       client.listPhotos(),
       throwsA(isA<CameraDisconnectedException>()),
     );
+  });
+
+  test('a plugged-in camera connects through ConnectCubit (C3)', () async {
+    answerFrom(FakePtpDevice());
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final binder = RecordingBinder();
+    final cubit = ConnectCubit(
+      connector: cameraConnector(usb: platform),
+      identity: IdentityRepository(prefs),
+      hostResolver: CameraHostResolver(
+        SettingsRepository(prefs),
+        wifiGateway: () async => null,
+      ),
+      networkBinder: binder,
+      claimsUsbVendor: claimsCanonOnly,
+      usbWatcher: platform.watcher,
+      discovery: () async => const [],
+    );
+    addTearDown(cubit.close);
+    final connected = cubit.stream.firstWhere((s) => s is ConnectConnected);
+
+    await attach();
+    final state = await connected as ConnectConnected;
+    addTearDown(state.client.close);
+
+    expect(methods().take(3), ['start', 'requestPermission', 'open']);
+    expect(methods().skip(3).toSet(), {'send'});
+    expect(state.target, isA<UsbTarget>());
+    expect((state.target! as UsbTarget).device, cameraRef);
+    expect((state.client as PtpCameraClient).profileId, 'canon-eos');
+    expect(binder.calls, isEmpty);
   });
 }

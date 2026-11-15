@@ -18,6 +18,10 @@ class IosUsbPlatform implements UsbCameraPlatform {
   @override
   late final IosUsbCameraWatcher watcher;
 
+  /// Built without a device to try it on.
+  @override
+  bool get isExperimental => true;
+
   StreamSubscription<Object?>? _events;
   IosUsbPassthrough? _passthrough;
 
@@ -53,7 +57,10 @@ class IosUsbPlatform implements UsbCameraPlatform {
     final map = (event! as Map).cast<String, Object?>();
     switch (map['type']) {
       case 'attached':
-        watcher._attach((map['device']! as Map).cast<String, Object?>());
+        watcher._attach(
+          (map['device']! as Map).cast<String, Object?>(),
+          enumerated: map['enumerated'] == true,
+        );
       case 'detached':
         final deviceName = map['deviceName']! as String;
         _endIfOpen(deviceName);
@@ -76,7 +83,7 @@ class IosUsbCameraWatcher implements UsbCameraWatcher {
   IosUsbCameraWatcher._(this._platform);
 
   final IosUsbPlatform _platform;
-  late final _attached = StreamController<UsbCameraRef>.broadcast(
+  late final _attached = StreamController<UsbAttachment>.broadcast(
     onListen: _platform._listen,
   );
   late final _detached = StreamController<UsbCameraRef>.broadcast(
@@ -89,13 +96,13 @@ class IosUsbCameraWatcher implements UsbCameraWatcher {
   bool _authorized = false;
 
   @override
-  Stream<UsbCameraRef> get attached => _attached.stream;
+  Stream<UsbAttachment> get attached => _attached.stream;
 
   @override
   Stream<UsbCameraRef> get detached => _detached.stream;
 
   /// The first owner starts the browser, which reports the cameras already
-  /// plugged in as `attached` events.
+  /// plugged in as `attached` events marked `enumerated`.
   @override
   void start(String owner) {
     final first = _owners.isEmpty;
@@ -150,7 +157,7 @@ class IosUsbCameraWatcher implements UsbCameraWatcher {
     }
   }
 
-  void _attach(Map<String, Object?> device) {
+  void _attach(Map<String, Object?> device, {required bool enumerated}) {
     final deviceName = device['deviceName']! as String;
     if (device['hasPermission'] == true) _authorized = true;
     if (_devices.containsKey(deviceName)) return;
@@ -161,7 +168,7 @@ class IosUsbCameraWatcher implements UsbCameraWatcher {
       name: device['product'] as String? ?? 'USB camera',
     );
     _devices[deviceName] = ref;
-    _attached.add(ref);
+    _attached.add(UsbAttachment(ref, enumerated: enumerated));
   }
 
   void _detach(String deviceName) {

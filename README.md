@@ -1,7 +1,8 @@
 # Shutterlink
 
 Download JPEG and CR3 photos from a Canon EOS R to your phone over the
-camera's own Wi-Fi. No cloud of ours, no Canon app, just PTP/IP written in pure Dart.
+camera's own Wi-Fi or a USB cable. No cloud of ours, no Canon app, just PTP
+written in pure Dart.
 Optionally upload to your own WebDAV/S3/SFTP server or Immich.
 
 [![CI](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml/badge.svg)](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml)
@@ -80,6 +81,8 @@ Early. Be aware of what has and hasn't been verified:
   router. Its camera clock is read from Canon's camera-time property. After a
   connection closes, the camera is unreachable for about 15 seconds. The app
   itself has **not yet been run on physical Android or iOS devices**.
+- USB is tested against emulated cameras only; it has not been tried with a
+  real camera yet.
 - The Android release APK builds, and CI checks it on every push. The **iOS
   build has not been compiled yet**; the Swift code (RAW save to Photos) is
   untested.
@@ -92,6 +95,7 @@ Reports from real hardware are very welcome.
 |---|---|
 | Canon EOS R | Protocol verified with the probe CLI (firmware 3-1.8.0); app untested on hardware |
 | Other Canon EOS bodies with Wi-Fi "Remote control (EOS Utility)" | Untested; may work |
+| Other PTP cameras | Basic support: JPEG only, no instant new-shot events (Live and Sessions find new shots by re-scanning) |
 
 ## Camera setup
 
@@ -112,6 +116,22 @@ saved connection under **Remote control (EOS Utility)**, press **OK** at
 **Start pairing devices**, then tap **Connect** and confirm **"Shutterlink"**.
 The EOS R also asks for this OK after it has left the network, for example
 after auto power off.
+
+## Connect over USB
+
+1. Plug the camera into the phone with a USB cable and switch it on.
+2. **Android:** allow Shutterlink to access the camera. Tick **Always open**,
+   so that Live can reconnect on its own after a re-plug; without it, the
+   notification asks you to open the app. Shutterlink goes straight to the
+   gallery, and Live keeps running over the cable.
+3. **iOS (experimental):** allow Shutterlink to control the camera. This uses
+   ImageCaptureCore and has not been verified on hardware.
+
+No Wi-Fi, pairing or camera address is needed. Plugging in a Canon camera
+takes over a Wi-Fi connection, and tapping **Connect** takes it back. Other USB
+devices, such as a phone in photo transfer mode, connect only when nothing
+else is connected, and a camera that was already plugged in when the app
+started never takes over.
 
 ## Install
 
@@ -217,12 +237,29 @@ sequenceDiagram
     end
 ```
 
+Over USB the same PTP operations travel in USB containers instead of PTP/IP
+packets: through the bulk endpoints on Android (`lib/usb/`), and as whole
+transactions through ImageCaptureCore on iOS.
+
+### Adding a camera model
+
+Vendor behaviour lives in a camera profile: Canon's is in `lib/ptp/canon/`.
+A new maker or model is one profile file plus one entry in
+`lib/ptp/profile_registry.dart`. A camera no profile matches still works
+through the generic PTP profile. The Android USB filter
+(`android/app/src/main/res/xml/usb_device_filter.xml`) matches the PTP
+still-image class, so a new maker's camera needs no edit there, unless you
+want Android to launch Shutterlink for that vendor specifically.
+
 ## Project structure
 
 ```
 bin/probe.dart          Command-line protocol probe
 lib/
-  ptpip/                PTP/IP client in pure Dart (packets, sockets, session, Canon ops)
+  ptp/                  Transport-independent PTP: session, client, camera profiles
+  ptp/canon/            Canon EOS profile
+  ptpip/                PTP/IP transport in pure Dart (packets, sockets)
+  usb/                  PTP over USB, and the Android and iOS USB bridges
   data/                 Settings, pairing identity, network binding, SSDP discovery,
                         download history, photo saving
   feature/
@@ -328,7 +365,7 @@ to view and download their photos for 30 days.
 
 ## Limitations and roadmap
 
-- Wi-Fi only; no USB.
+- USB on iOS is experimental and has not been verified on hardware.
 - Photos only; videos are hidden.
 - No Canon CCAPI support.
 - No remote shooting or live view.
