@@ -379,6 +379,17 @@ void main() {
     expect(modes.state, isNull);
   });
 
+  test("another mode's stop request is left to that mode", () async {
+    modes.select(OperatingMode.qrSession);
+    await pumpEventQueue();
+
+    service.stopController.add(null);
+    await pumpEventQueue();
+
+    expect(service.calls, isEmpty);
+    expect(modes.state, OperatingMode.qrSession);
+  });
+
   test('runs without notifications and says so', () async {
     service.permitted = false;
 
