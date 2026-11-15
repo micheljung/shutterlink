@@ -8,7 +8,6 @@ import 'package:uuid/uuid.dart';
 import '../../data/cr3_preview.dart';
 import '../../data/session_repository.dart';
 import '../../data/session_seen_store.dart';
-import '../../data/sessions_prefetch.dart';
 import '../../data/sessions_upload_queue.dart';
 import '../../data/upload_worker.dart';
 import '../../ptpip/camera_client.dart';
@@ -40,7 +39,6 @@ class SessionCollector {
     required this._uploadDirectory,
     IngestCoordinator? coordinator,
     this._stagedFileOf,
-    this._prefetch,
     this._isBusy = _neverBusy,
     this._clock = const Clock(),
     this._delay = _yield,
@@ -59,7 +57,6 @@ class SessionCollector {
   final Directory _uploadDirectory;
   final IngestCoordinator _coordinator;
   final StagedFileOf? _stagedFileOf;
-  final SessionsPrefetch? _prefetch;
   final bool Function() _isBusy;
   final Clock _clock;
   final Delay _delay;
@@ -173,21 +170,13 @@ class SessionCollector {
     final listed = _keysOf(groups);
     await _seen.pruneExcluded(_cameraKey, listed);
     final seen = await _seen.states();
-    final prefetched = await _prefetch?.keys() ?? const <String>{};
     var first = true;
     for (final group in groups.reversed) {
       if (_disposed || _cancel.isCancelled) return;
       final keys = _keysOf([group]);
-      final unused = keys.intersection(prefetched);
-      if (keys.any(seen.containsKey)) {
-        await _prefetch?.discard(unused);
-        continue;
-      }
+      if (keys.any(seen.containsKey)) continue;
       final session = await _sessionFor(group, clockState.offset);
-      if (session == null) {
-        await _prefetch?.discard(unused);
-        continue;
-      }
+      if (session == null) continue;
       if (!first) await _delay(collectorYield);
       first = false;
       if (_isBusy()) return;
@@ -195,7 +184,6 @@ class SessionCollector {
       if (file == null) continue;
       await _queue.enqueue(sessionCode: session.code, file: file);
       await _seen.markQueued(_cameraKey, keys);
-      await _prefetch?.discard(unused);
     }
     await _seen.setBaseline(_cameraKey, listed);
   }
@@ -223,11 +211,7 @@ class SessionCollector {
     );
     try {
       final jpeg = group.jpeg;
-      if (jpeg != null &&
-          (await _takePrefetched(jpeg, file) ||
-              await _copyStaged(jpeg, file))) {
-        return file;
-      }
+      if (jpeg != null && await _copyStaged(jpeg, file)) return file;
       if (jpeg != null) {
         final sink = file.openWrite();
         try {
@@ -254,14 +238,6 @@ class SessionCollector {
       rethrow;
     }
   }
-
-  Future<bool> _takePrefetched(CameraObject jpeg, File target) async =>
-      await _prefetch?.take(
-        SessionSeenStore.keyOf(_cameraKey, jpeg),
-        jpeg.size,
-        target,
-      ) ??
-      false;
 
   /// Reuses a JPEG auto-upload already took off the camera, so it is not
   /// downloaded twice. A staging file of another size is still being written
