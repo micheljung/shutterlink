@@ -25,7 +25,7 @@ class QrSessionScreen extends StatelessWidget {
   static const sessionsTooltip = 'Sessions';
   static const markNowTooltip = 'Mark now for clock sync';
   static const markedText =
-      'Marked. Take a photo now; it sets the camera clock.';
+      'Marked. Take a photo now, then connect the camera.';
   static const notificationsHint =
       'Notifications are off, so the mode only shows here.';
   static const closedText = 'No Session window is open.';
