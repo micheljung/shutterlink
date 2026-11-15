@@ -387,6 +387,27 @@ void main() {
     expect(cubit.state.notificationsDenied, isTrue);
   });
 
+  test('an iPhone stays awake while the mode is open', () async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = PlatformLiveService.idleTimerChannel;
+    final disabled = <Object?>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      disabled.add(call.arguments);
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await cubit.close();
+    cubit = build(PlatformLiveService(isAndroid: false, isIOS: true));
+
+    await enter();
+    expect(disabled, [true]);
+    modes.leave();
+    await pumpEventQueue();
+
+    expect(disabled, [true, false]);
+  });
+
   test('AC4: the notification follows ingest, upload and reconnect', () async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

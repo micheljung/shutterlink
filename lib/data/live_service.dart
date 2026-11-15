@@ -54,31 +54,54 @@ abstract interface class LiveService {
   Stream<void> get stopRequests;
 }
 
-/// Android foreground service bridge. Other platforms keep no service.
+/// Android foreground service bridge. iOS keeps no service, since the app
+/// is suspended in the background; it keeps the screen on instead.
 class PlatformLiveService implements LiveService {
-  PlatformLiveService({bool? isAndroid})
-    : _isAndroid = isAndroid ?? Platform.isAndroid {
+  PlatformLiveService({bool? isAndroid, bool? isIOS})
+    : _isAndroid = isAndroid ?? Platform.isAndroid,
+      _isIOS = isIOS ?? Platform.isIOS {
     if (_isAndroid) channel.setMethodCallHandler(_handle);
   }
 
   static const channel = MethodChannel('ch.micheljung.shutterlink/live');
+  static const idleTimerChannel = MethodChannel(
+    'ch.micheljung.shutterlink/idle_timer',
+  );
   static const stopRequestedMethod = 'stopRequested';
+  static const setIdleTimerDisabledMethod = 'setDisabled';
 
   final bool _isAndroid;
+  final bool _isIOS;
   final _stopRequests = StreamController<void>.broadcast();
 
   @override
   Stream<void> get stopRequests => _stopRequests.stream;
 
   @override
-  Future<void> start(LiveStatus status) => _invoke('start', status.toMap());
+  Future<void> start(LiveStatus status) async {
+    await _setIdleTimerDisabled(true);
+    await _invoke('start', status.toMap());
+  }
 
   @override
   Future<void> updateStatus(LiveStatus status) =>
       _invoke('updateStatus', status.toMap());
 
   @override
-  Future<void> stop() => _invoke('stop');
+  Future<void> stop() async {
+    await _setIdleTimerDisabled(false);
+    await _invoke('stop');
+  }
+
+  /// Keeps an iPhone from locking while a mode runs, since a locked phone
+  /// suspends the app.
+  Future<void> _setIdleTimerDisabled(bool disabled) async {
+    if (!_isIOS) return;
+    await idleTimerChannel.invokeMethod<void>(
+      setIdleTimerDisabledMethod,
+      disabled,
+    );
+  }
 
   @override
   Future<bool> requestNotificationPermission() async {
