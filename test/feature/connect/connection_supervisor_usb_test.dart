@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
@@ -222,6 +224,26 @@ void main() {
     supervisor.bindingLost();
     await pumpEventQueue();
     expect(usb.closed, isFalse, reason: 'Wi-Fi no longer matters');
+  });
+
+  test('a Wi-Fi retry that binds after a takeover releases it', () async {
+    final wifi = await superviseWifi();
+    wifi.simulateDisconnect();
+    await pumpEventQueue();
+    binder.acquireGate = Completer<void>();
+    timers.active!.fire();
+    await pumpEventQueue();
+
+    connections[UsbTarget]!.add(FakeCameraClient([old]));
+    supervisor.stop();
+    await supervisor.supervise(null, UsbTarget(canon), bindingOwner: owner);
+    await binder.releaseBinding(owner);
+    binder.acquireGate!.complete();
+    await pumpEventQueue();
+
+    expect(binder.owners, isEmpty);
+    expect(events.staleBindings, 0);
+    expect(targets.whereType<WifiTarget>(), isEmpty);
   });
 
   // live_transfer_cubit_usb_test.dart:291
