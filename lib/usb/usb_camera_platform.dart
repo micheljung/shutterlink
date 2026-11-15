@@ -6,7 +6,8 @@ import 'usb_pipe.dart';
 ///
 /// Two refs are equal when vendor and product match: reading the serial
 /// needs permission, and a re-plug changes [platformId]. Telling apart two
-/// identical cameras is not supported.
+/// identical cameras is not supported. When the platform hides both ids
+/// (both 0), refs are equal only when their [platformId]s are.
 @immutable
 class UsbCameraRef {
   const UsbCameraRef({
@@ -25,14 +26,19 @@ class UsbCameraRef {
   final String name;
   final String? serial;
 
+  bool get _hasUsbIds => vendorId != 0 || productId != 0;
+
   @override
   bool operator ==(Object other) =>
       other is UsbCameraRef &&
       other.vendorId == vendorId &&
-      other.productId == productId;
+      other.productId == productId &&
+      (_hasUsbIds || other.platformId == platformId);
 
   @override
-  int get hashCode => Object.hash(vendorId, productId);
+  int get hashCode => _hasUsbIds
+      ? Object.hash(vendorId, productId)
+      : Object.hash(vendorId, productId, platformId);
 
   @override
   String toString() =>

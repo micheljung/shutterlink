@@ -1,3 +1,4 @@
+import CoreGraphics
 import Flutter
 import Foundation
 import ImageCaptureCore
@@ -12,8 +13,11 @@ import ImageCaptureCore
 /// `close` closes the session. Events: `attached{device, enumerated}`,
 /// `detached{deviceName}`, `closed{deviceName}` and `interrupt{bytes}`.
 final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDelegate,
-  ICDeviceDelegate
+  ICCameraDeviceDelegate
 {
+  /// How long `open` waits for ImageCaptureCore to open the session.
+  private static let openTimeout: TimeInterval = 30
+
   private static let responseType: UInt16 = 3
   private static let headerSize = 12
 
@@ -29,6 +33,7 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
   private var fallbackIds: [ObjectIdentifier: String] = [:]
   private var openCamera: ICCameraDevice?
   private var pendingOpen: FlutterResult?
+  private var openGeneration = 0
   /// Cameras whose session Dart closed, until ImageCaptureCore confirms it, so
   /// that a late confirmation does not end a reopened session.
   private var closing = Set<ObjectIdentifier>()
@@ -102,6 +107,11 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
       closeSession()
       openCamera = camera
       pendingOpen = result
+      openGeneration += 1
+      let generation = openGeneration
+      DispatchQueue.main.asyncAfter(deadline: .now() + UsbCameraBridge.openTimeout) {
+        self.openTimedOut(generation)
+      }
       camera.delegate = self
       camera.requestOpenSession()
     case "send":
@@ -134,6 +144,19 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
     failPendingOpen("Session closed")
     closing.insert(ObjectIdentifier(camera))
     camera.requestCloseSession()
+  }
+
+  /// ImageCaptureCore never answered the open: fail it and give up the
+  /// session.
+  private func openTimedOut(_ generation: Int) {
+    guard generation == openGeneration, let result = pendingOpen,
+      let camera = openCamera
+    else { return }
+    pendingOpen = nil
+    openCamera = nil
+    closing.insert(ObjectIdentifier(camera))
+    camera.requestCloseSession()
+    result(FlutterError(code: "open_timeout", message: "Opening the camera timed out", details: nil))
   }
 
   private func failPendingOpen(_ message: String) {
@@ -221,16 +244,41 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
     }
   }
 
-  /// ICCameraDeviceDelegate's PTP event callback. The class does not adopt
-  /// that protocol, to stay clear of its many required methods; the explicit
-  /// selector lets ImageCaptureCore find this method anyway.
-  @objc(cameraDevice:didReceivePTPEvent:)
+  // MARK: ICCameraDeviceDelegate
+
   func cameraDevice(_ camera: ICCameraDevice, didReceivePTPEvent eventData: Data) {
     UsbCameraBridge.onMain {
       guard camera === self.openCamera else { return }
       self.emit(["type": "interrupt", "bytes": FlutterStandardTypedData(bytes: eventData)])
     }
   }
+
+  // Required by the protocol. Dart lists the card itself over PTP, so the
+  // catalog callbacks are ignored.
+
+  func cameraDevice(_ camera: ICCameraDevice, didAdd items: [ICCameraItem]) {}
+
+  func cameraDevice(_ camera: ICCameraDevice, didRemove items: [ICCameraItem]) {}
+
+  func cameraDevice(
+    _ camera: ICCameraDevice, didReceiveThumbnail thumbnail: CGImage?, for item: ICCameraItem,
+    error: Error?
+  ) {}
+
+  func cameraDevice(
+    _ camera: ICCameraDevice, didReceiveMetadata metadata: [AnyHashable: Any]?,
+    for item: ICCameraItem, error: Error?
+  ) {}
+
+  func cameraDevice(_ camera: ICCameraDevice, didRenameItems items: [ICCameraItem]) {}
+
+  func cameraDeviceDidChangeCapability(_ camera: ICCameraDevice) {}
+
+  func deviceDidBecomeReady(withCompleteContentCatalog device: ICCameraDevice) {}
+
+  func cameraDeviceDidRemoveAccessRestriction(_ device: ICDevice) {}
+
+  func cameraDeviceDidEnableAccessRestriction(_ device: ICDevice) {}
 
   // MARK: Helpers
 
