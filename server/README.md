@@ -21,7 +21,8 @@ dart run bin/server.dart \
 | Flag | Default | Meaning |
 |---|---|---|
 | `--data-dir` | required | Where Sessions, tombstones and the server secret live |
-| `--upload-token-file` | `$SHUTTERLINK_UPLOAD_TOKEN` | Operator token the app sends when uploading |
+| `--upload-token-file` | `$SHUTTERLINK_UPLOAD_TOKEN` | File holding the operator token the app sends when uploading |
+| `--upload-token` | `--upload-token-file`, then `$SHUTTERLINK_UPLOAD_TOKEN` | The operator token itself. It shows up in `ps` and shell history, so prefer the file or the environment variable in production. Can't be combined with `--upload-token-file` |
 | `--tip "Label=URL"` | none | Tip button on every gallery; repeatable. Only `http`/`https` URLs are accepted, anything else exits with code 64 |
 | `--retention-days` | 30 | Days a Session is kept after its first upload |
 | `--port` | 8080 | Listening port |
