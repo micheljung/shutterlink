@@ -12,9 +12,9 @@ import 'package:shutterlink/feature/connect/connection_supervisor.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/fake_usb_camera_watcher.dart';
-import '../../upload/upload_fakes.dart';
-import '../live/live_transfer_cubit_test.dart'
+import '../../fakes/recording_binder.dart'
     show RecordingBinder, cameraGateway, homeGateway, unreachable;
+import '../../upload/upload_fakes.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -319,20 +319,6 @@ void main() {
 
     expect(discoveries, 0);
     expect(hosts.toSet(), {cameraGateway});
-  });
-
-  test('a take-back without a target retries the resolved host', () async {
-    final first = await connectStation(station);
-    cubit.handOver('live');
-    final back = FakeCameraClient([]);
-    expect(cubit.takeBack(back, owner: 'live'), isTrue);
-    wifiAnswers.add(unreachable);
-
-    await drop(back);
-    await fire();
-
-    expect(first.closed, isFalse);
-    expect(hosts.last, cameraGateway);
   });
 
   group('holding the Wi-Fi', () {

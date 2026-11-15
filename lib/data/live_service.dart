@@ -6,9 +6,10 @@ import 'package:flutter/services.dart';
 
 enum LiveServiceState { connecting, transferring, reconnecting, unreachable }
 
-/// What the Live notification shows.
+/// What the notification of a mode running in the background shows.
 class LiveStatus extends Equatable {
   const LiveStatus({
+    required this.title,
     required this.count,
     required this.uploaded,
     required this.pending,
@@ -16,6 +17,8 @@ class LiveStatus extends Equatable {
     required this.text,
   });
 
+  /// The running mode's name.
+  final String title;
   final int count;
   final int uploaded;
   final int pending;
@@ -23,6 +26,7 @@ class LiveStatus extends Equatable {
   final String text;
 
   Map<String, Object> toMap() => {
+    'title': title,
     'count': count,
     'uploaded': uploaded,
     'pending': pending,
@@ -31,11 +35,11 @@ class LiveStatus extends Equatable {
   };
 
   @override
-  List<Object?> get props => [count, uploaded, pending, state, text];
+  List<Object?> get props => [title, count, uploaded, pending, state, text];
 }
 
-/// Keeps the app running while Live transfers, with a notification that
-/// shows progress and offers Stop.
+/// Keeps the app running while a mode works in the background, with a
+/// notification that shows progress and offers Stop.
 abstract interface class LiveService {
   Future<void> start(LiveStatus status);
 

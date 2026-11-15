@@ -12,9 +12,9 @@ import 'package:shutterlink/feature/connect/connection_supervisor.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 
 import '../../fakes/fake_camera_client.dart';
-import '../../upload/upload_fakes.dart';
-import '../live/live_transfer_cubit_test.dart'
+import '../../fakes/recording_binder.dart'
     show RecordingBinder, cameraGateway, homeGateway, unreachable;
+import '../../upload/upload_fakes.dart';
 
 const owner = 'live';
 

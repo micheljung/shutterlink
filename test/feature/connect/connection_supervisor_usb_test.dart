@@ -11,8 +11,8 @@ import 'package:shutterlink/usb/usb_camera_platform.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/fake_usb_camera_watcher.dart';
+import '../../fakes/recording_binder.dart' show RecordingBinder;
 import '../../upload/upload_fakes.dart';
-import '../live/live_transfer_cubit_test.dart' show RecordingBinder;
 import 'connection_supervisor_test.dart' show SupervisorEvents, owner;
 
 const usbRetrying = (unreachable: false, userActionNeeded: false, usb: true);

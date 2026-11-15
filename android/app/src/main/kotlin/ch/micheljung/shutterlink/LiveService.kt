@@ -76,7 +76,10 @@ class LiveService(private val context: Context) {
     }
 
     private fun statusOf(call: MethodCall) =
-        LiveTransferService.Status(text = call.argument<String>("text").orEmpty())
+        LiveTransferService.Status(
+            title = call.argument<String>("title").orEmpty(),
+            text = call.argument<String>("text").orEmpty(),
+        )
 
     private companion object {
         const val CHANNEL = "ch.micheljung.shutterlink/live"

@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shutterlink/app.dart';
+import 'package:shutterlink/feature/auto_upload/auto_upload_screen.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connection_supervisor.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
@@ -35,8 +36,8 @@ import 'package:shutterlink/usb/usb_camera_platform.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/fake_usb_camera_watcher.dart';
+import '../../fakes/recording_binder.dart' show unreachable;
 import '../../fakes/test_app.dart';
-import '../live/live_transfer_cubit_test.dart' show unreachable;
 
 const _pollInterval = Duration(milliseconds: 5);
 const _maxPolls = 2000;
@@ -179,7 +180,7 @@ void main() {
       );
       await back(tester);
 
-      expect(find.byType(ModePlaceholderScreen), findsOneWidget);
+      expect(find.byType(AutoUploadScreen), findsOneWidget);
       expect(find.text(OperatingMode.autoUpload.label), findsOneWidget);
       await tester.tap(find.byTooltip(ModesButton.tooltip));
       await tester.pumpAndSettle();
@@ -203,7 +204,7 @@ void main() {
       await pick(tester, OperatingMode.autoUpload);
 
       expect(find.byType(UploadSetupScreen), findsNothing);
-      expect(find.byType(ModePlaceholderScreen), findsOneWidget);
+      expect(find.byType(AutoUploadScreen), findsOneWidget);
     });
 
     testWidgets('QR Session asks for the Sessions server, and backing out '

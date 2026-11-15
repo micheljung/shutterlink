@@ -84,7 +84,6 @@ class ConnectCubit extends Cubit<ConnectState> {
   late final StreamSubscription<UsbAttachment> _attachments;
   late final StreamSubscription<UsbCameraRef> _detachments;
   StreamSubscription<void>? _bindingLost;
-  ConnectTarget? _handedOverTarget;
 
   /// The gateway of the Wi-Fi the last Wi-Fi connect bound to.
   String? _gateway;
@@ -100,9 +99,6 @@ class ConnectCubit extends Cubit<ConnectState> {
   bool _usbAttempt = false;
 
   UsbCameraWatcher get usbWatcher => _usbWatcher;
-
-  /// How the client last handed over was reached.
-  ConnectTarget? get handedOverTarget => _handedOverTarget;
 
   bool _isCurrent(int attempt) => attempt == _attempt && !isClosed;
 
@@ -225,7 +221,7 @@ class ConnectCubit extends Cubit<ConnectState> {
         } else if (takesOver) {
           unawaited(_takeOver(device));
         }
-      case ConnectConnecting() || ConnectLiveOwned():
+      case ConnectConnecting():
     }
   }
 
@@ -442,44 +438,6 @@ class ConnectCubit extends Cubit<ConnectState> {
     emit(const ConnectIdle());
     await current.client.close();
     if (current.target is! UsbTarget) await _unbind();
-  }
-
-  /// Gives the connected client and the Wi-Fi binding to [owner]. Returns
-  /// null when no camera is connected; [handedOverTarget] says how it was
-  /// reached.
-  CameraClient? handOver(String owner) {
-    final current = state;
-    if (current is! ConnectConnected) return null;
-    _supervisor.stop();
-    final target = _handedOverTarget = current.target;
-    if (target is! UsbTarget) {
-      _networkBinder.transferBinding(bindingOwner, owner);
-    }
-    emit(const ConnectLiveOwned());
-    return current.client;
-  }
-
-  /// Takes back a live [client], reached through [target], and [owner]'s
-  /// Wi-Fi binding; without a client the owner releases its binding itself.
-  /// [client] is supervised as reached through [target], which may differ
-  /// from the target handed over. Returns whether [client] was taken.
-  bool takeBack(
-    CameraClient? client, {
-    required String owner,
-    ConnectTarget? target,
-  }) {
-    if (isClosed || state is! ConnectLiveOwned) return false;
-    _handedOverTarget = null;
-    if (client == null) {
-      emit(const ConnectIdle());
-      return false;
-    }
-    if (target is! UsbTarget) {
-      _networkBinder.transferBinding(owner, bindingOwner);
-    }
-    emit(ConnectConnected(client, target: target));
-    _supervise(client, target);
-    return true;
   }
 
   Future<void> _unbind() async {

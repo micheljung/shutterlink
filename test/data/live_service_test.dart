@@ -44,6 +44,7 @@ void main() {
 
     await service.start(
       const LiveStatus(
+        title: 'Auto Upload',
         count: 0,
         uploaded: 0,
         pending: 0,
@@ -53,6 +54,7 @@ void main() {
     );
     await service.updateStatus(
       const LiveStatus(
+        title: 'Auto Upload',
         count: 3,
         uploaded: 1,
         pending: 2,
@@ -62,6 +64,7 @@ void main() {
     );
     await service.updateStatus(
       const LiveStatus(
+        title: 'Auto Upload',
         count: 3,
         uploaded: 1,
         pending: 2,
@@ -77,6 +80,7 @@ void main() {
     ]);
     expect(calls.map((call) => call.arguments), [
       {
+        'title': 'Auto Upload',
         'count': 0,
         'uploaded': 0,
         'pending': 0,
@@ -84,6 +88,7 @@ void main() {
         'text': 'Connecting to the camera',
       },
       {
+        'title': 'Auto Upload',
         'count': 3,
         'uploaded': 1,
         'pending': 2,
@@ -91,6 +96,7 @@ void main() {
         'text': 'Uploading',
       },
       {
+        'title': 'Auto Upload',
         'count': 3,
         'uploaded': 1,
         'pending': 2,
@@ -130,6 +136,7 @@ void main() {
 
     await service.start(
       const LiveStatus(
+        title: 'Auto Upload',
         count: 0,
         uploaded: 0,
         pending: 0,

@@ -11,6 +11,7 @@ import 'data/live_service.dart';
 import 'data/network_binder.dart';
 import 'data/photo_saver.dart';
 import 'data/settings_repository.dart';
+import 'feature/auto_upload/auto_upload_cubit.dart';
 import 'feature/connect/connect_cubit.dart';
 import 'feature/connect/connect_screen.dart';
 import 'feature/connect/connect_state.dart';
@@ -19,8 +20,6 @@ import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/history/download_history_cubit.dart';
 import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
-import 'feature/live/live_screen.dart';
-import 'feature/live/live_transfer_cubit.dart';
 import 'feature/mode/mode_cubit.dart';
 import 'feature/mode/mode_host.dart';
 import 'feature/sessions/sessions_cubit.dart';
@@ -132,16 +131,12 @@ class ShutterlinkApp extends StatelessWidget {
         ),
         BlocProvider(
           lazy: false,
-          create: (context) => LiveTransferCubit(
+          create: (context) => AutoUploadCubit(
             connect: context.read<ConnectCubit>(),
-            connector: dependencies.connector,
-            identity: dependencies.identity,
-            hostResolver: dependencies.hostResolver,
-            networkBinder: dependencies.networkBinder,
+            modes: context.read<ModeCubit>(),
             service: dependencies.liveService,
             queue: dependencies.uploadQueue,
-            claimsUsbVendor: dependencies.claimsUsbVendor,
-            usbWatcher: dependencies.usb.watcher,
+            format: () => dependencies.settings.format,
             ingestorFactory: (client, baseline) => LiveIngestor(
               client: client,
               format: dependencies.settings.format,
@@ -234,7 +229,7 @@ class _Home extends StatefulWidget {
   State<_Home> createState() => _HomeState();
 }
 
-enum _HomeScreen { connect, modes, live }
+enum _HomeScreen { connect, modes }
 
 class _HomeState extends State<_Home> {
   late final AppLifecycleListener _lifecycle;
@@ -257,7 +252,6 @@ class _HomeState extends State<_Home> {
 
   static _HomeScreen _screenOf(ConnectState state) => switch (state) {
     ConnectConnected() || ConnectReconnecting() => _HomeScreen.modes,
-    ConnectLiveOwned() => _HomeScreen.live,
     _ => _HomeScreen.connect,
   };
 
@@ -288,7 +282,6 @@ class _HomeState extends State<_Home> {
             _screenOf(previous) != _screenOf(current),
         builder: (context, state) => switch (_screenOf(state)) {
           _HomeScreen.modes => const ModeHost(),
-          _HomeScreen.live => const LiveScreen(),
           _HomeScreen.connect => ConnectScreen(
             usbExperimental: widget.usbExperimental,
           ),
