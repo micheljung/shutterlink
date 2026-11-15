@@ -265,6 +265,39 @@ void main() {
     expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
   });
 
+  test('the rescan ingests a shot after a failed attempt, no events', () async {
+    client.script.addAll([
+      for (var i = 0; i <= LiveIngestor.infoRetries; i++)
+        cameraObject(1, 'IMG_0001.JPG', size: 0, captureDate: date),
+    ]);
+    ingestor(
+      baseline: {keyOf(old), keyOf(raw)},
+      rescanInterval: testRescanInterval,
+    );
+
+    await until(() => server.files.isNotEmpty);
+
+    expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
+    expect(client.infoCalls, greaterThan(LiveIngestor.infoRetries + 1));
+  });
+
+  test('a slow ingest does not pile up rescans behind it', () async {
+    client.chunkGate = Completer<void>();
+    ingestor(
+      baseline: {keyOf(old), keyOf(raw)},
+      rescanInterval: testRescanInterval,
+    );
+    await until(() => client.requestedOffsets.isNotEmpty);
+    final rescans = client.rescans;
+
+    await Future<void>.delayed(testRescanInterval * 5);
+    expect(client.rescans, rescans);
+
+    client.chunkGate!.complete();
+    client.chunkGate = null;
+    await until(() => server.files.isNotEmpty);
+  });
+
   test('the rescan stops once the camera disconnects', () async {
     ingestor(rescanInterval: testRescanInterval);
     client.simulateDisconnect();
