@@ -10,11 +10,15 @@ class _CountingClient extends FakeCameraClient {
 
   int diffs = 0;
   Completer<void>? diffGate;
+  Object? failNextDiff;
 
   @override
   Future<List<int>> newestFolderHandles() async {
     diffs++;
     await diffGate?.future;
+    final failure = failNextDiff;
+    failNextDiff = null;
+    if (failure != null) throw failure;
     return super.newestFolderHandles();
   }
 }
@@ -127,6 +131,16 @@ void main() {
     await pumpEventQueue();
 
     expect(emitted, [3]);
+  });
+
+  test('a diff that fails with an Error is retried on the next tick', () async {
+    client.failNextDiff = StateError('broken');
+    detector(baseline: {1});
+
+    await ticks(4);
+
+    expect(client.diffs, greaterThan(1));
+    expect(emitted, contains(2));
   });
 
   test('baseline handles are never emitted by a diff', () async {

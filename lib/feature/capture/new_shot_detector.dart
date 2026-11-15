@@ -108,8 +108,8 @@ class NewShotDetector {
         _handles.add(handle);
       }
       if (!_closed) _changed.add(null);
-    } on Exception {
-      // The next tick diffs again.
+    } on Object {
+      // The next tick diffs again; an error must not escape the timer.
     }
   }
 }
