@@ -5,6 +5,7 @@ import '../../data/download_history.dart';
 import '../../data/settings_repository.dart';
 import '../../ptpip/camera_client.dart';
 import '../../upload/upload_queue.dart';
+import '../capture/new_shot_detector.dart';
 import '../download/object_fetcher.dart';
 import 'ingest_coordinator.dart';
 
@@ -56,11 +57,11 @@ class LiveIngestor {
   final String _cameraKey;
   final _ingested = StreamController<CameraObject>.broadcast();
   final Set<int> _resolvedHandles;
+  NewShotDetector? _detector;
   StreamSubscription<int>? _subscription;
-  Timer? _rescanTimer;
-  bool _rescanQueued = false;
   bool _closed = false;
   Future<void> _pending = Future.value();
+  int _queuedWork = 0;
 
   /// Objects saved to the gallery and queued for upload.
   Stream<CameraObject> get ingested => _ingested.stream;
@@ -80,25 +81,19 @@ class LiveIngestor {
   /// Follows the camera's object-added events, and periodically diffs the
   /// newest folder because not every body reports new shots.
   void start() {
-    if (_closed || _subscription != null) return;
-    _subscription = _client.addedObjects.listen(
+    if (_closed || _detector != null) return;
+    final detector = NewShotDetector(
+      client: _client,
+      baseline: _baseline.handles,
+      isResolved: _resolvedHandles.contains,
+      consumerBusy: () => _queuedWork > 0,
+      interval: _rescanInterval,
+    );
+    _detector = detector;
+    _subscription = detector.handles.listen(
       (handle) => _enqueue(() => _onAdded(handle)),
     );
-    final timer = Timer.periodic(_rescanInterval, (_) => _rescan());
-    _rescanTimer = timer;
-    _client.disconnected.then((_) => timer.cancel());
-  }
-
-  void _rescan() {
-    if (_rescanQueued) return;
-    _rescanQueued = true;
-    _enqueue(() async {
-      _rescanQueued = false;
-      for (final handle in await _client.newestFolderHandles()) {
-        if (_closed) return;
-        await _onAdded(handle);
-      }
-    });
+    detector.start();
   }
 
   /// Ingests what was missed while the camera was unreachable, and learns
@@ -113,14 +108,19 @@ class LiveIngestor {
   /// Abandons queued work; an ingest already running finishes first.
   Future<void> close() async {
     _closed = true;
-    _rescanTimer?.cancel();
+    await _detector?.close();
     await _subscription?.cancel();
     await _pending;
     await _ingested.close();
   }
 
   Future<void> _enqueue(Future<void> Function() work) {
-    final next = _pending.then((_) => work()).catchError((Object _) {});
+    _queuedWork++;
+    final next = _pending.then((_) => work()).catchError((Object _) {}).then((
+      _,
+    ) {
+      if (--_queuedWork == 0) _detector?.notifyIdle();
+    });
     _pending = next;
     return next;
   }
