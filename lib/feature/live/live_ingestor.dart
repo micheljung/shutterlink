@@ -41,6 +41,7 @@ class LiveIngestor {
     this._fetcher = const ObjectFetcher(),
     this._infoRetryDelay = defaultInfoRetryDelay,
     this._rescanInterval = defaultRescanInterval,
+    this._periodicTimer,
   }) : _cameraKey = cameraKeyOf(_client.deviceInfo),
        _resolvedHandles = {..._baseline.handles};
 
@@ -57,6 +58,7 @@ class LiveIngestor {
   final ObjectFetcher _fetcher;
   final Duration _infoRetryDelay;
   final Duration _rescanInterval;
+  final PeriodicTimerFactory? _periodicTimer;
   final String _cameraKey;
   final _ingested = StreamController<CameraObject>.broadcast();
   final Set<int> _resolvedHandles;
@@ -110,6 +112,7 @@ class LiveIngestor {
       isResolved: _resolvedHandles.contains,
       consumerBusy: () => _queuedWork > 0,
       interval: _rescanInterval,
+      periodicTimer: _periodicTimer,
     );
     _detector = detector;
     _subscription = detector.handles.listen(
