@@ -12,6 +12,15 @@ import 'ingest_coordinator.dart';
 class LiveBaseline {
   const LiveBaseline({required this.keys, this.handles = const {}});
 
+  LiveBaseline.of(String cameraKey, List<CameraObject> photos)
+    : this(
+        keys: {
+          for (final object in photos)
+            DownloadHistoryRepository.entryKey(cameraKey, object),
+        },
+        handles: {for (final object in photos) object.handle},
+      );
+
   /// Entry keys of the photos on the card; they are never ingested.
   final Set<String> keys;
 
@@ -60,17 +69,36 @@ class LiveIngestor {
   /// Objects saved to the gallery and queued for upload.
   Stream<CameraObject> get ingested => _ingested.stream;
 
-  static Future<LiveBaseline> baselineOf(CameraClient client) async {
-    final cameraKey = cameraKeyOf(client.deviceInfo);
-    final photos = await client.listPhotos();
-    return LiveBaseline(
-      keys: {
-        for (final object in photos)
-          DownloadHistoryRepository.entryKey(cameraKey, object),
-      },
-      handles: {for (final object in photos) object.handle},
-    );
+  static Future<LiveBaseline> baselineOf(CameraClient client) async =>
+      LiveBaseline.of(
+        cameraKeyOf(client.deviceInfo),
+        await client.listPhotos(),
+      );
+
+  /// How many of [photos] in [format] are neither queued nor uploaded to
+  /// the queue's destination; downloads to the phone do not count.
+  static Future<int> backlogOf(
+    List<CameraObject> photos, {
+    required String cameraKey,
+    required DownloadFormat format,
+    required UploadQueue queue,
+  }) async {
+    var count = 0;
+    for (final object in photos) {
+      if (!wanted(format, object)) continue;
+      final key = DownloadHistoryRepository.entryKey(cameraKey, object);
+      if (!await queue.contains(key)) count++;
+    }
+    return count;
   }
+
+  /// Whether [object] is of a kind [format] uploads.
+  static bool wanted(DownloadFormat format, CameraObject object) =>
+      switch (format) {
+        DownloadFormat.jpeg => object.kind == CameraObjectKind.jpeg,
+        DownloadFormat.raw => object.kind == CameraObjectKind.raw,
+        DownloadFormat.both => true,
+      };
 
   /// Follows the camera's object-added events, and periodically diffs the
   /// newest folder because not every body reports new shots.
@@ -145,20 +173,14 @@ class LiveIngestor {
     return null;
   }
 
-  bool _wanted(CameraObject object) => switch (_format) {
-    DownloadFormat.jpeg => object.kind == CameraObjectKind.jpeg,
-    DownloadFormat.raw => object.kind == CameraObjectKind.raw,
-    DownloadFormat.both => true,
-  };
-
+  /// A photo only downloaded to the phone is not known: it still needs
+  /// uploading.
   Future<bool> _isKnown(String key) async =>
-      _baseline.keys.contains(key) ||
-      (await _history.load()).contains(key) ||
-      await _queue.contains(key);
+      _baseline.keys.contains(key) || await _queue.contains(key);
 
   /// Whether the object needs no further attempt.
   Future<bool> _ingest(CameraObject object) async {
-    if (!_wanted(object)) return true;
+    if (!wanted(_format, object)) return true;
     final key = DownloadHistoryRepository.entryKey(_cameraKey, object);
     if (await _isKnown(key)) return true;
     return _coordinator.run([key], () async {

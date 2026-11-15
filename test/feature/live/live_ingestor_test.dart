@@ -156,23 +156,76 @@ void main() {
     expect(await history.contains(cameraKey, jpeg), isTrue);
   });
 
+  test('skips the baseline, filtered kinds, unknown handles', () async {
+    ingestor(format: DownloadFormat.raw, baseline: {keyOf(old), keyOf(raw)});
+
+    client
+      ..emitAdded(3)
+      ..emitAdded(1)
+      ..emitAdded(2)
+      ..emitAdded(99);
+    await settle();
+
+    expect(server.files, isEmpty);
+    expect(client.requestedOffsets, isEmpty);
+    expect(client.infoCalls, 4);
+  });
+
+  test('a photo only downloaded to the phone is still uploaded', () async {
+    await history.record(cameraKey, [jpeg]);
+    final live = ingestor(baseline: {keyOf(old), keyOf(raw)});
+    final ingested = live.ingested.first;
+
+    client.emitAdded(jpeg.handle);
+
+    expect(await ingested, jpeg);
+    await settle();
+    expect(server.files.keys, ['2026-11-13/IMG_0001.JPG']);
+  });
+
+  test('a photo uploaded to the destination before is skipped', () async {
+    final first = ingestor(baseline: {keyOf(old), keyOf(raw)});
+    final ingested = first.ingested.first;
+    client.emitAdded(jpeg.handle);
+    await ingested;
+    await settle();
+    await first.close();
+    final fetched = client.requestedOffsets.length;
+
+    ingestor();
+    client.emitAdded(jpeg.handle);
+    await settle();
+
+    expect(client.requestedOffsets, hasLength(fetched));
+    expect(server.files, hasLength(1));
+  });
+
   test(
-    'skips the baseline, history, filtered kinds, unknown handles',
+    'the backlog counts wanted photos not uploaded, downloaded or not',
     () async {
-      await history.record(cameraKey, [raw]);
-      client.objects.add(cameraObject(4, 'IMG_0002.CR3'));
-      ingestor(format: DownloadFormat.raw, baseline: {keyOf(old)});
-
-      client
-        ..emitAdded(3)
-        ..emitAdded(1)
-        ..emitAdded(2)
-        ..emitAdded(99);
+      final live = ingestor(baseline: {keyOf(old), keyOf(raw)});
+      final ingested = live.ingested.first;
+      client.emitAdded(jpeg.handle);
+      await ingested;
       await settle();
+      await history.record(cameraKey, [old]);
+      final photos = [
+        old,
+        jpeg,
+        raw,
+        cameraObject(4, 'IMG_0004.JPG', captureDate: date),
+      ];
 
-      expect(server.files, isEmpty);
-      expect(client.requestedOffsets, isEmpty);
-      expect(client.infoCalls, 4);
+      Future<int> backlog(DownloadFormat format) => LiveIngestor.backlogOf(
+        photos,
+        cameraKey: cameraKey,
+        format: format,
+        queue: queue,
+      );
+
+      expect(await backlog(DownloadFormat.jpeg), 2);
+      expect(await backlog(DownloadFormat.raw), 1);
+      expect(await backlog(DownloadFormat.both), 3);
     },
   );
 
