@@ -435,6 +435,10 @@ void main() {
     );
     expect(overlay, findsOneWidget);
     expect(second.requestedOffsets, isEmpty);
+    final askedDead = {
+      for (final MapEntry(:key, :value) in first.requestedOffsets.entries)
+        key: [...value],
+    };
 
     await tester.pump(retryDelay);
     await pumpUntil(
@@ -443,6 +447,7 @@ void main() {
     );
 
     expect(second.requestedOffsets, isNotEmpty);
+    expect(first.requestedOffsets, askedDead);
     final saver = dependencies.photoSaver as RecordingPhotoSaver;
     expect(saver.saved, hasLength(2));
   });
