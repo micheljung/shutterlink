@@ -18,6 +18,7 @@ import 'package:shutterlink/feature/mode/mode_placeholder_screen.dart';
 import 'package:shutterlink/feature/mode/modes_button.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/mode/reconnecting_overlay.dart';
+import 'package:shutterlink/feature/preview/preview_screen.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/sessions_setup_screen.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
@@ -395,6 +396,31 @@ void main() {
 
     await tester.tap(find.text(ReconnectingOverlay.abortLabel));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('a drop closes a preview, so the overlay and its Abort show', (
+    tester,
+  ) async {
+    final dead = FakeCameraClient(photos(3));
+    answers.addAll([dead, unreachable]);
+    await pumpApp(tester);
+    await connectAndBrowse(tester);
+    await tester.tap(find.bySemanticsLabel('Preview').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(PreviewScreen), findsOneWidget);
+
+    dead.simulateDisconnect();
+    await tester.pumpAndSettle();
+    final asked = dead.thumbnailRequests.length;
+
+    expect(find.byType(PreviewScreen), findsNothing);
+    expect(overlay, findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(dead.thumbnailRequests, hasLength(asked));
+
+    await tester.tap(find.text(ReconnectingOverlay.abortLabel));
+    await tester.pumpAndSettle();
+    expect(connectScreenButton, findsOneWidget);
   });
 
   testWidgets('a reconnect hides the overlay and keeps Browse', (tester) async {
