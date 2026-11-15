@@ -15,6 +15,12 @@ permissions:
   contents: read
   packages: write
 
+# Two quick merges must not finish out of order and leave :main on the
+# older commit.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   IMAGE: ghcr.io/micheljung/shutterlink-server
 
@@ -66,8 +72,8 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: shutterlink-server:test-amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,scope=amd64,mode=max
       - name: Smoke-test amd64
         run: server/docker/smoke.sh shutterlink-server:test-amd64
       - name: Build arm64 for testing
@@ -78,8 +84,8 @@ jobs:
           platforms: linux/arm64
           load: true
           tags: shutterlink-server:test-arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=max
       - name: Smoke-test arm64 under QEMU
         run: server/docker/smoke.sh shutterlink-server:test-arm64
       - name: Log in to GHCR
@@ -100,4 +106,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          cache-from: type=gha
+          cache-from: |
+            type=gha,scope=amd64
+            type=gha,scope=arm64

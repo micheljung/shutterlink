@@ -3,15 +3,13 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import 'process_support.dart';
 import 'support.dart';
 
 const int _usageExitCode = 64;
 
-/// Environment without the token variable, so only the flags count.
-final Map<String, String> _noTokenEnvironment = {
-  for (final entry in Platform.environment.entries)
-    if (entry.key != 'SHUTTERLINK_UPLOAD_TOKEN') entry.key: entry.value,
-};
+/// Environment without any SHUTTERLINK_ variable, so only the flags count.
+final Map<String, String> _noTokenEnvironment = cleanEnvironment();
 
 Future<ProcessResult> _run(List<String> arguments) => Process.run(
   Platform.resolvedExecutable,
@@ -82,6 +80,17 @@ void main() {
     ]);
     expect(result.exitCode, _usageExitCode, reason: '${result.stderr}');
     expect('${result.stderr}', contains('not both'));
+  });
+
+  test('refuses an unreadable --upload-token-file with exit 64', () async {
+    final result = await _run([
+      '--data-dir',
+      dataDir.path,
+      '--upload-token-file',
+      '${dataDir.path}/missing-token',
+    ]);
+    expect(result.exitCode, _usageExitCode, reason: '${result.stderr}');
+    expect('${result.stderr}', contains('Cannot read --upload-token-file'));
   });
 
   test('refuses a blank --upload-token', () async {
