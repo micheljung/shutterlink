@@ -4,6 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Base images in server/Dockerfile, pinned by digest. Keep the dart image
+  # on the Dart version bundled with FLUTTER_VERSION.
+  - package-ecosystem: docker
+    directory: /server
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:
