@@ -97,10 +97,16 @@ class PlatformLiveService implements LiveService {
   /// suspends the app.
   Future<void> _setIdleTimerDisabled(bool disabled) async {
     if (!_isIOS) return;
-    await idleTimerChannel.invokeMethod<void>(
-      setIdleTimerDisabledMethod,
-      disabled,
-    );
+    try {
+      await idleTimerChannel.invokeMethod<void>(
+        setIdleTimerDisabledMethod,
+        disabled,
+      );
+    } on MissingPluginException {
+      // Best effort: the mode runs on with the screen locking.
+    } on PlatformException {
+      // Same.
+    }
   }
 
   @override
