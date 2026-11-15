@@ -88,17 +88,10 @@ Future<void> main(List<String> arguments) async {
     _usage('Invalid --tip: ${e.message} (${e.source})');
   }
 
-  final server = await ShutterlinkServer.start(
-    dataDir: Directory(dataDir),
-    uploadToken: token,
-    tips: tips,
-    retention: Duration(days: retentionDays),
-    address: options.option('address'),
-    port: port,
-  );
-  stdout.writeln('Shutterlink server listening on ${server.url}');
   // Listen explicitly so both subscriptions can be cancelled: a watch left
-  // open keeps the process alive after the server has closed.
+  // open keeps the process alive after the server has closed. Subscribe
+  // before announcing the URL, so a signal sent right after startup stops
+  // the server instead of killing the process.
   final stopRequested = Completer<void>();
   final signals = [
     ProcessSignal.sigint,
@@ -110,6 +103,15 @@ Future<void> main(List<String> arguments) async {
         if (!stopRequested.isCompleted) stopRequested.complete();
       }),
   ];
+  final server = await ShutterlinkServer.start(
+    dataDir: Directory(dataDir),
+    uploadToken: token,
+    tips: tips,
+    retention: Duration(days: retentionDays),
+    address: options.option('address'),
+    port: port,
+  );
+  stdout.writeln('Shutterlink server listening on ${server.url}');
   await stopRequested.future;
   await Future.wait([for (final s in subscriptions) s.cancel()]);
   await server.close();
