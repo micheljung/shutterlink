@@ -222,7 +222,6 @@ void main() {
     final dependencies = await testDependencies(
       (_) async => camera,
       prefs: {
-        SettingsRepository.sessionsEnabledKey: true,
         SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
       },
       sessions: (settings, directory, coordinator) =>

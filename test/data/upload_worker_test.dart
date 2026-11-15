@@ -135,7 +135,6 @@ void main() {
     );
     code = (await sessions.start()).code;
     SharedPreferences.setMockInitialValues({
-      SettingsRepository.sessionsEnabledKey: true,
       SettingsRepository.sessionsServerUrlKey: serverUrl,
     });
     settings = SettingsRepository(await SharedPreferences.getInstance());

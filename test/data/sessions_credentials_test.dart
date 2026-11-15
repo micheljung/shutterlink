@@ -2,20 +2,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/data/sessions_credentials.dart';
-import 'package:shutterlink/data/settings_repository.dart';
 
 class _MockStorage extends Mock implements FlutterSecureStorage {}
 
 void main() {
-  late SettingsRepository settings;
   late _MockStorage storage;
   late SecureSessionsCredentials credentials;
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
-    settings = SettingsRepository(await SharedPreferences.getInstance());
     storage = _MockStorage();
     when(() => storage.read(key: SecureSessionsCredentials.tokenKey))
         .thenAnswer((_) async => 'secret');
@@ -27,17 +22,10 @@ void main() {
     ).thenAnswer((_) async {});
     when(() => storage.delete(key: SecureSessionsCredentials.tokenKey))
         .thenAnswer((_) async {});
-    credentials = SecureSessionsCredentials(settings, storage: storage);
+    credentials = SecureSessionsCredentials(storage: storage);
   });
 
-  test('never reads secure storage while Sessions is off', () async {
-    expect(await credentials.token(), isNull);
-    verifyZeroInteractions(storage);
-  });
-
-  test('reads the token once when Sessions is on', () async {
-    await settings.setSessionsEnabled(true);
-
+  test('reads the token once, with no toggle to turn on', () async {
     expect(await credentials.token(), 'secret');
     expect(await credentials.token(), 'secret');
     verify(() => storage.read(key: SecureSessionsCredentials.tokenKey))
@@ -45,8 +33,6 @@ void main() {
   });
 
   test('stores a trimmed token and deletes a blank one', () async {
-    await settings.setSessionsEnabled(true);
-
     await credentials.setToken('  new  ');
     expect(await credentials.token(), 'new');
     verify(
@@ -62,7 +48,6 @@ void main() {
   });
 
   test('retries a failed read', () async {
-    await settings.setSessionsEnabled(true);
     when(() => storage.read(key: SecureSessionsCredentials.tokenKey))
         .thenThrow(PlatformException(code: 'locked'));
 

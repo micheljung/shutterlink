@@ -10,7 +10,6 @@ class SettingsRepository {
   static const formatKey = 'download_format';
   static const hostOverrideKey = 'camera_host_override';
   static const previewQualityKey = 'preview_quality';
-  static const sessionsEnabledKey = 'sessions_enabled';
   static const sessionsServerUrlKey = 'sessions_server_url';
   static const defaultFormat = DownloadFormat.jpeg;
   static const defaultPreviewQuality = PreviewQuality.thumbnail;
@@ -48,11 +47,6 @@ class SettingsRepository {
     }
     return _prefs.setString(hostOverrideKey, trimmed);
   }
-
-  bool get sessionsEnabled => _prefs.getBool(sessionsEnabledKey) ?? false;
-
-  Future<void> setSessionsEnabled(bool enabled) =>
-      _prefs.setBool(sessionsEnabledKey, enabled);
 
   String? get sessionsServerUrl => _prefs.getString(sessionsServerUrlKey);
 

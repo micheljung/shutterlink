@@ -254,7 +254,6 @@ Future<void> _pumpApp(
   final thumbnails = await tester.runAsync(_renderThumbnails);
   SharedPreferences.setMockInitialValues({
     if (configured) ...{
-      SettingsRepository.sessionsEnabledKey: true,
       SettingsRepository.sessionsServerUrlKey: _sessionsServerUrl,
     },
   });

@@ -18,7 +18,6 @@ class SettingsState extends Equatable {
     required this.format,
     required this.previewQuality,
     this.hostOverride,
-    this.sessionsEnabled = false,
     this.sessionsServerUrl,
     this.sessionsConfigured = false,
     this.sessionsTokenRevision = 0,
@@ -27,7 +26,6 @@ class SettingsState extends Equatable {
   final DownloadFormat format;
   final PreviewQuality previewQuality;
   final String? hostOverride;
-  final bool sessionsEnabled;
   final String? sessionsServerUrl;
   final bool sessionsConfigured;
 
@@ -38,7 +36,6 @@ class SettingsState extends Equatable {
     DownloadFormat? format,
     PreviewQuality? previewQuality,
     String? Function()? hostOverride,
-    bool? sessionsEnabled,
     String? Function()? sessionsServerUrl,
     bool? sessionsConfigured,
     int? sessionsTokenRevision,
@@ -46,7 +43,6 @@ class SettingsState extends Equatable {
     format: format ?? this.format,
     previewQuality: previewQuality ?? this.previewQuality,
     hostOverride: hostOverride != null ? hostOverride() : this.hostOverride,
-    sessionsEnabled: sessionsEnabled ?? this.sessionsEnabled,
     sessionsServerUrl: sessionsServerUrl != null
         ? sessionsServerUrl()
         : this.sessionsServerUrl,
@@ -59,7 +55,6 @@ class SettingsState extends Equatable {
     format,
     previewQuality,
     hostOverride,
-    sessionsEnabled,
     sessionsServerUrl,
     sessionsConfigured,
     sessionsTokenRevision,
@@ -73,7 +68,6 @@ class SettingsCubit extends Cubit<SettingsState> {
           format: _repository.format,
           previewQuality: _repository.previewQuality,
           hostOverride: _repository.hostOverride,
-          sessionsEnabled: _repository.sessionsEnabled,
           sessionsServerUrl: _repository.sessionsServerUrl,
         ),
       );
@@ -98,12 +92,6 @@ class SettingsCubit extends Cubit<SettingsState> {
     emit(state.copyWith(hostOverride: () => _repository.hostOverride));
   }
 
-  Future<void> setSessionsEnabled(bool enabled) async {
-    await _repository.setSessionsEnabled(enabled);
-    emit(state.copyWith(sessionsEnabled: enabled));
-    await _refreshSessionsConfigured();
-  }
-
   /// An invalid URL keeps the saved one; the form shows the error.
   Future<void> setSessionsServerUrl(String? url) async {
     final cleared = url == null || url.trim().isEmpty;
@@ -125,17 +113,17 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   /// The saved token as the credentials report it, or null when unreadable.
-  /// [SecureSessionsCredentials] reports none while Sessions are off.
   Future<String?> sessionsToken() async {
     final credentials = _credentials;
     return credentials == null ? null : _tokenOf(credentials);
   }
 
+  /// Configured means a valid server URL and a token. The token is not
+  /// read without a URL.
   Future<void> _refreshSessionsConfigured() async {
     final credentials = _credentials;
     final configured =
         credentials != null &&
-        _repository.sessionsEnabled &&
         isValidSessionsServerUrl(_repository.sessionsServerUrl) &&
         (await _tokenOf(credentials))?.isNotEmpty == true;
     if (isClosed) return;

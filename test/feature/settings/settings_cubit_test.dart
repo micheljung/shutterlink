@@ -54,18 +54,14 @@ void main() {
 
     tearDown(() => sessionsCubit.close());
 
-    test('off by default without reading credentials', () async {
+    test('not configured without a URL, and the token is not read', () async {
       await sessionsCubit.init();
 
-      expect(sessionsCubit.state.sessionsEnabled, isFalse);
       expect(sessionsCubit.state.sessionsConfigured, isFalse);
       expect(credentials.reads, 0);
     });
 
-    test('configured needs enabled, a valid URL and a token', () async {
-      await sessionsCubit.setSessionsEnabled(true);
-      expect(sessionsCubit.state.sessionsConfigured, isFalse);
-
+    test('configured is a valid URL and a token, with no toggle', () async {
       await sessionsCubit.setSessionsServerUrl(url);
       expect(sessionsCubit.state.sessionsConfigured, isTrue);
       expect(settings.sessionsServerUrl, url);
@@ -74,7 +70,9 @@ void main() {
       expect(sessionsCubit.state.sessionsConfigured, isFalse);
 
       await sessionsCubit.setSessionsToken('other');
-      await sessionsCubit.setSessionsEnabled(false);
+      expect(sessionsCubit.state.sessionsConfigured, isTrue);
+
+      await sessionsCubit.setSessionsServerUrl(' ');
       expect(sessionsCubit.state.sessionsConfigured, isFalse);
     });
 
@@ -94,7 +92,6 @@ void main() {
     );
 
     test('an unreadable token counts as not configured', () async {
-      await settings.setSessionsEnabled(true);
       await settings.setSessionsServerUrl(url);
       credentials.readError = Exception('keystore unavailable');
       final restored = SettingsCubit(settings, credentials: credentials);
@@ -113,7 +110,6 @@ void main() {
     });
 
     test('init restores the configured state', () async {
-      await settings.setSessionsEnabled(true);
       await settings.setSessionsServerUrl(url);
       final restored = SettingsCubit(settings, credentials: credentials);
       addTearDown(restored.close);

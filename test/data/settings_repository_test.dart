@@ -41,15 +41,12 @@ void main() {
     expect(settings.hostOverride, isNull);
   });
 
-  test('Sessions are off by default and persist changes', () async {
-    expect(settings.sessionsEnabled, isFalse);
+  test('the Sessions server URL is unset by default and persists', () async {
     expect(settings.sessionsServerUrl, isNull);
 
-    await settings.setSessionsEnabled(true);
     await settings.setSessionsServerUrl(' https://photos.example.com ');
 
     final reloaded = SettingsRepository(await SharedPreferences.getInstance());
-    expect(reloaded.sessionsEnabled, isTrue);
     expect(reloaded.sessionsServerUrl, 'https://photos.example.com');
 
     await settings.setSessionsServerUrl('  ');

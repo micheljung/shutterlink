@@ -114,7 +114,6 @@ void main() {
       clock: Clock(() => now),
     );
     SharedPreferences.setMockInitialValues({
-      SettingsRepository.sessionsEnabledKey: true,
       SettingsRepository.sessionsServerUrlKey: 'https://photos.example.com',
     });
     requests = [];
