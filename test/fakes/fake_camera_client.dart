@@ -56,6 +56,13 @@ class FakeCameraClient implements CameraClient {
   final _storageChanged = StreamController<void>.broadcast();
   Completer<void>? chunkGate;
   Completer<void>? objectInfoGate;
+
+  /// Holds [listPhotos], like a slow walk of a large card.
+  Completer<void>? listPhotosGate;
+
+  /// The DCF folder of a handle. Unlisted handles are in the newest folder;
+  /// with no folders at all, the card is one folder.
+  final folderOf = <int, int>{};
   int _chunksSent = 0;
   bool closed = false;
   DateTime? cameraTimeValue;
@@ -90,12 +97,20 @@ class FakeCameraClient implements CameraClient {
   }
 
   @override
-  Future<List<CameraObject>> listPhotos() async => objects;
+  Future<List<CameraObject>> listPhotos() async {
+    await listPhotosGate?.future;
+    return objects;
+  }
 
   @override
-  Future<List<int>> newestFolderHandles() async => [
-    for (final object in objects) object.handle,
-  ];
+  Future<List<int>> newestFolderHandles() async {
+    final newest = folderOf.values.maxOrNull;
+    return [
+      for (final object in objects)
+        if (newest == null || (folderOf[object.handle] ?? newest) == newest)
+          object.handle,
+    ];
+  }
 
   @override
   Future<CameraObject?> objectInfo(int handle) async {

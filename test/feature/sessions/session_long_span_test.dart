@@ -85,6 +85,7 @@ void main() {
       seen: seen,
       queue: queue,
       uploadDirectory: Directory(p.join(root.path, 'upload')),
+      baseline: (await client.newestFolderHandles()).toSet(),
       clock: Clock(() => now),
       delay: (_) async {},
       timer: (_, _) => _IdleTimer(),

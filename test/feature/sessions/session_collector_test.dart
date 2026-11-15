@@ -25,6 +25,13 @@ class _LoggingClient extends FakeCameraClient {
 
   final log = <String>[];
   Object? failNextDownload;
+  int listings = 0;
+
+  @override
+  Future<List<CameraObject>> listPhotos() {
+    listings++;
+    return super.listPhotos();
+  }
 
   @override
   Future<void> download(
@@ -64,6 +71,18 @@ class _FakeTimer implements Timer {
 
   @override
   void cancel() => _active = false;
+}
+
+/// A detector tick short enough for real time.
+const _tick = Duration(milliseconds: 20);
+
+/// Waits in real time, since the stores write files.
+Future<void> _until(FutureOr<bool> Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (!await condition() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+  expect(await condition(), isTrue, reason: 'condition never became true');
 }
 
 void main() {
@@ -113,8 +132,12 @@ void main() {
     void Function()? onYield,
     IngestCoordinator? coordinator,
     StagedFileOf? stagedFileOf,
+    Set<int> baseline = const {},
+    Duration detectorInterval = const Duration(days: 1),
   }) {
     final collector = SessionCollector(
+      baseline: baseline,
+      detectorInterval: detectorInterval,
       coordinator: coordinator,
       stagedFileOf: stagedFileOf,
       client: client,
@@ -524,16 +547,283 @@ void main() {
     expect(timers.last.delay, collectorAddedDelay);
   });
 
-  test('a camera storage change brings the rescan forward', () async {
-    await sessions.start();
+  test('a camera storage change queues a new shot at once and brings the '
+      'rescan forward', () async {
+    final session = await sessions.start();
     now = t0.add(second * 20);
     collector(await resolvedClock());
     expect(timers.single.delay, collectorRescanInterval);
 
+    client.objects.add(shot(1, t0.add(second * 10)));
     client.emitStorageChanged();
-    await pumpEventQueue();
+    await _until(() async => (await queue.items()).isNotEmpty);
+
+    expect(await queuedCodes(), [session.code]);
+    expect(client.listings, 0);
     expect(timers.last.delay, collectorAddedDelay);
     expect(timers.first.isActive, isFalse);
+  });
+
+  test('a shot found by the newest-folder diff, with no events, is queued '
+      'within a tick and without listing the card (AC17)', () async {
+    final session = await sessions.start();
+    final old = shot(1, t0.add(second * 5));
+    client.objects.add(old);
+    now = t0.add(second * 20);
+    collector(
+      await resolvedClock(),
+      baseline: {old.handle},
+      detectorInterval: _tick,
+    );
+
+    final added = shot(2, t0.add(second * 10));
+    client.objects.add(added);
+    await _until(
+      () async => await seen.stateOf(keyOf(added)) == SeenState.queued,
+    );
+
+    expect(await queuedCodes(), [session.code]);
+    expect(client.log, ['start 2', 'end 2']);
+    expect(client.listings, 0);
+    expect(await seen.stateOf(keyOf(added)), SeenState.queued);
+  });
+
+  test('on a cold cache a new shot is queued before the card is listed, and '
+      'the full pass neither queues it again nor drops older folders '
+      '(AC17)', () async {
+    final session = await sessions.start();
+    final card = [
+      for (var handle = 1; handle <= 1000; handle++)
+        shot(handle, t0.subtract(const Duration(hours: 1))),
+    ];
+    final syncPhoto = shot(1001, t0.subtract(const Duration(hours: 2)));
+    client
+      ..objects.addAll([syncPhoto, ...card])
+      ..folderOf[syncPhoto.handle] = 100
+      ..folderOf.addAll({for (final photo in card) photo.handle: 101});
+    await seen.markExcluded(cameraKey, [keyOf(syncPhoto)]);
+    now = t0.add(second * 20);
+    final collecting = collector(
+      await resolvedClock(),
+      baseline: (await client.newestFolderHandles()).toSet(),
+    );
+    client.listPhotosGate = Completer<void>();
+    final walk = collecting.rescan();
+    await pumpEventQueue();
+    expect(client.listings, 1);
+
+    final added = shot(2000, t0.add(second * 10));
+    client
+      ..objects.add(added)
+      ..emitAdded(added.handle);
+    await _until(() async => (await queue.items()).isNotEmpty);
+
+    expect(await queuedCodes(), [session.code]);
+    expect(client.listPhotosGate!.isCompleted, isFalse);
+    expect(await seen.baseline(cameraKey), isNull);
+    expect(await seen.stateOf(keyOf(syncPhoto)), SeenState.excluded);
+
+    client.listPhotosGate!.complete();
+    await walk;
+
+    expect(await queuedCodes(), [session.code]);
+    expect(client.log, ['start 2000', 'end 2000']);
+    expect(await seen.stateOf(keyOf(syncPhoto)), SeenState.excluded);
+    expect(await seen.baseline(cameraKey), hasLength(card.length + 2));
+  });
+
+  test('a shot offered twice during a cold walk is queued once', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    final collecting = collector(await resolvedClock());
+    client.listPhotosGate = Completer<void>();
+    final walk = collecting.rescan();
+
+    final added = shot(1, t0.add(second * 10));
+    client
+      ..objects.add(added)
+      ..emitAdded(added.handle);
+    await _until(() async => (await queue.items()).isNotEmpty);
+    client.emitAdded(added.handle);
+    await _until(() => client.log.isNotEmpty);
+    await Future<void>.delayed(_tick);
+
+    expect(await queue.items(), hasLength(1));
+    expect(client.log, ['start 1', 'end 1']);
+    client.listPhotosGate!.complete();
+    await walk;
+    expect(await queue.items(), hasLength(1));
+  });
+
+  test('the fast and the full pass racing for one shot send it once', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    final collecting = collector(await resolvedClock());
+    final added = shot(1, t0.add(second * 10));
+    client
+      ..objects.add(added)
+      ..chunkGate = Completer<void>()
+      ..emitAdded(added.handle);
+    await _until(() => client.log.isNotEmpty);
+
+    final walk = collecting.rescan();
+    await Future<void>.delayed(_tick);
+    client.chunkGate!.complete();
+    await walk;
+    await _until(() async => (await queue.items()).isNotEmpty);
+    await Future<void>.delayed(_tick);
+
+    expect(await queue.items(), hasLength(1));
+    expect(client.log, ['start 1', 'end 1']);
+    expect(client.requestedOffsets[added.handle], [0]);
+  });
+
+  test('a shot that arrives while a fast pass runs is queued too', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    collector(await resolvedClock());
+    final first = shot(1, t0.add(second * 10));
+    final second_ = shot(2, t0.add(second * 11));
+    client
+      ..objects.addAll([first, second_])
+      ..chunkGate = Completer<void>()
+      ..emitAdded(first.handle);
+    await _until(() => client.log.isNotEmpty);
+
+    client.emitAdded(second_.handle);
+    await pumpEventQueue();
+    client.chunkGate!.complete();
+
+    await _until(() async => (await queue.items()).length == 2);
+    expect(client.log, ['start 1', 'end 1', 'start 2', 'end 2']);
+  });
+
+  test('dispose during a fast pass queues nothing', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    final collecting = collector(await resolvedClock());
+    final added = cameraObject(
+      1,
+      'IMG_1.JPG',
+      size: fakeChunkSize,
+      captureDate: t0.add(second * 10).subtract(cameraLag).toLocal(),
+    );
+    client
+      ..objects.add(added)
+      ..chunkGate = Completer<void>()
+      ..emitAdded(added.handle);
+    await _until(() => client.requestedOffsets.isNotEmpty);
+
+    final disposing = collecting.dispose();
+    client.chunkGate!.complete();
+    await disposing;
+
+    expect(await queue.items(), isEmpty);
+    expect(await seen.stateOf(keyOf(added)), isNull);
+  });
+
+  test('a RAW too young to send waits for the next diff, not for the next '
+      'rescan', () async {
+    final session = await sessions.start();
+    now = t0.add(second * 20);
+    final cr3 = fakeCr3();
+    final young = shot(1, now, extension: 'CR3');
+    final raw = CameraObject(
+      handle: young.handle,
+      storageId: young.storageId,
+      filename: young.filename,
+      size: cr3.length,
+      captureDate: young.captureDate,
+      kind: young.kind,
+    );
+    client
+      ..objects.add(raw)
+      ..contentOverrides[raw.handle] = cr3;
+    now = now.add(second);
+    final collecting = collector(
+      await resolvedClock(),
+      detectorInterval: _tick,
+    );
+    await collecting.rescan();
+    await Future<void>.delayed(_tick * 3);
+    expect(await queue.items(), isEmpty);
+    final listings = client.listings;
+
+    now = now.add(collectorSettleDelay);
+    await _until(() async => (await queue.items()).isNotEmpty);
+
+    expect(await queuedCodes(), [session.code]);
+    expect(client.listings, listings);
+  });
+
+  test('a RAW followed by its JPEG sends the JPEG', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    collector(await resolvedClock());
+    final raw = shot(1, now.subtract(second), extension: 'CR3');
+    client
+      ..objects.add(raw)
+      ..emitAdded(raw.handle);
+    await Future<void>.delayed(_tick);
+    expect(await queue.items(), isEmpty);
+
+    final jpeg = cameraObject(2, 'IMG_1.JPG', captureDate: raw.captureDate);
+    client
+      ..objects.add(jpeg)
+      ..emitAdded(jpeg.handle);
+    await _until(() async => (await queue.items()).isNotEmpty);
+
+    final item = (await queue.items()).single;
+    expect(await File(item.filePath).readAsBytes(), contentFor(jpeg));
+    expect(client.log, ['start 2', 'end 2']);
+  });
+
+  test('a RAW listed after its JPEG was sent is not sent again', () async {
+    await sessions.start();
+    now = t0.add(second * 20);
+    final collecting = collector(await resolvedClock());
+    final jpeg = shot(1, t0.add(second * 10));
+    client.objects.add(jpeg);
+    await collecting.rescan();
+    expect(await queue.items(), hasLength(1));
+
+    final cr3 = fakeCr3();
+    final raw = CameraObject(
+      handle: 2,
+      storageId: jpeg.storageId,
+      filename: 'IMG_1.CR3',
+      size: cr3.length,
+      captureDate: jpeg.captureDate,
+      kind: CameraObjectKind.raw,
+    );
+    client
+      ..objects.add(raw)
+      ..contentOverrides[raw.handle] = cr3
+      ..emitAdded(raw.handle);
+    await Future<void>.delayed(_tick * 3);
+
+    expect(await queue.items(), hasLength(1));
+    expect(client.requestedOffsets.keys, [jpeg.handle]);
+  });
+
+  test('a shot outside every Session is settled by the pass and not offered '
+      'again', () async {
+    now = t0.add(second * 20);
+    final collecting = collector(
+      await resolvedClock(),
+      detectorInterval: _tick,
+    );
+    client.objects.add(shot(1, t0.add(second * 10)));
+    await _until(() => timers.length > 1);
+    await collecting.rescan();
+    final scheduled = timers.length;
+    final listings = client.listings;
+
+    await Future<void>.delayed(_tick * 10);
+
+    expect(timers, hasLength(scheduled));
+    expect(client.listings, listings);
+    expect(await queue.items(), isEmpty);
   });
 
   test('an error in a pass is survived and the next pass retries', () async {

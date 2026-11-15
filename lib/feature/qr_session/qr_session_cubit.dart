@@ -88,6 +88,10 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   late final StreamSubscription<ConnectState> _connectSubscription;
   late final StreamSubscription<void> _stopSubscription;
   SessionCollector? _collector;
+
+  /// The client collected from, or being attached; null while the camera
+  /// reconnects.
+  CameraClient? _client;
   bool _active = false;
 
   /// Set once the service runs; connection changes wait for it.
@@ -176,6 +180,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     _ready = false;
     _session++;
     _reported = null;
+    _client = null;
     final detaching = _detach();
     _emit(const QrSessionState());
     unawaited(_connect.setHoldNetwork(false));
@@ -187,21 +192,39 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   void _onConnection(ConnectState connection) {
     if (!_ready || isClosed) return;
     switch (connection) {
-      case ConnectConnected(:final client) when client != state.client:
-        _attach(client);
+      case ConnectConnected(:final client) when client != _client:
+        unawaited(_attach(client, _session));
       case ConnectReconnecting():
+        _client = null;
         unawaited(_detach());
       default:
     }
     _report();
   }
 
-  void _attach(CameraClient client) {
+  /// New shots are looked for beyond the newest folder as it is now. A
+  /// failed read closes the client, so the camera reconnects and tries
+  /// again.
+  Future<void> _attach(CameraClient client, int session) async {
+    _client = client;
     unawaited(_detach());
+    final Set<int> baseline;
+    try {
+      baseline = (await client.newestFolderHandles()).toSet();
+    } on Exception {
+      if (_isCurrent(session) && _client == client) {
+        unawaited(client.close());
+      }
+      return;
+    }
+    if (!_isCurrent(session) || _client != client) return;
     final clockSync = _sessions.createClockSync(client);
     unawaited(clockSync.start());
-    final collector = _collector = _sessions.createCollector(client, clockSync)
-      ..start();
+    final collector = _collector = _sessions.createCollector(
+      client,
+      clockSync,
+      baseline: baseline,
+    )..start();
     unawaited(collector.rescan());
     _emit(_copy(client: () => client, clockSync: () => clockSync));
   }
@@ -299,6 +322,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     _active = false;
     _ready = false;
     _session++;
+    _client = null;
     final detaching = _detach();
     await _modeSubscription.cancel();
     await _connectSubscription.cancel();
