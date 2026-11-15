@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../../data/camera_host_resolver.dart';
+import '../../data/download_history.dart';
 import '../../data/identity_repository.dart';
 import '../../data/network_binder.dart';
+import '../../data/ssdp_discovery.dart';
 import '../../data/upload_worker.dart';
 import '../../ptpip/camera_client.dart';
 import '../../usb/usb_camera_platform.dart';
@@ -43,6 +45,7 @@ class ConnectionSupervisor {
     required this._releaseStale,
     ClientValidator? validate,
     this._usbWatcher = const NoUsbCameraWatcher(),
+    this._discovery,
     DateTime Function()? clock,
     TimerFactory? timerFactory,
   }) : _validate = validate ?? _accept,
@@ -56,6 +59,10 @@ class ConnectionSupervisor {
 
   /// Failing this long counts as the camera being gone.
   static const unreachableAfter = Duration(minutes: 10);
+
+  /// Failed Wi-Fi retries before a camera found by discovery is looked for
+  /// at a new address.
+  static const rediscoverAfter = 3;
 
   final CameraConnector _connector;
   final IdentityRepository _identity;
@@ -72,6 +79,7 @@ class ConnectionSupervisor {
   final Future<void> Function() _releaseStale;
   final ClientValidator _validate;
   final UsbCameraWatcher _usbWatcher;
+  final CameraDiscovery? _discovery;
   final DateTime Function() _clock;
   final TimerFactory _timerFactory;
 
@@ -83,6 +91,14 @@ class ConnectionSupervisor {
   /// The Wi-Fi gateway when supervision began; another one means the phone
   /// joined a different network.
   String? _gateway;
+
+  /// The name discovery found the camera under; null when it was reached
+  /// by its gateway or a set address, which are never looked for again.
+  String? _discoveredName;
+
+  /// The camera's identity, which a camera found again must match.
+  String? _cameraKey;
+  int _failedRetries = 0;
 
   /// How the camera is reached; null counts as Wi-Fi.
   ConnectTarget? _target;
@@ -110,13 +126,15 @@ class ConnectionSupervisor {
   /// Keeps [client], or a camera reached through [target] when [client] is
   /// null, connected until [stop]. A Wi-Fi target binds as [bindingOwner],
   /// unless [gateway] says the owner is bound already and to which network.
-  /// Completes after the first attach or connection attempt.
+  /// A Wi-Fi camera [discoveredName] names is looked for again when it
+  /// stays away. Completes after the first attach or connection attempt.
   Future<void> supervise(
     CameraClient? client,
     ConnectTarget? target, {
     required String bindingOwner,
     bool holdNetwork = false,
     String? gateway,
+    String? discoveredName,
   }) async {
     _reset();
     final session = ++_session;
@@ -125,6 +143,7 @@ class ConnectionSupervisor {
     _bindingOwner = bindingOwner;
     _holdNetwork = holdNetwork;
     _gateway = gateway;
+    _discoveredName = target is WifiTarget ? discoveredName : null;
     if (client == null) return _tryReconnect(session);
     _client = client;
     if (target is UsbTarget || gateway != null) {
@@ -204,6 +223,9 @@ class ConnectionSupervisor {
     _userActionNeeded = false;
     _permissionRequested = false;
     _gateway = null;
+    _discoveredName = null;
+    _cameraKey = null;
+    _failedRetries = 0;
     _reconnectDelay = initialReconnectDelay;
     _failingSince = null;
     _unreachable = false;
@@ -222,6 +244,8 @@ class ConnectionSupervisor {
     }
     if (_client != client) return false;
     unawaited(client.disconnected.then((_) => _disconnected(client)));
+    _cameraKey ??= cameraKeyOf(client.deviceInfo);
+    _failedRetries = 0;
     _reconnectDelay = initialReconnectDelay;
     _failingSince = null;
     _unreachable = false;
@@ -322,9 +346,61 @@ class ConnectionSupervisor {
     } on Exception {
       if (!_isCurrent(session)) return false;
     }
+    if (++_failedRetries >= rediscoverAfter && _discoveredName != null) {
+      _failedRetries = 0;
+      if (await _rediscover(session)) return true;
+      if (!_isCurrent(session)) return false;
+    }
     final known = _gateway;
     if (gateway != null && known != null && gateway != known) {
       _unreachable = true;
+    }
+    return false;
+  }
+
+  /// Looks for the camera under its discovered name at another address,
+  /// and keeps it there if it is the same camera.
+  Future<bool> _rediscover(int session) async {
+    final discovery = _discovery;
+    final target = _target;
+    final name = _discoveredName;
+    final key = _cameraKey;
+    if (discovery == null ||
+        target is! WifiTarget ||
+        name == null ||
+        key == null) {
+      return false;
+    }
+    List<DiscoveredCamera> cameras;
+    try {
+      await _networkBinder.acquireMulticastLock();
+      cameras = await discovery();
+    } on Exception {
+      cameras = const [];
+    } finally {
+      try {
+        await _networkBinder.releaseMulticastLock();
+      } on PlatformException {
+        // The lock goes with the process anyway.
+      }
+    }
+    for (final camera in cameras) {
+      if (camera.name != name || camera.host == target.host) continue;
+      if (!_isCurrent(session)) return false;
+      final moved = WifiTarget(camera.host, target.identity);
+      final CameraClient client;
+      try {
+        client = await _connector(moved);
+      } on Exception {
+        continue;
+      }
+      if (!_isCurrent(session) || cameraKeyOf(client.deviceInfo) != key) {
+        await client.close();
+        if (!_isCurrent(session)) return false;
+        continue;
+      }
+      _target = moved;
+      return _attach(client, reconnected: true);
     }
     return false;
   }

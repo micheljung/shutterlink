@@ -44,6 +44,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       hostResolver: _hostResolver,
       networkBinder: _networkBinder,
       usbWatcher: _usbWatcher,
+      discovery: _discovery,
       onConnected: _onReconnected,
       onDisconnected: (_) {},
       onReconnecting: _onReconnecting,
@@ -87,6 +88,9 @@ class ConnectCubit extends Cubit<ConnectState> {
 
   /// The gateway of the Wi-Fi the last Wi-Fi connect bound to.
   String? _gateway;
+
+  /// The name discovery found the connected Wi-Fi camera under, if it did.
+  String? _discoveredName;
   bool _holdNetwork = false;
   bool _watchingUsb = true;
 
@@ -110,6 +114,7 @@ class ConnectCubit extends Cubit<ConnectState> {
     _supervisor.stop();
     final attempt = ++_attempt;
     _usbAttempt = false;
+    _discoveredName = null;
     emit(const ConnectConnecting());
     if (previous is ConnectConnected) await previous.client.close();
     final String? boundGateway;
@@ -201,6 +206,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       bindingOwner: bindingOwner,
       holdNetwork: _holdNetwork,
       gateway: target is UsbTarget ? null : _gateway,
+      discoveredName: _discoveredName,
     ),
   );
 
@@ -326,6 +332,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   Future<void> chooseCamera(DiscoveredCamera camera) async {
     if (state is! ConnectChooseCamera) return;
     _supervisor.stop();
+    _discoveredName = camera.name;
     emit(ConnectConnecting(cameraName: camera.name));
     await _connectTo(_attempt, camera.host);
   }
@@ -408,6 +415,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       case []:
         await _failUnreachable(gateway, error);
       case [final camera]:
+        _discoveredName = camera.name;
         emit(ConnectConnecting(cameraName: camera.name));
         await _connectTo(attempt, camera.host);
       default:
