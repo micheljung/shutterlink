@@ -1,0 +1,10 @@
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/brand/icon.png
+  remove_alpha_ios: true
+  adaptive_icon_background: "#0b1214"
+  adaptive_icon_foreground: assets/brand/icon_foreground.png
+  adaptive_icon_monochrome: assets/brand/icon_monochrome.png
+  # The masters already keep the mark inside the adaptive safe zone.
+  adaptive_icon_foreground_inset: 0

@@ -27,6 +27,16 @@ void main() {
     expect(SettingsCubit(settings).state.previewQuality, PreviewQuality.full);
   });
 
+  test('the onboarding is unseen until marked, and persists', () async {
+    expect(cubit.state.onboardingSeen, isFalse);
+
+    await cubit.markOnboardingSeen();
+
+    expect(cubit.state.onboardingSeen, isTrue);
+    expect(settings.onboardingSeen, isTrue);
+    expect(SettingsCubit(settings).state.onboardingSeen, isTrue);
+  });
+
   test('changing one setting keeps the others', () async {
     await cubit.setPreviewQuality(PreviewQuality.full);
     await cubit.setHostOverride('10.0.0.9');

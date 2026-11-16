@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'brand/brand_theme.dart';
 import 'camera_connector.dart';
 import 'data/camera_host_resolver.dart';
 import 'data/destination_repository.dart';
@@ -38,6 +39,7 @@ import 'usb/usb_camera_platform.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  BrandTheme.registerFontLicense();
   PaintingBinding.instance.imageCache.maximumSize =
       ThumbnailCache.defaultMaxMemoryEntries;
 

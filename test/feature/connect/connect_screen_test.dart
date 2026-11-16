@@ -1,23 +1,46 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:shutterlink/brand/brand_theme.dart';
+import 'package:shutterlink/brand/shutterlink_logo.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
+import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/ssdp_discovery.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/connect/connect_state.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
+import 'package:shutterlink/feature/download/download_state.dart';
+import 'package:shutterlink/feature/onboarding/setup_steps.dart';
+import 'package:shutterlink/feature/sessions/active_session_indicator.dart';
+import 'package:shutterlink/feature/sessions/session.dart';
+import 'package:shutterlink/feature/sessions/sessions_cubit.dart';
+import 'package:shutterlink/feature/sessions/sessions_state.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/fake_usb_camera_watcher.dart';
 import '../../fakes/test_app.dart';
+
+class _MockConnectCubit extends MockCubit<ConnectState>
+    implements ConnectCubit {}
+
+class _MockSettingsCubit extends MockCubit<SettingsState>
+    implements SettingsCubit {}
+
+class _MockSessionsCubit extends MockCubit<SessionsState>
+    implements SessionsCubit {}
+
+class _MockDownloadCubit extends MockCubit<DownloadState>
+    implements DownloadCubit {}
 
 void main() {
   const gateway = CameraHostResolver.fallbackHost;
@@ -65,7 +88,7 @@ void main() {
         child: const MaterialApp(home: ConnectScreen()),
       ),
     );
-    await tester.tap(find.text('Connect'));
+    await tester.tap(find.text(ConnectScreen.connectLabel));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Cancel'));
     await tester.pumpAndSettle();
@@ -90,7 +113,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('EOS R'), findsNothing);
-    expect(find.text('Connect'), findsOneWidget);
+    expect(find.text(ConnectScreen.connectLabel), findsOneWidget);
   });
 
   group('USB', () {
@@ -304,6 +327,208 @@ void main() {
       await tester.pump();
 
       expect(targets.single, isA<DemoTarget>());
+    });
+  });
+  group('every state keeps a home', () {
+    const sessionCode = 'brave-otter';
+    const pairingTitle = 'Pair this phone on the camera';
+    const pausedText = 'Download paused. Reconnect to resume it.';
+    final connectButton = find.text(ConnectScreen.connectLabel);
+    late _MockConnectCubit connect;
+    late int picks;
+
+    Future<void> pumpState(
+      WidgetTester tester,
+      ConnectState state, {
+      bool usbExperimental = false,
+      bool downloadPaused = false,
+      bool sessionActive = false,
+    }) async {
+      picks = 0;
+      connect = _MockConnectCubit();
+      when(() => connect.state).thenReturn(state);
+      when(() => connect.usbWatcher).thenReturn(FakeUsbCameraWatcher());
+      when(connect.connect).thenAnswer((_) async {});
+      when(connect.cancelChoice).thenAnswer((_) async {});
+      final settings = _MockSettingsCubit();
+      when(() => settings.state).thenReturn(
+        SettingsState(
+          format: SettingsRepository.defaultFormat,
+          previewQuality: SettingsRepository.defaultPreviewQuality,
+          sessionsConfigured: sessionActive,
+        ),
+      );
+      final sessions = _MockSessionsCubit();
+      when(() => sessions.state).thenReturn(
+        SessionsState(
+          loaded: true,
+          sessions: [
+            if (sessionActive)
+              Session(
+                id: sessionCode,
+                code: sessionCode,
+                createdAt: DateTime.utc(2026),
+                intervals: [ActivityInterval(DateTime.utc(2026))],
+              ),
+          ],
+        ),
+      );
+      final download = _MockDownloadCubit();
+      when(() => download.state).thenReturn(
+        DownloadState(
+          status: downloadPaused ? DownloadStatus.paused : DownloadStatus.idle,
+        ),
+      );
+      await tester.pumpWidget(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider<ConnectCubit>.value(value: connect),
+            BlocProvider<SettingsCubit>.value(value: settings),
+            BlocProvider<SessionsCubit>.value(value: sessions),
+            BlocProvider<DownloadCubit>.value(value: download),
+          ],
+          child: MaterialApp(
+            theme: BrandTheme.light(),
+            home: ConnectScreen(
+              usbExperimental: usbExperimental,
+              pickPhotos: () async {
+                picks++;
+                return [];
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    Future<void> expectConnectTappable(WidgetTester tester) async {
+      expect(connectButton, findsOneWidget);
+      await tester.tap(connectButton);
+      await tester.pump();
+      verify(connect.connect).called(1);
+    }
+
+    void expectHome() {
+      expect(find.byType(ShutterlinkLogo), findsOneWidget);
+      expect(find.byTooltip('Settings').hitTestable(), findsOneWidget);
+      expect(
+        find.text(ConnectScreen.setupGuideLabel).hitTestable(),
+        findsOneWidget,
+      );
+    }
+
+    testWidgets('idle shows the logo and Connect', (tester) async {
+      await pumpState(tester, const ConnectIdle());
+
+      expectHome();
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('pairing shows the pairing help', (tester) async {
+      await pumpState(tester, const ConnectPairingRequired());
+
+      expect(find.text(pairingTitle), findsOneWidget);
+      expectHome();
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('a failure shows its message', (tester) async {
+      await pumpState(tester, const ConnectFailed('Camera not found'));
+
+      expect(find.text('Camera not found'), findsOneWidget);
+      expectHome();
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('a paused download says so', (tester) async {
+      await pumpState(tester, const ConnectIdle(), downloadPaused: true);
+
+      expect(find.text(pausedText), findsOneWidget);
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('a running Session stays visible', (tester) async {
+      await pumpState(tester, const ConnectIdle(), sessionActive: true);
+
+      expect(find.text(ActiveSessionIndicator.text(sessionCode)), findsOne);
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('labels USB as experimental', (tester) async {
+      await pumpState(tester, const ConnectIdle(), usbExperimental: true);
+
+      expect(find.text(ConnectScreen.usbExperimentalLabel), findsOneWidget);
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('Connect stays tappable with every notice shown', (
+      tester,
+    ) async {
+      await pumpState(
+        tester,
+        const ConnectPairingRequired(),
+        usbExperimental: true,
+        downloadPaused: true,
+        sessionActive: true,
+      );
+
+      expect(find.text(pairingTitle), findsOneWidget);
+      expect(find.text(pausedText), findsOneWidget);
+      expect(find.text(ActiveSessionIndicator.text(sessionCode)), findsOne);
+      expectHome();
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('offers the demo', (tester) async {
+      await pumpState(tester, const ConnectIdle());
+
+      await tester.tap(find.text(ConnectScreen.demoLabel));
+      await tester.pump();
+
+      expect(picks, 1);
+    });
+
+    testWidgets('the chooser lists the cameras and cancels', (tester) async {
+      await pumpState(tester, const ConnectChooseCamera(cameras));
+
+      expect(find.text('EOS R'), findsOneWidget);
+      expect(find.text('EOS R6'), findsOneWidget);
+      expect(connectButton, findsNothing);
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+      verify(connect.cancelChoice).called(1);
+      expectHome();
+    });
+
+    testWidgets('connecting over Wi-Fi names the camera', (tester) async {
+      await pumpState(tester, const ConnectConnecting(cameraName: 'EOS R'));
+
+      expect(find.textContaining('Connecting to EOS R…'), findsOneWidget);
+      expect(connectButton, findsNothing);
+      expectHome();
+    });
+
+    testWidgets('connecting over USB says so', (tester) async {
+      await pumpState(tester, const ConnectConnecting(usb: true));
+
+      expect(
+        find.text(ConnectScreen.usbConnectingText).hitTestable(),
+        findsOneWidget,
+      );
+      expect(connectButton, findsNothing);
+    });
+
+    testWidgets('the setup guide lists every step', (tester) async {
+      await pumpState(tester, const ConnectIdle());
+
+      await tester.tap(find.text(ConnectScreen.setupGuideLabel));
+      await tester.pumpAndSettle();
+
+      expect(find.text(SetupSteps.title), findsOneWidget);
+      expect(find.byType(SetupStepList), findsOneWidget);
+      for (final step in SetupSteps.all) {
+        expect(find.text(step, findRichText: true), findsOneWidget);
+      }
     });
   });
 }

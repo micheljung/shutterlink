@@ -21,6 +21,7 @@ import 'package:shutterlink/data/sessions_upload_queue.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_transport.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
+import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/live/ingest_coordinator.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/sessions_dependencies.dart';
@@ -136,7 +137,7 @@ SessionsDependencies testSessionsDependencies(
 
 /// Taps Connect on the connect screen, then picks Browse & Download.
 Future<void> connectAndBrowse(WidgetTester tester) async {
-  await tester.tap(find.text('Connect'));
+  await tester.tap(find.text(ConnectScreen.connectLabel));
   await tester.pumpAndSettle();
   await tester.tap(find.text(OperatingMode.browse.label));
   await tester.pumpAndSettle();
@@ -149,7 +150,10 @@ Future<AppDependencies> testDependencies(
   UsbCameraPlatform usb = const NoUsbCameraPlatform(),
   UsbVendorClaim claimsUsbVendor = _claimsNone,
 }) async {
-  SharedPreferences.setMockInitialValues(prefs);
+  SharedPreferences.setMockInitialValues({
+    SettingsRepository.onboardingSeenKey: true,
+    ...prefs,
+  });
   final preferences = await SharedPreferences.getInstance();
   final settings = SettingsRepository(preferences);
   final historyDirectory = Directory.systemTemp.createTempSync(

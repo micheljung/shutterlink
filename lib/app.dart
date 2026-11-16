@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'brand/brand_theme.dart';
 import 'data/camera_host_resolver.dart';
 import 'data/destination_repository.dart';
 import 'data/download_history.dart';
@@ -22,6 +23,7 @@ import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
 import 'feature/mode/mode_cubit.dart';
 import 'feature/mode/mode_host.dart';
+import 'feature/onboarding/onboarding_screen.dart';
 import 'feature/qr_session/qr_session_cubit.dart';
 import 'feature/sessions/sessions_cubit.dart';
 import 'feature/sessions/sessions_dependencies.dart';
@@ -84,8 +86,6 @@ class AppDependencies {
 
 class ShutterlinkApp extends StatelessWidget {
   const ShutterlinkApp({super.key, required this.dependencies});
-
-  static const _seedColor = Colors.red;
 
   final AppDependencies dependencies;
 
@@ -175,11 +175,8 @@ class ShutterlinkApp extends StatelessWidget {
       child: _SessionsUploads(
         child: MaterialApp(
           title: 'Shutterlink',
-          theme: ThemeData(colorSchemeSeed: _seedColor),
-          darkTheme: ThemeData(
-            colorSchemeSeed: _seedColor,
-            brightness: Brightness.dark,
-          ),
+          theme: BrandTheme.light(),
+          darkTheme: BrandTheme.dark(),
           home: _Home(
             usbExperimental: dependencies.usb.isExperimental,
             pickPhotos: dependencies.pickPhotos,
@@ -313,10 +310,18 @@ class _HomeState extends State<_Home> {
             _screenOf(previous) != _screenOf(current),
         builder: (context, state) => switch (_screenOf(state)) {
           _HomeScreen.modes => const ModeHost(),
-          _HomeScreen.connect => ConnectScreen(
-            usbExperimental: widget.usbExperimental,
-            pickPhotos: widget.pickPhotos,
-          ),
+          _HomeScreen.connect =>
+            BlocSelector<SettingsCubit, SettingsState, bool>(
+              selector: (state) => state.onboardingSeen,
+              builder: (context, seen) => seen
+                  ? ConnectScreen(
+                      usbExperimental: widget.usbExperimental,
+                      pickPhotos: widget.pickPhotos,
+                    )
+                  : OnboardingScreen(
+                      onDone: context.read<SettingsCubit>().markOnboardingSeen,
+                    ),
+            ),
         },
       );
 }

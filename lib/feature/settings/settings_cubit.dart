@@ -21,6 +21,7 @@ class SettingsState extends Equatable {
     this.sessionsServerUrl,
     this.sessionsConfigured = false,
     this.sessionsTokenRevision = 0,
+    this.onboardingSeen = false,
   });
 
   final DownloadFormat format;
@@ -32,6 +33,8 @@ class SettingsState extends Equatable {
   /// Counts saved tokens, so a corrected token wakes a paused upload worker.
   final int sessionsTokenRevision;
 
+  final bool onboardingSeen;
+
   SettingsState copyWith({
     DownloadFormat? format,
     PreviewQuality? previewQuality,
@@ -39,6 +42,7 @@ class SettingsState extends Equatable {
     String? Function()? sessionsServerUrl,
     bool? sessionsConfigured,
     int? sessionsTokenRevision,
+    bool? onboardingSeen,
   }) => SettingsState(
     format: format ?? this.format,
     previewQuality: previewQuality ?? this.previewQuality,
@@ -48,6 +52,7 @@ class SettingsState extends Equatable {
         : this.sessionsServerUrl,
     sessionsConfigured: sessionsConfigured ?? this.sessionsConfigured,
     sessionsTokenRevision: sessionsTokenRevision ?? this.sessionsTokenRevision,
+    onboardingSeen: onboardingSeen ?? this.onboardingSeen,
   );
 
   @override
@@ -58,6 +63,7 @@ class SettingsState extends Equatable {
     sessionsServerUrl,
     sessionsConfigured,
     sessionsTokenRevision,
+    onboardingSeen,
   ];
 }
 
@@ -69,6 +75,7 @@ class SettingsCubit extends Cubit<SettingsState> {
           previewQuality: _repository.previewQuality,
           hostOverride: _repository.hostOverride,
           sessionsServerUrl: _repository.sessionsServerUrl,
+          onboardingSeen: _repository.onboardingSeen,
         ),
       );
 
@@ -85,6 +92,12 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> setPreviewQuality(PreviewQuality quality) async {
     await _repository.setPreviewQuality(quality);
     emit(state.copyWith(previewQuality: quality));
+  }
+
+  Future<void> markOnboardingSeen() async {
+    await _repository.setOnboardingSeen();
+    if (isClosed) return;
+    emit(state.copyWith(onboardingSeen: true));
   }
 
   Future<void> setHostOverride(String? host) async {

@@ -33,6 +33,17 @@ void main() {
     );
   });
 
+  test('the onboarding is unseen by default and persists', () async {
+    expect(settings.onboardingSeen, isFalse);
+
+    await settings.setOnboardingSeen();
+
+    expect(
+      SettingsRepository(await SharedPreferences.getInstance()).onboardingSeen,
+      isTrue,
+    );
+  });
+
   test('blank host override clears it', () async {
     await settings.setHostOverride(' 192.168.1.5 ');
     expect(settings.hostOverride, '192.168.1.5');

@@ -1,3 +1,5 @@
+<img src="assets/brand/logo.svg" width="96" alt="Shutterlink logo">
+
 # Shutterlink
 
 Download JPEG and CR3 photos from a Canon EOS R to your phone over the
@@ -9,7 +11,8 @@ Optionally upload to your own WebDAV/S3/SFTP server or Immich.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 <p>
-  <img src="docs/screenshots/connect.png" width="200" alt="Connect screen with camera setup steps">
+  <img src="docs/screenshots/connect.png" width="200" alt="Start screen with the Shutterlink logo, a Connect button, a demo mode and the setup guide">
+  <img src="docs/screenshots/modes.png" width="200" alt="Mode picker with Browse &amp; Download, Auto Upload and QR Session">
   <img src="docs/screenshots/gallery.png" width="200" alt="Photo grid grouped by day, with downloaded badges and a range selection">
   <img src="docs/screenshots/preview.png" width="200" alt="Full-screen photo preview">
   <img src="docs/screenshots/download.png" width="200" alt="Download sheet showing progress">
@@ -307,11 +310,26 @@ The SFTP tests start a local OpenSSH `sshd` and are skipped by default. CI runs
 them with `--tags "sftp || sftp-root" --run-skipped`; `lib/upload/` must reach
 90% line coverage across both runs (`tool/check_coverage.sh`).
 
-To regenerate the screenshots in `docs/screenshots/`:
+To regenerate the screenshots in `docs/screenshots/` (dark theme; add
+`--dart-define=SCREENSHOTS_LIGHT=true --dart-define=SCREENSHOTS_DIR=<dir>` to
+review the light theme elsewhere):
 
 ```bash
 fvm flutter test --tags screenshots --run-skipped
 ```
+
+The brand assets in `assets/brand/` are rendered from the logo in
+`lib/brand/`. After changing it, regenerate them and the platform icons and
+splash screens:
+
+```bash
+fvm flutter test --tags brand-assets --run-skipped
+fvm dart run flutter_launcher_icons
+fvm dart run flutter_native_splash:create
+```
+
+`flutter_launcher_icons` also rewrites `ios/Runner.xcodeproj/project.pbxproj`;
+discard that change.
 
 ## Sessions
 

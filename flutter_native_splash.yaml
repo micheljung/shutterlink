@@ -1,0 +1,14 @@
+flutter_native_splash:
+  color: "#f5fafb"
+  image: assets/brand/splash.png
+  color_dark: "#0b1214"
+  image_dark: assets/brand/splash_dark.png
+  android_12:
+    color: "#f5fafb"
+    image: assets/brand/splash_android12.png
+    # Set, so Android 12 uses the 960px icon spec the masters are drawn for.
+    icon_background_color: "#f5fafb"
+    color_dark: "#0b1214"
+    image_dark: assets/brand/splash_android12_dark.png
+    icon_background_color_dark: "#0b1214"
+  web: false
