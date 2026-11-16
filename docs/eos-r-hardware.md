@@ -27,3 +27,12 @@ disagree with `test/ptpip/fake_camera.dart`, these notes are correct.
 - **Reconnect gap:** after any TCP connection to port 15740 closes, the camera
   is unreachable for about 12–15 s. That includes a clean PTP session and a
   bare `nc -z` probe. Don't poll it between runs; wait about 15 s instead.
+- **Thumbnail orientation:** GetThumb returns the thumbnail as stored, not
+  turned upright. A portrait shot (ES3A7363.JPG, firmware 3-1.8.0, probed
+  2026-11-16) came back as a 160x120 landscape JPEG with no EXIF Orientation.
+  So `PtpCameraClient.thumbnailsUpright` is false, and the preview and grid
+  turn thumbnails by the photo's own orientation (EXIF, or CR3 CMT1).
+- **Download stall:** in the same run, a 1 MB GetPartialObject sent nothing
+  for 3 s, and the probe gave up with "No PTP response". This has been seen
+  once. If it happens again, the 3 s response timeout may be too short over
+  Wi-Fi.

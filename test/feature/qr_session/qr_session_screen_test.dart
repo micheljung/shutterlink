@@ -75,7 +75,6 @@ void main() {
     when(() => settings.state).thenReturn(
       const SettingsState(
         format: DownloadFormat.jpeg,
-        previewQuality: PreviewQuality.thumbnail,
         sessionsServerUrl: _serverUrl,
         sessionsConfigured: true,
       ),

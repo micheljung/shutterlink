@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shutterlink/data/photo_saver.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
@@ -46,6 +46,7 @@ class FakeCameraClient implements CameraClient {
   Completer<void>? deleteGate;
   final int? disconnectAfterChunks;
   final requestedOffsets = <int, List<int>>{};
+  final downloadLengths = <int, List<int?>>{};
   final thumbnailRequests = <int>[];
   final thumbnailTokens = <CancelToken?>[];
   final downloadTokens = <int, List<CancelToken?>>{};
@@ -55,6 +56,8 @@ class FakeCameraClient implements CameraClient {
   final _added = StreamController<int>.broadcast();
   final _storageChanged = StreamController<void>.broadcast();
   Completer<void>? chunkGate;
+  Completer<void>? thumbnailGate;
+  int chunkSize = fakeChunkSize;
   Completer<void>? objectInfoGate;
 
   /// Holds [listPhotos], like a slow walk of a large card.
@@ -128,9 +131,13 @@ class FakeCameraClient implements CameraClient {
   }
 
   @override
+  bool thumbnailsUpright = false;
+
+  @override
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken}) async {
     thumbnailRequests.add(handle);
     thumbnailTokens.add(cancelToken);
+    await thumbnailGate?.future;
     return Uint8List.fromList([handle]);
   }
 
@@ -139,14 +146,19 @@ class FakeCameraClient implements CameraClient {
     CameraObject object,
     ChunkWriter write, {
     int offset = 0,
+    int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   }) async {
     requestedOffsets.putIfAbsent(object.handle, () => []).add(offset);
+    downloadLengths.putIfAbsent(object.handle, () => []).add(length);
     downloadTokens.putIfAbsent(object.handle, () => []).add(cancelToken);
     final content = contentOverrides[object.handle] ?? contentFor(object);
+    final end = length == null
+        ? content.length
+        : (offset + length).clamp(0, content.length);
     var position = offset;
-    while (position < content.length) {
+    while (position < end) {
       if (cancelToken?.isCancelled ?? false) {
         throw const TransferCancelledException();
       }
@@ -155,10 +167,10 @@ class FakeCameraClient implements CameraClient {
         simulateDisconnect();
         throw const CameraDisconnectedException();
       }
-      final end = (position + fakeChunkSize).clamp(0, content.length);
-      await write(Uint8List.sublistView(content, position, end));
+      final chunkEnd = (position + chunkSize).clamp(0, end);
+      await write(Uint8List.sublistView(content, position, chunkEnd));
       _chunksSent++;
-      position = end;
+      position = chunkEnd;
       onProgress?.call(position, content.length);
       final gate = chunkGate;
       if (gate != null) await gate.future;
@@ -213,7 +225,29 @@ class RecordingPhotoSaver implements PhotoSaver {
   }
 }
 
-class MemoryThumbnailCache implements ThumbnailCache {
+/// Keeps quarter turns in memory, for fake thumbnail caches.
+mixin MemoryTurns {
+  final _turns = <String, int>{};
+  final _turnsRevision = ValueNotifier<int>(0);
+
+  ValueListenable<int> get turnsRevision => _turnsRevision;
+
+  int? turnsOf(CameraObject object) => _turns[ThumbnailCache.cacheKey(object)];
+
+  Future<int?> loadTurns(CameraObject object) async => turnsOf(object);
+
+  Future<void> rememberTurns(CameraObject object, int turns) async {
+    _turns[ThumbnailCache.cacheKey(object)] = turns;
+    _turnsRevision.value++;
+  }
+}
+
+class MemoryThumbnailCache with MemoryTurns implements ThumbnailCache {
+  /// [keep] hands out what was fetched; otherwise every thumbnail is missing.
+  MemoryThumbnailCache({this.keep = false});
+
+  final bool keep;
+
   @override
   Directory get directory => Directory.systemTemp;
 
@@ -228,7 +262,7 @@ class MemoryThumbnailCache implements ThumbnailCache {
 
   @override
   Future<Uint8List?> get(CameraObject object, ThumbnailFetcher fetch) async {
-    await fetch(object.handle);
-    return null;
+    final bytes = await fetch(object.handle);
+    return keep ? bytes : null;
   }
 }

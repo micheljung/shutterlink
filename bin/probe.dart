@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:collection/collection.dart';
 import 'package:path/path.dart' as p;
+import 'package:shutterlink/data/cr3_preview.dart';
+import 'package:shutterlink/data/exif.dart';
 import 'package:shutterlink/ptpip/ptpip.dart';
 import 'package:uuid/uuid.dart';
 
@@ -209,8 +212,19 @@ Future<int> _probe(
           : 'Thumbnail of ${target.filename}: ${thumb.length} bytes '
                 'in ${thumbWatch.elapsedMilliseconds} ms',
     );
-
     await downloadDir.create(recursive: true);
+    if (thumb != null) {
+      final thumbFile = File(
+        p.join(downloadDir.path, '${p.basename(target.filename)}.thumb.jpg'),
+      );
+      await thumbFile.writeAsBytes(thumb);
+      final size = _jpegSize(thumb);
+      out.writeln(
+        'Thumbnail: ${size == null ? 'size unknown' : '${size.width}x${size.height}'}, '
+        'EXIF orientation ${exifOrientation(thumb) ?? 'none'} -> ${thumbFile.path}',
+      );
+    }
+
     final file = File(p.join(downloadDir.path, target.filename));
     final sink = await file.open(mode: FileMode.write);
     final watch = Stopwatch()..start();
@@ -220,6 +234,9 @@ Future<int> _probe(
       await sink.close();
     }
     watch.stop();
+    out.writeln(
+      'Photo orientation: ${await _orientationOf(file, target) ?? 'none'}',
+    );
     final seconds = watch.elapsedMicroseconds / _microsecondsPerSecond;
     final megabytes = target.size / _bytesPerMegabyte;
     out.writeln(
@@ -231,6 +248,45 @@ Future<int> _probe(
   } finally {
     await client.close();
   }
+}
+
+/// The EXIF orientation of the downloaded [file]: from a JPEG's APP1, or a
+/// CR3's CMT1 box.
+Future<int?> _orientationOf(File file, CameraObject object) async {
+  final handle = await file.open();
+  try {
+    final head = await handle.read(
+      min(cr3PreviewReadCap, await handle.length()),
+    );
+    return object.kind == CameraObjectKind.jpeg
+        ? exifOrientation(head)
+        : cr3Orientation(head);
+  } finally {
+    await handle.close();
+  }
+}
+
+const _startOfFrameMarkers = {
+  0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, //
+  0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
+};
+
+/// The stored pixel size of a JPEG, before any EXIF orientation, from its
+/// start-of-frame segment.
+({int width, int height})? _jpegSize(Uint8List jpeg) {
+  final data = ByteData.sublistView(jpeg);
+  var position = 2;
+  while (position + 9 <= jpeg.length && jpeg[position] == 0xFF) {
+    final marker = jpeg[position + 1];
+    if (_startOfFrameMarkers.contains(marker)) {
+      return (
+        width: data.getUint16(position + 7),
+        height: data.getUint16(position + 5),
+      );
+    }
+    position += 2 + data.getUint16(position + 2);
+  }
+  return null;
 }
 
 class _EventWatcher {

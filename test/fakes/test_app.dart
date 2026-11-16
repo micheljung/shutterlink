@@ -22,6 +22,7 @@ import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_transport.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
+import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/live/ingest_coordinator.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/sessions_dependencies.dart';
@@ -149,6 +150,7 @@ Future<AppDependencies> testDependencies(
   SessionsDependenciesFactory sessions = testSessionsDependencies,
   UsbCameraPlatform usb = const NoUsbCameraPlatform(),
   UsbVendorClaim claimsUsbVendor = _claimsNone,
+  ThumbnailCache? thumbnailCache,
 }) async {
   SharedPreferences.setMockInitialValues({
     SettingsRepository.onboardingSeenKey: true,
@@ -177,7 +179,7 @@ Future<AppDependencies> testDependencies(
     networkBinder: NoopNetworkBinder(),
     photoSaver: RecordingPhotoSaver(),
     connector: connector,
-    thumbnailCache: MemoryThumbnailCache(),
+    thumbnailCache: thumbnailCache ?? MemoryThumbnailCache(),
     downloadDirectory: downloadDirectory,
     downloadHistory: DownloadHistoryRepository(
       File(p.join(historyDirectory.path, DownloadHistoryRepository.fileName)),

@@ -276,6 +276,7 @@ Future<void> _pumpApp(
   tester.platformDispatcher.platformBrightnessTestValue = _brightness;
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
   final thumbnails = await tester.runAsync(_renderThumbnails);
+  if (client is _ScreenshotCameraClient) client.serveJpegs(thumbnails!);
   SharedPreferences.setMockInitialValues({
     SettingsRepository.onboardingSeenKey: true,
     if (configured) ...{
@@ -441,11 +442,31 @@ class _ScreenshotCameraClient extends FakeCameraClient {
 
   static const _stallName = 'IMG_4819.JPG';
 
+  /// Makes each JPEG the rendered picture, so the preview's full-size load
+  /// shows it. A stalling client keeps its tiny files.
+  void serveJpegs(Map<String, Uint8List> pictures) {
+    if (stall) return;
+    for (final (index, object) in objects.indexed) {
+      final picture = pictures[p.basenameWithoutExtension(object.filename)];
+      if (object.kind != CameraObjectKind.jpeg || picture == null) continue;
+      objects[index] = CameraObject(
+        handle: object.handle,
+        storageId: object.storageId,
+        filename: object.filename,
+        size: picture.length,
+        captureDate: object.captureDate,
+        kind: object.kind,
+      );
+      contentOverrides[object.handle] = picture;
+    }
+  }
+
   @override
   Future<void> download(
     CameraObject object,
     ChunkWriter write, {
     int offset = 0,
+    int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -454,6 +475,7 @@ class _ScreenshotCameraClient extends FakeCameraClient {
         object,
         write,
         offset: offset,
+        length: length,
         onProgress: onProgress,
         cancelToken: cancelToken,
       );
@@ -467,7 +489,7 @@ class _ScreenshotCameraClient extends FakeCameraClient {
   }
 }
 
-class _PrerenderedThumbnails implements ThumbnailCache {
+class _PrerenderedThumbnails with MemoryTurns implements ThumbnailCache {
   _PrerenderedThumbnails(this._bytes);
 
   final Map<String, Uint8List> _bytes;

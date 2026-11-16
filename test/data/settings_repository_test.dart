@@ -22,17 +22,6 @@ void main() {
     );
   });
 
-  test('preview quality defaults to thumbnail and persists changes', () async {
-    expect(settings.previewQuality, PreviewQuality.thumbnail);
-
-    await settings.setPreviewQuality(PreviewQuality.full);
-
-    expect(
-      SettingsRepository(await SharedPreferences.getInstance()).previewQuality,
-      PreviewQuality.full,
-    );
-  });
-
   test('the onboarding is unseen by default and persists', () async {
     expect(settings.onboardingSeen, isFalse);
 

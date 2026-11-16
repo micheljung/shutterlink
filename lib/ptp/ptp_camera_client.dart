@@ -310,24 +310,34 @@ class PtpCameraClient implements CameraClient {
   }
 
   @override
+  bool get thumbnailsUpright => false;
+
+  @override
   Future<void> download(
     CameraObject object,
     ChunkWriter write, {
     int offset = 0,
+    int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   }) async {
     final release = _session.holdLowPriority();
     try {
+      final end = length == null
+          ? object.size
+          : min(object.size, offset + length);
       var received = offset;
-      while (received < object.size) {
+      while (received < end) {
         if (cancelToken?.isCancelled ?? false) {
           throw const TransferCancelledException();
         }
-        final length = min(ptpDownloadChunkSize, object.size - received);
         final chunk = (await _session.execute(
           PtpOperation.getPartialObject,
-          params: [object.handle, received, length],
+          params: [
+            object.handle,
+            received,
+            min(ptpDownloadChunkSize, end - received),
+          ],
         )).data;
         if (chunk.isEmpty) {
           throw PtpResponseException(

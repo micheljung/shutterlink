@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as p;
@@ -13,6 +14,9 @@ import '../live/ingest_coordinator.dart';
 import 'download_plan.dart';
 import 'download_state.dart';
 import 'object_fetcher.dart';
+
+/// Sees a completely fetched [file] of [object].
+typedef FetchedCallback = Future<void> Function(CameraObject object, File file);
 
 class DownloadCubit extends Cubit<DownloadState> {
   DownloadCubit({
@@ -38,14 +42,39 @@ class DownloadCubit extends Cubit<DownloadState> {
   CancelToken? _cancelToken;
   String _cameraKey = '';
   bool _alsoUpload = false;
+  bool _starting = false;
+  FetchedCallback? _onFetched;
 
+  /// Downloads [groups] in [format]. [prefetched] holds the start of files
+  /// already received elsewhere, such as by the preview; their transfer
+  /// resumes after those bytes. [onFetched] sees each file once it is
+  /// complete, before it is saved.
   Future<void> start(
     CameraClient client,
     List<PhotoGroup> groups,
     DownloadFormat format, {
     bool alsoUpload = false,
+    Map<CameraObject, Uint8List> prefetched = const {},
+    FetchedCallback? onFetched,
   }) async {
-    if (state.status == DownloadStatus.running) return;
+    if (state.status == DownloadStatus.running || _starting) return;
+    _starting = true;
+    try {
+      await _prepare(client, groups, format, alsoUpload, prefetched);
+    } finally {
+      _starting = false;
+    }
+    _onFetched = onFetched;
+    await _run(client, _cancelToken = CancelToken());
+  }
+
+  Future<void> _prepare(
+    CameraClient client,
+    List<PhotoGroup> groups,
+    DownloadFormat format,
+    bool alsoUpload,
+    Map<CameraObject, Uint8List> prefetched,
+  ) async {
     _alsoUpload = alsoUpload;
     await _discardPartialFiles();
     _changedTasks.clear();
@@ -66,7 +95,26 @@ class DownloadCubit extends Cubit<DownloadState> {
         alreadyDownloaded: plan.alreadyDownloaded,
       ),
     );
-    await _run(client, _cancelToken = CancelToken());
+    await _seed(plan.tasks.expand((task) => task.files), prefetched);
+  }
+
+  /// Puts what is [prefetched] of [objects] where [ObjectFetcher] resumes
+  /// from.
+  Future<void> _seed(
+    Iterable<CameraObject> objects,
+    Map<CameraObject, Uint8List> prefetched,
+  ) async {
+    for (final object in objects) {
+      final bytes = prefetched[object];
+      if (bytes == null || bytes.length > object.size) continue;
+      try {
+        final file = _workFile(object);
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(bytes, flush: true);
+      } on FileSystemException {
+        // The file is fetched in full instead.
+      }
+    }
   }
 
   Future<void> resume(CameraClient client) async {
@@ -217,6 +265,7 @@ class DownloadCubit extends Cubit<DownloadState> {
       for (final object in pending) {
         if (token.isCancelled) throw const TransferCancelledException();
         files[object] = await _fetch(client, object, token);
+        await _tellFetched(object, files[object]!);
       }
       if (token.isCancelled) throw const TransferCancelledException();
       if (pending.isNotEmpty) {
@@ -256,6 +305,14 @@ class DownloadCubit extends Cubit<DownloadState> {
       return DownloadFailureReason.saveFailed;
     } finally {
       if (!keepFiles) await _deleteTaskFiles(task);
+    }
+  }
+
+  Future<void> _tellFetched(CameraObject object, File file) async {
+    try {
+      await _onFetched?.call(object, file);
+    } on Exception {
+      // Only the onlooker misses out; the download goes on.
     }
   }
 

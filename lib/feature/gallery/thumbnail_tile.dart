@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../data/exif.dart';
 import '../../ptpip/camera_client.dart';
 import '../mode/attached_client.dart';
 import '../spacing.dart';
@@ -38,11 +39,15 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
   final _cancelToken = CancelToken();
   Uint8List? _bytes;
   bool _failed = false;
+  int? _turns;
 
   @override
   void initState() {
     super.initState();
     final source = widget.group.thumbnailSource;
+    widget.cache.turnsRevision.addListener(_onTurns);
+    _turns = widget.cache.turnsOf(source);
+    if (_turns == null) _loadTurns(source);
     _bytes = widget.cache.peek(source);
     // A dead client is not asked; the mode gets a new one.
     if (_bytes == null && AttachedClient.allows(context, widget.client)) {
@@ -52,8 +57,30 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
 
   @override
   void dispose() {
+    widget.cache.turnsRevision.removeListener(_onTurns);
     _cancelToken.cancel();
     super.dispose();
+  }
+
+  void _onTurns() {
+    final turns = widget.cache.turnsOf(widget.group.thumbnailSource);
+    if (turns != _turns && mounted) setState(() => _turns = turns);
+  }
+
+  Future<void> _loadTurns(CameraObject source) async {
+    final turns = await widget.cache.loadTurns(source);
+    if (turns != null && turns != _turns && mounted) {
+      setState(() => _turns = turns);
+    }
+  }
+
+  /// Turns the thumbnail upright once the photo's orientation is known, as
+  /// a preview learns it. Thumbnails the camera stores upright stay as they
+  /// are.
+  int _quarterTurns(Uint8List bytes) {
+    final turns = _turns;
+    if (turns == null || widget.client.thumbnailsUpright) return 0;
+    return extraQuarterTurns(turns, bytes);
   }
 
   Future<void> _load(CameraObject source) async {
@@ -75,6 +102,22 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
     }
   }
 
+  Widget _turned(Uint8List bytes) {
+    final turns = _quarterTurns(bytes);
+    // Always a RotatedBox, so the image swaps in place when it turns.
+    return RotatedBox(
+      quarterTurns: turns,
+      child: Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        cacheWidth: turns.isOdd ? null : ThumbnailTile.decodeWidth,
+        cacheHeight: turns.isOdd ? ThumbnailTile.decodeWidth : null,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => const _Placeholder(true),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -89,15 +132,7 @@ class _ThumbnailTileState extends State<ThumbnailTile> {
           children: [
             ColoredBox(
               color: colors.surfaceContainerHighest,
-              child: bytes != null
-                  ? Image.memory(
-                      bytes,
-                      fit: BoxFit.cover,
-                      cacheWidth: ThumbnailTile.decodeWidth,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => const _Placeholder(true),
-                    )
-                  : _Placeholder(_failed),
+              child: bytes != null ? _turned(bytes) : _Placeholder(_failed),
             ),
             if (widget.selected)
               DecoratedBox(

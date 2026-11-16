@@ -88,4 +88,62 @@ void main() {
       ThumbnailCache.cacheKey(c),
     }, hasLength(3));
   });
+
+  group('quarter turns', () {
+    final object = cameraObject(1, 'IMG_0001.JPG');
+
+    test('are kept across runs, upright ones too', () async {
+      final cache = ThumbnailCache(directory: directory);
+      final other = cameraObject(2, 'IMG_0002.JPG');
+      expect(cache.turnsOf(object), isNull);
+
+      await cache.rememberTurns(object, 1);
+      await cache.rememberTurns(other, 0);
+
+      expect(cache.turnsOf(object), 1);
+      final next = ThumbnailCache(directory: directory);
+      expect(next.turnsOf(object), isNull);
+      expect(await next.loadTurns(object), 1);
+      expect(next.turnsOf(object), 1);
+      expect(await next.loadTurns(other), 0);
+    });
+
+    test('changes bump the revision, repeats do not', () async {
+      final cache = ThumbnailCache(directory: directory);
+      var changes = 0;
+      cache.turnsRevision.addListener(() => changes++);
+
+      await cache.rememberTurns(object, 3);
+      await cache.rememberTurns(object, 3);
+
+      expect(changes, 1);
+    });
+
+    test('a photo of another size or date has its own', () async {
+      final cache = ThumbnailCache(directory: directory);
+      await cache.rememberTurns(object, 1);
+
+      expect(
+        await cache.loadTurns(cameraObject(1, 'IMG_0001.JPG', size: 11)),
+        isNull,
+      );
+    });
+
+    test('a damaged file counts as unknown', () async {
+      final cache = ThumbnailCache(directory: directory);
+      await cache.rememberTurns(object, 1);
+      final file = File(
+        '${directory.path}/${ThumbnailCache.cacheKey(object)}.turns',
+      );
+
+      for (final content in ['x', '7', '-1', '']) {
+        await file.writeAsString(content);
+        expect(
+          await ThumbnailCache(directory: directory).loadTurns(object),
+          isNull,
+          reason: content,
+        );
+      }
+    });
+  });
 }

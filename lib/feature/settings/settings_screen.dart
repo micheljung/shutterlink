@@ -84,29 +84,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'Photos without the chosen format are skipped.',
                 style: theme.textTheme.bodySmall,
               ),
-              const SizedBox(height: Spacing.large),
-              Text('Preview quality', style: theme.textTheme.titleMedium),
-              const SizedBox(height: Spacing.small),
-              BlocBuilder<SettingsCubit, SettingsState>(
-                buildWhen: (previous, current) =>
-                    previous.previewQuality != current.previewQuality,
-                builder: (context, state) => SegmentedButton<PreviewQuality>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: PreviewQuality.thumbnail,
-                      label: Text('Thumbnail'),
-                    ),
-                    ButtonSegment(
-                      value: PreviewQuality.full,
-                      label: Text('Full resolution'),
-                    ),
-                  ],
-                  selected: {state.previewQuality},
-                  onSelectionChanged: (selection) =>
-                      cubit.setPreviewQuality(selection.single),
-                ),
-              ),
             ],
           ),
           const SettingsSectionHeader('Camera'),

@@ -3,7 +3,9 @@ import 'dart:typed_data';
 const _dateTime = 0x0132;
 const _exifIfd = 0x8769;
 const _dateTimeOriginal = 0x9003;
+const _orientation = 0x0112;
 const _ascii = 2;
+const _short = 3;
 const _long = 4;
 const _dateCount = 20;
 const jfifSegment = [
@@ -28,17 +30,48 @@ const jfifSegment = [
 ];
 const scanToEnd = [0xFF, 0xDA, 0, 2, 0xFF, 0xD9];
 
-/// A JPEG whose APP1 holds IFD0, with [dateTime], and an Exif IFD, with
-/// [original], in [endian] byte order.
+/// A JPEG whose APP1 holds [exifTiff].
 Uint8List exifJpeg({
   Endian endian = Endian.big,
   String? dateTime,
   String? original,
+  int? orientation,
+}) {
+  final tiff = exifTiff(
+    endian: endian,
+    dateTime: dateTime,
+    original: original,
+    orientation: orientation,
+  );
+  final app1Length = 2 + 6 + tiff.length;
+  return Uint8List.fromList([
+    0xFF,
+    0xD8,
+    ...jfifSegment,
+    0xFF,
+    0xE1,
+    app1Length >> 8,
+    app1Length & 0xFF,
+    ...'Exif'.codeUnits,
+    0,
+    0,
+    ...tiff,
+    ...scanToEnd,
+  ]);
+}
+
+/// A TIFF structure whose IFD0 holds [orientation] and [dateTime], and whose
+/// Exif IFD holds [original], in [endian] byte order.
+Uint8List exifTiff({
+  Endian endian = Endian.big,
+  String? dateTime,
+  String? original,
+  int? orientation,
 }) {
   const headerLength = 8;
   const entryLength = 12;
   int ifdLength(int entries) => 2 + entries * entryLength + 4;
-  final ifd0Count = [dateTime, original].nonNulls.length;
+  final ifd0Count = [dateTime, original, orientation].nonNulls.length;
   const ifd0Offset = headerLength;
   final exifOffset = ifd0Offset + ifdLength(ifd0Count);
   var strings = exifOffset + ifdLength(original == null ? 0 : 1);
@@ -64,13 +97,19 @@ Uint8List exifJpeg({
       tiff
         ..setUint16(entry, tag, endian)
         ..setUint16(entry + 2, type, endian)
-        ..setUint32(entry + 4, count, endian)
-        ..setUint32(entry + 8, value, endian);
+        ..setUint32(entry + 4, count, endian);
+      // A SHORT value is left-justified in the value field.
+      if (type == _short) {
+        tiff.setUint16(entry + 8, value, endian);
+      } else {
+        tiff.setUint32(entry + 8, value, endian);
+      }
       entry += entryLength;
     }
   }
 
   ifd(ifd0Offset, {
+    if (orientation != null) _orientation: (_short, 1, orientation),
     if (dateTime != null) _dateTime: (_ascii, _dateCount, string(dateTime)),
     if (original != null) _exifIfd: (_long, 1, exifOffset),
   });
@@ -79,19 +118,5 @@ Uint8List exifJpeg({
       _dateTimeOriginal: (_ascii, _dateCount, string(original)),
     });
   }
-  final app1Length = 2 + 6 + tiff.lengthInBytes;
-  return Uint8List.fromList([
-    0xFF,
-    0xD8,
-    ...jfifSegment,
-    0xFF,
-    0xE1,
-    app1Length >> 8,
-    app1Length & 0xFF,
-    ...'Exif'.codeUnits,
-    0,
-    0,
-    ...tiff.buffer.asUint8List(),
-    ...scanToEnd,
-  ]);
+  return tiff.buffer.asUint8List();
 }

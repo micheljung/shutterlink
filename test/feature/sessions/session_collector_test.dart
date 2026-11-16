@@ -38,6 +38,7 @@ class _LoggingClient extends FakeCameraClient {
     CameraObject object,
     ChunkWriter write, {
     int offset = 0,
+    int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -50,6 +51,7 @@ class _LoggingClient extends FakeCameraClient {
       object,
       write,
       offset: offset,
+      length: length,
       onProgress: onProgress,
       cancelToken: cancelToken,
     );

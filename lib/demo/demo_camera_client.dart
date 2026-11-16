@@ -6,9 +6,9 @@ import 'dart:ui' as ui;
 
 import 'package:path/path.dart' as p;
 
+import '../data/exif.dart';
 import '../ptp/ptp_constants.dart';
 import '../ptpip/camera_client.dart';
-import 'exif_date.dart';
 
 /// A pretend camera whose card holds photos from this phone. Deleting only
 /// takes a photo off the card; the phone's file stays.
@@ -89,6 +89,10 @@ class DemoCameraClient implements CameraClient {
   @override
   Future<DateTime?> cameraTime() async => DateTime.now();
 
+  /// Thumbnails are decoded from the photo, which turns them upright.
+  @override
+  bool get thumbnailsUpright => true;
+
   @override
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken}) async {
     bool cancelled() => cancelToken?.isCancelled ?? false;
@@ -117,6 +121,7 @@ class DemoCameraClient implements CameraClient {
     CameraObject object,
     ChunkWriter write, {
     int offset = 0,
+    int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   }) async {
@@ -130,12 +135,15 @@ class DemoCameraClient implements CameraClient {
     final file = await photo.$1.open();
     try {
       await file.setPosition(offset);
+      final end = length == null
+          ? object.size
+          : min(object.size, offset + length);
       var received = offset;
-      while (received < object.size) {
+      while (received < end) {
         if (cancelToken?.isCancelled ?? false) {
           throw const TransferCancelledException();
         }
-        final chunk = await file.read(min(chunkSize, object.size - received));
+        final chunk = await file.read(min(chunkSize, end - received));
         if (chunk.isEmpty) {
           throw FileSystemException('The photo ended early', photo.$1.path);
         }
