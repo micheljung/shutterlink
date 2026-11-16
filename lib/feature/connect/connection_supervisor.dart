@@ -133,7 +133,7 @@ class ConnectionSupervisor {
     _discoveredName = target is WifiTarget ? discoveredName : null;
     if (client == null) return _tryReconnect(session);
     _client = client;
-    if (target is UsbTarget || gateway != null) {
+    if (!target.usesCameraWifi || gateway != null) {
       _attach(client, reconnected: false);
       return;
     }
@@ -187,10 +187,10 @@ class ConnectionSupervisor {
     _retryNow();
   }
 
-  /// The held Wi-Fi was lost, which a USB camera does not care about.
+  /// The held Wi-Fi was lost, which only a camera on Wi-Fi cares about.
   void bindingLost() {
     final client = _client;
-    if (client == null || _target is UsbTarget) return;
+    if (client == null || !_target.usesCameraWifi) return;
     _disconnected(client);
     unawaited(client.close());
   }
@@ -395,7 +395,7 @@ class ConnectionSupervisor {
   /// after [stop] the owner decides.
   Future<void> _staleBinding(String owner) async {
     if (!_running) return _releaseStale();
-    if (_target is! UsbTarget && owner == _bindingOwner) return;
+    if (_target.usesCameraWifi && owner == _bindingOwner) return;
     try {
       await _networkBinder.releaseBinding(owner);
     } on PlatformException {

@@ -53,6 +53,7 @@ class AppDependencies {
     required this.sessions,
     required this.claimsUsbVendor,
     this.usb = const NoUsbCameraPlatform(),
+    this.pickPhotos = pickSystemPhotos,
   });
 
   final SettingsRepository settings;
@@ -76,6 +77,9 @@ class AppDependencies {
   /// Built from the profile registry in main, so features never import it.
   final UsbVendorClaim claimsUsbVendor;
   final UsbCameraPlatform usb;
+
+  /// Picks the photos for the demo camera.
+  final PhotoPicker pickPhotos;
 }
 
 class ShutterlinkApp extends StatelessWidget {
@@ -176,7 +180,10 @@ class ShutterlinkApp extends StatelessWidget {
             colorSchemeSeed: _seedColor,
             brightness: Brightness.dark,
           ),
-          home: _Home(usbExperimental: dependencies.usb.isExperimental),
+          home: _Home(
+            usbExperimental: dependencies.usb.isExperimental,
+            pickPhotos: dependencies.pickPhotos,
+          ),
         ),
       ),
     ),
@@ -233,9 +240,10 @@ class _SessionsUploadsState extends State<_SessionsUploads>
 }
 
 class _Home extends StatefulWidget {
-  const _Home({required this.usbExperimental});
+  const _Home({required this.usbExperimental, required this.pickPhotos});
 
   final bool usbExperimental;
+  final PhotoPicker pickPhotos;
 
   @override
   State<_Home> createState() => _HomeState();
@@ -307,6 +315,7 @@ class _HomeState extends State<_Home> {
           _HomeScreen.modes => const ModeHost(),
           _HomeScreen.connect => ConnectScreen(
             usbExperimental: widget.usbExperimental,
+            pickPhotos: widget.pickPhotos,
           ),
         },
       );

@@ -32,6 +32,8 @@
 	<string>Shutterlink connects to your Canon camera over its Wi-Fi network to download photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Shutterlink saves downloaded photos to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Shutterlink shows the photos you pick in its demo camera.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSRequiresIPhoneOS</key>

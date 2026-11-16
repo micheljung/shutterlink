@@ -174,7 +174,11 @@ class _Connection extends StatelessWidget {
         AutoUploadScreen.readingText,
       ),
       ConnectConnected(:final target) => (
-        target is UsbTarget ? Icons.usb : Icons.wifi,
+        switch (target) {
+          UsbTarget() => Icons.usb,
+          DemoTarget() => Icons.photo_library_outlined,
+          WifiTarget() || null => Icons.wifi,
+        },
         AutoUploadScreen.waitingText,
       ),
       _ => (Icons.link_off, AutoUploadScreen.reconnectingText),

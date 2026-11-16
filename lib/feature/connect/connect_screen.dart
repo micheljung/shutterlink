@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
 
 import '../../data/identity_repository.dart';
 import '../../data/ssdp_discovery.dart';
@@ -11,16 +16,35 @@ import '../spacing.dart';
 import 'connect_cubit.dart';
 import 'connect_state.dart';
 
+typedef PhotoPicker = Future<List<XFile>> Function();
+
+/// The system photo picker, which needs no storage permission.
+Future<List<XFile>> pickSystemPhotos() =>
+    ImagePicker().pickMultiImage(requestFullMetadata: false);
+
 class ConnectScreen extends StatefulWidget {
-  const ConnectScreen({super.key, this.usbExperimental = false});
+  const ConnectScreen({
+    super.key,
+    this.usbExperimental = false,
+    this.pickPhotos = pickSystemPhotos,
+  });
 
   /// Owner of the USB watch while this screen shows.
   static const usbWatchOwner = 'connect';
   static const usbConnectingText = 'Connecting over USB…';
   static const usbExperimentalLabel = 'USB (experimental)';
+  static const demoLabel = 'Try without a camera';
+  static const pickFailedText = 'Could not open your photos.';
+  static const _jpegExtensions = {'.jpg', '.jpeg'};
+
+  static String skippedText(int count) =>
+      'Skipped $count: the demo shows JPEG photos only.';
 
   /// Labels USB as experimental, where it is not verified on hardware.
   final bool usbExperimental;
+
+  /// Picks the photos the demo camera's card holds.
+  final PhotoPicker pickPhotos;
 
   @override
   State<ConnectScreen> createState() => _ConnectScreenState();
@@ -47,6 +71,41 @@ class _ConnectScreenState extends State<ConnectScreen> {
     _lifecycle.dispose();
     _usbWatcher.stop(ConnectScreen.usbWatchOwner);
     super.dispose();
+  }
+
+  /// The picker is open; a second one would fail.
+  bool _picking = false;
+
+  Future<void> _tryDemo() async {
+    if (_picking) return;
+    final connect = context.read<ConnectCubit>();
+    final messenger = ScaffoldMessenger.of(context);
+    final List<XFile> picked;
+    _picking = true;
+    try {
+      picked = await widget.pickPhotos();
+    } on PlatformException {
+      messenger.showSnackBar(
+        const SnackBar(content: Text(ConnectScreen.pickFailedText)),
+      );
+      return;
+    } finally {
+      _picking = false;
+    }
+    final jpegs = [
+      for (final photo in picked)
+        if (ConnectScreen._jpegExtensions.contains(
+          p.extension(photo.path).toLowerCase(),
+        ))
+          File(photo.path),
+    ];
+    final skipped = picked.length - jpegs.length;
+    if (skipped > 0) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(ConnectScreen.skippedText(skipped))),
+      );
+    }
+    if (jpegs.isNotEmpty) await connect.connectDemo(jpegs);
   }
 
   static const _setupSteps = [
@@ -102,12 +161,19 @@ class _ConnectScreenState extends State<ConnectScreen> {
               _ConnectingIndicator(cameraName: state.cameraName, usb: state.usb)
             else if (state is ConnectChooseCamera)
               _CameraChooser(cameras: state.cameras)
-            else
+            else ...[
               FilledButton.icon(
                 icon: const Icon(Icons.wifi),
                 label: const Text('Connect'),
                 onPressed: context.read<ConnectCubit>().connect,
               ),
+              const SizedBox(height: Spacing.small),
+              TextButton.icon(
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text(ConnectScreen.demoLabel),
+                onPressed: _tryDemo,
+              ),
+            ],
           ],
         ),
       ),

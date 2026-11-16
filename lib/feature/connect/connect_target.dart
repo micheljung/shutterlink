@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import '../../ptpip/camera_client.dart';
 import '../../usb/usb_camera_platform.dart';
 
@@ -19,4 +21,21 @@ final class UsbTarget extends ConnectTarget {
   const UsbTarget(this.device);
 
   final UsbCameraRef device;
+}
+
+/// A pretend camera whose card holds [photos] from this phone, to try the
+/// app without a camera. No network, and nothing to reconnect.
+final class DemoTarget extends ConnectTarget {
+  const DemoTarget(this.photos);
+
+  final List<File> photos;
+}
+
+extension ConnectTargetNetwork on ConnectTarget? {
+  /// Whether the connection runs over the camera's Wi-Fi, which the app
+  /// binds to. Without a target it does.
+  bool get usesCameraWifi => switch (this) {
+    WifiTarget() || null => true,
+    UsbTarget() || DemoTarget() => false,
+  };
 }
