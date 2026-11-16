@@ -20,6 +20,7 @@ import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/feature/settings/upload_settings_cubit.dart';
 import 'package:shutterlink/feature/upload/upload_status_cubit.dart';
+import 'package:shutterlink/feature/upload/upload_status_indicator.dart';
 
 import '../../fakes/fake_camera_client.dart';
 
@@ -93,13 +94,17 @@ void main() {
 
   tearDown(() => modes.close());
 
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    int sessionsPending = 0,
+  }) async {
     final uploadSettings = _MockUploadSettingsCubit();
     final uploads = _MockUploadStatusCubit();
     final sessionsUploads = _MockSessionsUploadCubit();
     when(() => uploadSettings.state).thenReturn(const UploadSettingsState());
     when(() => uploads.state).thenReturn(const UploadStatusState());
-    when(() => sessionsUploads.state).thenReturn(const SessionsUploadState());
+    when(() => sessionsUploads.state)
+        .thenReturn(SessionsUploadState(pending: sessionsPending));
     await tester.pumpWidget(
       MultiBlocProvider(
         providers: [
@@ -133,6 +138,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(QrSessionScreen.stopLabel));
     verify(() => sessions.stop()).called(1);
+  });
+
+  testWidgets('shows the upload indicator while Session photos wait', (
+    tester,
+  ) async {
+    when(() => sessions.state)
+        .thenReturn(SessionsState(loaded: true, sessions: [open]));
+    await pumpScreen(tester, sessionsPending: 2);
+
+    expect(find.byTooltip(UploadStatusIndicator.tooltip), findsOneWidget);
   });
 
   testWidgets('with no window open, it offers Start and Resume', (

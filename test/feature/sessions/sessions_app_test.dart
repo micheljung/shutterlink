@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shutterlink/app.dart';
+import 'package:shutterlink/data/destination_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_worker.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
@@ -18,6 +19,7 @@ import 'package:shutterlink/feature/sessions/sessions_screen.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
+import 'package:shutterlink/upload/destination.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/spy_sessions_dependencies.dart';
@@ -84,17 +86,26 @@ void main() {
   }
 
   testWidgets('QR Session syncs the clock, shows the code and sends a shot '
-      'to the Sessions server only (AC15, AC16, AC20)', (tester) async {
+      'to the Sessions server only, even with a destination set (AC15, '
+      'AC16, AC20)', (tester) async {
     late AppDependencies dependencies;
     final client = await pumpApp(
       tester,
-      prefs: {SettingsRepository.sessionsServerUrlKey: _serverUrl},
+      prefs: {
+        SettingsRepository.sessionsServerUrlKey: _serverUrl,
+        DestinationRepository.typeKey: DestinationType.webdav.name,
+        DestinationRepository.endpointKey: 'https://dav.example.com',
+      },
       token: 'token',
       onDependencies: (built) => dependencies = built,
     );
     await pumpUntil(tester, () => sessions.workers == 1);
     final destinationQueue = dependencies.uploadQueue;
     final saver = dependencies.photoSaver as RecordingPhotoSaver;
+    expect(destinationQueue.destination, isNotNull);
+    // Started, so an add would land in the snapshot instead of waiting.
+    await tester.runAsync(destinationQueue.start);
+    addTearDown(() => tester.runAsync(destinationQueue.close));
 
     await tester.tap(find.text('Connect'));
     await pumpUntil(
