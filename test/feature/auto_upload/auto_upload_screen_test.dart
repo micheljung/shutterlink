@@ -19,6 +19,7 @@ import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/upload_settings_cubit.dart';
 import 'package:shutterlink/feature/upload/upload_status_cubit.dart';
+import 'package:shutterlink/feature/upload/upload_status_indicator.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
@@ -126,6 +127,7 @@ void main() {
     expect(find.text(AutoUploadScreen.noShotsText), findsOneWidget);
     expect(find.byType(ThumbnailTile), findsNothing);
     expect(find.byType(GridView), findsNothing);
+    expect(find.byTooltip(UploadStatusIndicator.tooltip), findsOneWidget);
   });
 
   testWidgets('says when it is reading the card', (tester) async {
