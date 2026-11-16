@@ -21,6 +21,7 @@ import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
+import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
 import 'package:shutterlink/feature/settings/settings_cards.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
@@ -54,6 +55,14 @@ void main() {
   testWidgets('connect screen', (tester) async {
     await _pumpApp(tester, _ScreenshotCameraClient());
     await _capture(tester, 'connect');
+  }, variant: _platform);
+
+  testWidgets('mode picker', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    expect(find.text(ModePickerScreen.title), findsOneWidget);
+    await _capture(tester, 'modes');
   }, variant: _platform);
 
   testWidgets('gallery', (tester) async {
