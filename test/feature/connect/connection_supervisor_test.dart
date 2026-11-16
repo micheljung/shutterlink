@@ -24,7 +24,6 @@ typedef Reconnecting = ({bool unreachable, bool userActionNeeded, bool usb});
 class SupervisorEvents {
   final connected = <CameraClient>[];
   final reconnected = <bool>[];
-  final disconnected = <CameraClient>[];
   final reconnecting = <Reconnecting>[];
   int staleBindings = 0;
 
@@ -79,7 +78,6 @@ void main() {
   late List<Object> connections;
   late List<String> hosts;
   late SupervisorEvents events;
-  late ClientValidator validate;
   late Completer<void>? connectGate;
   late List<DiscoveredCamera> discovered;
   late int discoveries;
@@ -95,7 +93,6 @@ void main() {
     connections = [];
     hosts = [];
     events = SupervisorEvents();
-    validate = (_) async => true;
     connectGate = null;
     discovered = [];
     discoveries = 0;
@@ -113,9 +110,7 @@ void main() {
         wifiGateway: () async => null,
       ),
       networkBinder: binder,
-      validate: (client) => validate(client),
       onConnected: events.onConnected,
-      onDisconnected: events.disconnected.add,
       onReconnecting: events.onReconnecting,
       releaseStale: () async {
         events.staleBindings++;
@@ -159,7 +154,6 @@ void main() {
     first.simulateDisconnect();
     await pumpEventQueue();
 
-    expect(events.disconnected, [first]);
     expect(events.reconnecting, [retrying]);
     expect(supervisor.client, isNull);
     expect(binder.calls, ['acquire live hold']);
@@ -294,7 +288,6 @@ void main() {
     await pumpEventQueue();
 
     expect(first.closed, isTrue);
-    expect(events.disconnected, [first]);
     expect(events.reconnecting, [retrying]);
   });
 
@@ -316,26 +309,6 @@ void main() {
     expect(binder.calls, isNot(contains('release live')));
   });
 
-  // live_transfer_cubit_test.dart:438
-  test('a lost binding while validating schedules one reconnect', () async {
-    final gate = Completer<void>();
-    validate = (_) async {
-      await gate.future;
-      return true;
-    };
-    final supervising = superviseFirst();
-    await pumpEventQueue();
-
-    supervisor.bindingLost();
-    await pumpEventQueue();
-    gate.complete();
-    await supervising;
-
-    expect(timers.all.where((timer) => timer.isActive), hasLength(1));
-    expect(events.connected, isEmpty);
-    expect(events.reconnecting, [retrying]);
-  });
-
   // live_transfer_cubit_test.dart:465
   test('stop while reconnecting hands back the late binding', () async {
     connections.add(unreachable);
@@ -353,28 +326,6 @@ void main() {
     expect(events.staleBindings, 1);
     expect(binder.owners, isEmpty);
     expect(hosts, isEmpty);
-  });
-
-  // live_transfer_cubit_test.dart:481
-  test('a lost binding while validating a reconnect retries', () async {
-    final second = FakeCameraClient([old]);
-    final third = FakeCameraClient([old]);
-    connections.addAll([second, third]);
-    await superviseFirst();
-    first.simulateDisconnect();
-    await pumpEventQueue();
-    validate = (client) async {
-      if (client == second) supervisor.bindingLost();
-      return true;
-    };
-
-    await fire();
-
-    expect(second.closed, isTrue);
-    expect(events.connected, [first]);
-    expect(events.reconnecting.last, retrying);
-    await fire();
-    expect(events.connected, [first, third]);
   });
 
   // live_transfer_cubit_test.dart:535
@@ -516,21 +467,7 @@ void main() {
     expect(supervisor.client, isNull);
     first.simulateDisconnect();
     await pumpEventQueue();
-    expect(events.disconnected, isEmpty);
     expect(events.reconnecting, isEmpty);
     expect(timers.all, isEmpty);
-  });
-
-  test('a failed validation closes the client and retries', () async {
-    final second = FakeCameraClient([old]);
-    connections.add(second);
-    validate = (client) async => client != first;
-
-    await superviseFirst();
-
-    expect(first.closed, isTrue);
-    expect(events.reconnecting, [retrying]);
-    await fire();
-    expect(events.connected, [second]);
   });
 }

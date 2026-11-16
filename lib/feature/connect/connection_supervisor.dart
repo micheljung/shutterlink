@@ -12,10 +12,6 @@ import '../../ptpip/camera_client.dart';
 import '../../usb/usb_camera_platform.dart';
 import 'connect_cubit.dart';
 
-/// Decides whether a freshly reached client may be used; the supervisor
-/// closes a rejected client that is still its own and tries again.
-typedef ClientValidator = Future<bool> Function(CameraClient client);
-
 /// [reconnected] is false only for the client handed to `supervise`.
 typedef ConnectedCallback = void Function(
   CameraClient client,
@@ -40,16 +36,13 @@ class ConnectionSupervisor {
     required this._hostResolver,
     required this._networkBinder,
     required this._onConnected,
-    required this._onDisconnected,
     required this._onReconnecting,
     required this._releaseStale,
-    ClientValidator? validate,
     this._usbWatcher = const NoUsbCameraWatcher(),
     this._discovery,
     DateTime Function()? clock,
     TimerFactory? timerFactory,
-  }) : _validate = validate ?? _accept,
-       _clock = clock ?? DateTime.now,
+  }) : _clock = clock ?? DateTime.now,
        _timerFactory = timerFactory ?? Timer.new;
 
   static const initialReconnectDelay = Duration(seconds: 2);
@@ -69,15 +62,11 @@ class ConnectionSupervisor {
   final CameraHostResolver _hostResolver;
   final NetworkBinder _networkBinder;
   final ConnectedCallback _onConnected;
-
-  /// The current client was lost; the owner drops what it built on it.
-  final void Function(CameraClient client) _onDisconnected;
   final ReconnectingCallback _onReconnecting;
 
   /// A binding acquired for a session that [stop] ended; the owner releases
   /// it once it no longer needs the binding owner's name.
   final Future<void> Function() _releaseStale;
-  final ClientValidator _validate;
   final UsbCameraWatcher _usbWatcher;
   final CameraDiscovery? _discovery;
   final DateTime Function() _clock;
@@ -114,8 +103,6 @@ class ConnectionSupervisor {
   bool _unreachable = false;
   int? _reconnecting;
 
-  static Future<bool> _accept(CameraClient client) async => true;
-
   CameraClient? get client => _client;
 
   ConnectTarget? get target => _target;
@@ -147,9 +134,7 @@ class ConnectionSupervisor {
     if (client == null) return _tryReconnect(session);
     _client = client;
     if (target is UsbTarget || gateway != null) {
-      if (!await _attach(client, reconnected: false)) {
-        _scheduleReconnect(session);
-      }
+      _attach(client, reconnected: false);
       return;
     }
     String? bound;
@@ -165,9 +150,7 @@ class ConnectionSupervisor {
     final resolved = await _gatewayOf(bound);
     if (!_isCurrent(session)) return;
     _gateway ??= resolved;
-    if (!await _attach(client, reconnected: false)) {
-      _scheduleReconnect(session);
-    }
+    _attach(client, reconnected: false);
   }
 
   /// Stops retrying. The current client stays open and is forgotten; a
@@ -232,17 +215,10 @@ class ConnectionSupervisor {
   }
 
   /// The supervisor owns [client] until a disconnect or [stop] takes it.
-  Future<bool> _attach(CameraClient client, {required bool reconnected}) async {
+  void _attach(CameraClient client, {required bool reconnected}) {
     final previous = _client;
     _client = client;
     if (previous != null && previous != client) unawaited(previous.close());
-    if (!await _validate(client)) {
-      if (_client != client) return false;
-      _client = null;
-      await client.close();
-      return false;
-    }
-    if (_client != client) return false;
     unawaited(client.disconnected.then((_) => _disconnected(client)));
     _cameraKey ??= cameraKeyOf(client.deviceInfo);
     _failedRetries = 0;
@@ -251,7 +227,6 @@ class ConnectionSupervisor {
     _unreachable = false;
     _userActionNeeded = false;
     _onConnected(client, _target, reconnected: reconnected);
-    return true;
   }
 
   void _retryNow() {
@@ -266,7 +241,6 @@ class ConnectionSupervisor {
   void _disconnected(CameraClient client) {
     if (client != _client) return;
     _client = null;
-    _onDisconnected(client);
     _scheduleReconnect(_session);
   }
 
@@ -342,7 +316,8 @@ class ConnectionSupervisor {
         return false;
       }
       _gateway ??= gateway;
-      if (await _attach(client, reconnected: true)) return true;
+      _attach(client, reconnected: true);
+      return true;
     } on Exception {
       if (!_isCurrent(session)) return false;
     }
@@ -400,7 +375,8 @@ class ConnectionSupervisor {
         continue;
       }
       _target = moved;
-      return _attach(client, reconnected: true);
+      _attach(client, reconnected: true);
+      return true;
     }
     return false;
   }
@@ -448,7 +424,8 @@ class ConnectionSupervisor {
         await client.close();
         return false;
       }
-      return await _attach(client, reconnected: true);
+      _attach(client, reconnected: true);
+      return true;
     } on Exception {
       return false;
     }

@@ -344,7 +344,10 @@ void pipelineTests(
     final ingestor = LiveIngestor(
       client: client,
       format: DownloadFormat.jpeg,
-      baseline: await LiveIngestor.baselineOf(client),
+      baseline: LiveBaseline.of(
+        cameraKeyOf(client.deviceInfo),
+        await client.listPhotos(),
+      ),
       history: history,
       queue: queue,
       coordinator: coordinator,

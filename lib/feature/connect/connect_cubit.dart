@@ -46,7 +46,6 @@ class ConnectCubit extends Cubit<ConnectState> {
       usbWatcher: _usbWatcher,
       discovery: _discovery,
       onConnected: _onReconnected,
-      onDisconnected: (_) {},
       onReconnecting: _onReconnecting,
       releaseStale: _releaseUnused,
       clock: clock,

@@ -55,7 +55,6 @@ void main() {
       networkBinder: binder,
       usbWatcher: watcher,
       onConnected: events.onConnected,
-      onDisconnected: events.disconnected.add,
       onReconnecting: events.onReconnecting,
       releaseStale: () async => events.staleBindings++,
       timerFactory: timers.create,
