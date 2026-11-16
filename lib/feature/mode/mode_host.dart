@@ -63,19 +63,28 @@ class _ModeHostState extends State<ModeHost> {
           },
         ),
       ],
-      child: AttachedClient(
-        client: reconnecting == null ? client : null,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            IgnorePointer(
-              ignoring: reconnecting != null,
-              child: client == null
-                  ? const SizedBox.shrink()
-                  : _screenFor(mode, client),
-            ),
-            if (reconnecting != null) ReconnectingOverlay(state: reconnecting),
-          ],
+      // A mode replaces the picker in place, so back leaves the mode
+      // instead of popping the app's only route.
+      child: PopScope(
+        canPop: mode == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) context.read<ModeCubit>().leave();
+        },
+        child: AttachedClient(
+          client: reconnecting == null ? client : null,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              IgnorePointer(
+                ignoring: reconnecting != null,
+                child: client == null
+                    ? const SizedBox.shrink()
+                    : _screenFor(mode, client),
+              ),
+              if (reconnecting != null)
+                ReconnectingOverlay(state: reconnecting),
+            ],
+          ),
         ),
       ),
     );

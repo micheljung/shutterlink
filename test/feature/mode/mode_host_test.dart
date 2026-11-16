@@ -140,6 +140,31 @@ void main() {
     expect(home(tester).read<ModeCubit>().state, isNull);
   });
 
+  testWidgets('back in a mode leads back to the picker', (tester) async {
+    answers.add(FakeCameraClient(photos(1)));
+    await pumpApp(tester);
+    await connectAndBrowse(tester);
+    expect(find.byType(GalleryScreen), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(ModePickerScreen), findsOneWidget);
+    expect(home(tester).read<ModeCubit>().state, isNull);
+  });
+
+  testWidgets('back in a pushed screen keeps the mode', (tester) async {
+    answers.add(FakeCameraClient(photos(1)));
+    await pumpApp(tester);
+    await connectAndBrowse(tester);
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(GalleryScreen), findsOneWidget);
+    expect(home(tester).read<ModeCubit>().state, OperatingMode.browse);
+  });
+
   group('setup gates', () {
     Future<AppDependencies> pumpPicker(WidgetTester tester) async {
       answers.add(FakeCameraClient(photos(1)));
