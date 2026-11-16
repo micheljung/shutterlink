@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -70,6 +71,110 @@ void main() {
     expect(cubit.state.saved, hasLength(3));
     expect(cubit.state.overallProgress, 1);
     expect(workFiles(), isEmpty);
+  });
+
+  test('onFetched sees each complete file before it is saved', () async {
+    final client = FakeCameraClient(objects);
+    final pair = groups().firstWhere((group) => group.jpeg == pairJpeg);
+    final seen = <String, Uint8List>{};
+
+    await cubit.start(
+      client,
+      [pair],
+      DownloadFormat.both,
+      onFetched: (object, file) async =>
+          seen[object.filename] = await file.readAsBytes(),
+    );
+
+    expect(seen, {
+      pairJpeg.filename: contentFor(pairJpeg),
+      pairRaw.filename: contentFor(pairRaw),
+    });
+    expect(cubit.state.status, DownloadStatus.completed);
+  });
+
+  test('a failing onFetched does not fail the download', () async {
+    final group = groups().firstWhere((group) => group.jpeg == lone);
+
+    await cubit.start(
+      FakeCameraClient(objects),
+      [group],
+      DownloadFormat.jpeg,
+      onFetched: (_, _) async => throw const FileSystemException('busy'),
+    );
+
+    expect(cubit.state.saved, [group]);
+  });
+
+  test('a second start while the first prepares is ignored', () async {
+    final client = FakeCameraClient(objects);
+    final group = groups().firstWhere((group) => group.jpeg == lone);
+
+    await Future.wait([
+      cubit.start(client, [group], DownloadFormat.jpeg),
+      cubit.start(client, groups(), DownloadFormat.both),
+    ]);
+
+    expect(cubit.state.tasks, hasLength(1));
+    expect(client.requestedOffsets, {
+      lone.handle: [0],
+    });
+  });
+
+  group('prefetched bytes', () {
+    test('a whole file is not fetched again', () async {
+      final client = FakeCameraClient(objects);
+      final group = groups().firstWhere((group) => group.jpeg == lone);
+
+      await cubit.start(
+        client,
+        [group],
+        DownloadFormat.jpeg,
+        prefetched: {lone: contentFor(lone)},
+      );
+
+      expect(cubit.state.status, DownloadStatus.completed);
+      expect(saver.savedBytes[lone.filename], contentFor(lone));
+      expect(client.requestedOffsets, isEmpty);
+    });
+
+    test('a file start resumes after it', () async {
+      final client = FakeCameraClient(objects);
+      final group = groups().firstWhere((group) => group.jpeg == lone);
+
+      await cubit.start(
+        client,
+        [group],
+        DownloadFormat.jpeg,
+        prefetched: {lone: contentFor(lone).sublist(0, 5)},
+      );
+
+      expect(saver.savedBytes[lone.filename], contentFor(lone));
+      expect(client.requestedOffsets, {
+        lone.handle: [5],
+      });
+    });
+
+    test('bytes beyond the file size are ignored', () async {
+      final client = FakeCameraClient(objects);
+      final group = groups().firstWhere((group) => group.jpeg == lone);
+
+      await cubit.start(
+        client,
+        [group],
+        DownloadFormat.jpeg,
+        prefetched: {
+          lone: Uint8List(lone.size + 1),
+          pairJpeg: contentFor(pairJpeg),
+        },
+      );
+
+      expect(saver.savedBytes[lone.filename], contentFor(lone));
+      expect(client.requestedOffsets, {
+        lone.handle: [0],
+      });
+      expect(workFiles(), isEmpty);
+    });
   });
 
   test('records saved files and skips them next time', () async {

@@ -14,6 +14,9 @@ const _largeSizeMarker = 1;
 const _largeSizeOffset = 8;
 const _hugeBoxSize = 0x7FFFFFFFFFFFFFFC;
 
+/// The PRVW box's size and type, and the preview `uuid` box before it.
+const _previewHeader = 8 + 8 + 16 + 8;
+
 Uint8List _cr3({int moovPadding = 0, bool largeMoov = false}) =>
     fakeCr3(moovPadding: moovPadding, largeMoov: largeMoov, mdatLength: _cap);
 
@@ -89,6 +92,7 @@ void main() {
 
     expect(preview, fakePreviewJpeg);
     expect(client.requestedOffsets[1], [0, _step]);
+    expect(client.downloadLengths[1], [_step, _step]);
   });
 
   test('gives up at the cap when the preview is missing', () async {
@@ -109,5 +113,65 @@ void main() {
       throwsA(isA<TransferCancelledException>()),
     );
     expect(client.requestedOffsets, isEmpty);
+  });
+
+  test('resumes after the bytes it was given', () async {
+    final bytes = _cr3(moovPadding: 100);
+    final object = cameraObject(1, 'IMG_0001.CR3', size: bytes.length);
+    final client = FakeCameraClient([object])..contentOverrides[1] = bytes;
+    final buffer = BytesBuilder(copy: false)
+      ..add(Uint8List.sublistView(bytes, 0, _step));
+
+    final preview = await readCr3Preview(
+      client,
+      object,
+      step: _step,
+      into: buffer,
+    );
+
+    expect(preview, fakePreviewJpeg);
+    expect(client.requestedOffsets[1], [_step]);
+  });
+
+  test(
+    'returns a preview already in the given bytes without reading',
+    () async {
+      final bytes = _cr3();
+      final object = cameraObject(1, 'IMG_0001.CR3', size: bytes.length);
+      final client = FakeCameraClient([object]);
+
+      final preview = await readCr3Preview(
+        client,
+        object,
+        into: BytesBuilder()..add(bytes),
+      );
+
+      expect(preview, fakePreviewJpeg);
+      expect(client.requestedOffsets, isEmpty);
+    },
+  );
+
+  group('orientation', () {
+    test('comes from CMT1 in the Canon box', () {
+      expect(cr3Orientation(fakeCr3(orientation: 6)), 6);
+      expect(cr3Orientation(fakeCr3(orientation: 8)), 8);
+    });
+
+    test('is unknown without the Canon box', () {
+      expect(cr3Orientation(fakeCr3()), isNull);
+    });
+
+    test('is unknown while CMT1 is cut off, and does not throw', () {
+      final bytes = fakeCr3(orientation: 6);
+      final metadataEnd =
+          String.fromCharCodes(bytes).indexOf('PRVW') - _previewHeader;
+      for (var length = 0; length < metadataEnd; length++) {
+        expect(
+          cr3Orientation(Uint8List.sublistView(bytes, 0, length)),
+          isNull,
+          reason: 'cut at $length',
+        );
+      }
+    });
   });
 }

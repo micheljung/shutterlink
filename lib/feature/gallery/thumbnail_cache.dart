@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../../ptpip/camera_client.dart';
@@ -20,6 +20,54 @@ class ThumbnailCache {
 
   final _memory = <String, Uint8List>{};
   final _pending = <String, Future<Uint8List?>>{};
+  final _turns = <String, int>{};
+  final _turnsRevision = ValueNotifier<int>(0);
+
+  /// Changes whenever a photo's quarter turns become known.
+  ValueListenable<int> get turnsRevision => _turnsRevision;
+
+  /// The clockwise quarter turns that show [object] upright, if known.
+  int? turnsOf(CameraObject object) => _turns[cacheKey(object)];
+
+  /// [turnsOf], reading what an earlier run stored.
+  Future<int?> loadTurns(CameraObject object) async {
+    final key = cacheKey(object);
+    final known = _turns[key];
+    if (known != null) return known;
+    try {
+      final file = _turnsFile(key);
+      if (!await file.exists()) return null;
+      final turns = int.tryParse((await file.readAsString()).trim());
+      if (turns == null || turns < 0 || turns > _maxTurns) return null;
+      _setTurns(key, turns);
+      return turns;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// Keeps the quarter turns a preview learned for [object], for the grid
+  /// and later runs.
+  Future<void> rememberTurns(CameraObject object, int turns) async {
+    final key = cacheKey(object);
+    if (_turns[key] == turns) return;
+    _setTurns(key, turns);
+    try {
+      await directory.create(recursive: true);
+      await _turnsFile(key).writeAsString('$turns', flush: true);
+    } on FileSystemException {
+      // Known for this run only.
+    }
+  }
+
+  void _setTurns(String key, int turns) {
+    _turns[key] = turns;
+    _turnsRevision.value++;
+  }
+
+  File _turnsFile(String key) => File(p.join(directory.path, '$key.turns'));
+
+  static const _maxTurns = 3;
 
   int get memoryEntryCount => _memory.length;
 

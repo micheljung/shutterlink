@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shutterlink/demo/exif_date.dart';
+import 'package:shutterlink/data/exif.dart';
 
 import '../fakes/exif_jpeg.dart';
 
@@ -73,5 +73,53 @@ void main() {
         reason: 'cut at $length',
       );
     }
+  });
+
+  group('orientation', () {
+    for (final endian in [Endian.big, Endian.little]) {
+      test('is read as a SHORT in $endian byte order', () {
+        for (final orientation in [1, 3, 6, 8]) {
+          expect(
+            exifOrientation(exifJpeg(endian: endian, orientation: orientation)),
+            orientation,
+          );
+        }
+      });
+    }
+
+    test('is unknown without the tag or without EXIF', () {
+      expect(
+        exifOrientation(exifJpeg(dateTime: '2026:11:15 18:00:00')),
+        isNull,
+      );
+      expect(exifOrientation(Uint8List.fromList([0xFF, 0xD8])), isNull);
+      expect(exifOrientation(Uint8List(0)), isNull);
+    });
+
+    test('ignores values outside 1 to 8', () {
+      expect(exifOrientation(exifJpeg(orientation: 0)), isNull);
+      expect(exifOrientation(exifJpeg(orientation: 9)), isNull);
+    });
+
+    test('turns clockwise to upright', () {
+      expect(
+        [
+          for (var orientation = 0; orientation <= 8; orientation++)
+            quarterTurnsOf(orientation),
+        ],
+        [0, 0, 0, 2, 2, 1, 1, 3, 3],
+      );
+      expect(quarterTurnsOf(null), 0);
+    });
+  });
+
+  test('an APP1 shorter than its own signature has no EXIF', () {
+    final jpeg = Uint8List.fromList([
+      0xFF, 0xD8, 0xFF, 0xE1, 0, 4, ...'Exif'.codeUnits, 0, 0, //
+      ...List.filled(16, 0),
+    ]);
+
+    expect(exifOrientation(jpeg), isNull);
+    expect(exifCaptureDate(jpeg), isNull);
   });
 }

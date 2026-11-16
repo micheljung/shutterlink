@@ -38,6 +38,7 @@ class _ScriptedClient extends FakeCameraClient {
     CameraObject object,
     ChunkWriter write, {
     int offset = 0,
+    int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   }) {
@@ -49,6 +50,7 @@ class _ScriptedClient extends FakeCameraClient {
       object,
       write,
       offset: offset,
+      length: length,
       onProgress: onProgress,
       cancelToken: cancelToken,
     );

@@ -3,81 +3,95 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../data/cr3_preview.dart';
+import '../../data/exif.dart';
 import '../../ptpip/camera_client.dart';
 import '../download/download_cubit.dart';
-import '../gallery/photo_group.dart';
+import '../download/download_state.dart';
 import '../spacing.dart';
+import 'full_image_load.dart';
 
+/// Shows the full-size image of [load] once it arrives, the [thumbnail]
+/// until then, each turned upright.
+///
+/// The load starts once [thumbnailSettled], so it doesn't hold up the
+/// thumbnail on the camera. While a download runs it reads only the
+/// orientation.
 class FullImageLoader extends StatefulWidget {
   const FullImageLoader({
     super.key,
-    required this.group,
+    required this.load,
     required this.client,
     required this.thumbnail,
+    required this.thumbnailSettled,
   });
 
   static const unavailableHint = 'Full resolution available after download';
 
-  final PhotoGroup group;
+  final FullImageLoad load;
   final CameraClient client;
   final Uint8List? thumbnail;
+  final bool thumbnailSettled;
 
   @override
   State<FullImageLoader> createState() => _FullImageLoaderState();
 }
 
 class _FullImageLoaderState extends State<FullImageLoader> {
-  final _cancelToken = CancelToken();
-  late final bool _unavailable = context.read<DownloadCubit>().state.isActive;
-  Uint8List? _full;
-  bool _loading = false;
-
   @override
   void initState() {
     super.initState();
-    if (!_unavailable) _load();
+    _sync();
   }
 
   @override
-  void dispose() {
-    _cancelToken.cancel();
-    super.dispose();
+  void didUpdateWidget(FullImageLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
   }
 
-  Future<void> _load() async {
-    _loading = true;
-    try {
-      final full = await _fetch();
-      if (mounted) setState(() => _full = full);
-    } on Exception {
-      // The thumbnail stays on screen.
-    } finally {
-      if (mounted) setState(() => _loading = false);
+  /// While a download runs, only the small head of the file is read, for
+  /// the orientation.
+  void _sync() {
+    if (!widget.thumbnailSettled) return;
+    final load = widget.load;
+    if (context.read<DownloadCubit>().state.isActive) {
+      // A head read for the orientation may go on; a full load may not.
+      if (load.loading) load.pause();
+      load.start(orientationOnly: true);
+    } else {
+      load.start();
     }
   }
 
-  Future<Uint8List?> _fetch() async {
-    final jpeg = widget.group.jpeg;
-    if (jpeg == null) {
-      return readCr3Preview(
-        widget.client,
-        widget.group.raw!,
-        cancelToken: _cancelToken,
+  void _onDownloadChanged(BuildContext context, DownloadState download) {
+    if (!download.isActive) widget.load.release();
+    _sync();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      BlocListener<DownloadCubit, DownloadState>(
+        listenWhen: (previous, current) =>
+            previous.isActive != current.isActive,
+        listener: _onDownloadChanged,
+        child: ListenableBuilder(listenable: widget.load, builder: _build),
       );
-    }
-    final bytes = BytesBuilder(copy: false);
-    await widget.client.download(
-      jpeg,
-      (chunk) async => bytes.add(chunk),
-      cancelToken: _cancelToken,
-    );
-    return bytes.takeBytes();
+
+  /// A camera thumbnail is as the sensor saw it, unless it carries its own
+  /// EXIF orientation, which the decoder applies.
+  int _thumbnailTurns(int photoTurns) {
+    final thumbnail = widget.thumbnail;
+    if (widget.client.thumbnailsUpright || thumbnail == null) return 0;
+    return extraQuarterTurns(photoTurns, thumbnail);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final full = _full;
+  Widget _build(BuildContext context, Widget? _) {
+    final load = widget.load;
+    final full = load.full;
+    final thumbnailTurns = _thumbnailTurns(load.quarterTurns);
+    final downloading = context.select<DownloadCubit, bool>(
+      (cubit) => cubit.state.isActive,
+    );
     final width =
         MediaQuery.sizeOf(context).width *
         MediaQuery.devicePixelRatioOf(context);
@@ -86,15 +100,17 @@ class _FullImageLoaderState extends State<FullImageLoader> {
       children: [
         PreviewImage(
           bytes: full ?? widget.thumbnail,
+          quarterTurns: full == null ? thumbnailTurns : load.fullQuarterTurns,
           fallback: widget.thumbnail,
-          cacheWidth: full == null ? null : width.round(),
+          fallbackQuarterTurns: thumbnailTurns,
+          cacheSize: full == null ? null : width.round(),
         ),
-        if (_loading)
+        if (load.loading)
           const Align(
             alignment: Alignment.bottomCenter,
             child: LinearProgressIndicator(),
           ),
-        if (_unavailable)
+        if (downloading && full == null)
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
@@ -114,30 +130,49 @@ class PreviewImage extends StatelessWidget {
   const PreviewImage({
     super.key,
     required this.bytes,
+    this.quarterTurns = 0,
     this.fallback,
-    this.cacheWidth,
+    this.fallbackQuarterTurns = 0,
+    this.cacheSize,
   });
 
   final Uint8List? bytes;
+
+  /// Clockwise quarter turns that show [bytes] upright.
+  final int quarterTurns;
   final Uint8List? fallback;
-  final int? cacheWidth;
+  final int fallbackQuarterTurns;
+
+  /// Decode to this many pixels across the screen, whichever way the image
+  /// is turned.
+  final int? cacheSize;
 
   @override
   Widget build(BuildContext context) {
     final bytes = this.bytes;
     if (bytes == null) return const _Placeholder(Icons.photo_outlined);
-    return Image.memory(
-      bytes,
-      fit: BoxFit.contain,
-      cacheWidth: cacheWidth,
-      gaplessPlayback: true,
-      errorBuilder: (_, _, _) {
-        final fallback = this.fallback;
-        if (fallback == null || identical(fallback, bytes)) {
-          return const _Placeholder(Icons.broken_image_outlined);
-        }
-        return PreviewImage(bytes: fallback);
-      },
+    final sideways = quarterTurns.isOdd;
+    // Always a RotatedBox, so the Image keeps its place in the tree and
+    // swaps without a gap when the turn changes.
+    return RotatedBox(
+      quarterTurns: quarterTurns,
+      child: Image.memory(
+        bytes,
+        fit: BoxFit.contain,
+        cacheWidth: sideways ? null : cacheSize,
+        cacheHeight: sideways ? cacheSize : null,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) {
+          final fallback = this.fallback;
+          if (fallback == null || identical(fallback, bytes)) {
+            return const _Placeholder(Icons.broken_image_outlined);
+          }
+          return RotatedBox(
+            quarterTurns: (fallbackQuarterTurns - quarterTurns) % 4,
+            child: PreviewImage(bytes: fallback),
+          );
+        },
+      ),
     );
   }
 }

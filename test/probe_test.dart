@@ -106,6 +106,15 @@ void main() {
     );
     expect(out.toString(), contains('Thumbnail of IMG_0001.JPG: 100 bytes'));
     expect(
+      out.toString(),
+      contains('Thumbnail: size unknown, EXIF orientation none'),
+    );
+    expect(out.toString(), contains('Photo orientation: none'));
+    expect(
+      File('${temp.path}/out/IMG_0001.JPG.thumb.jpg').existsSync(),
+      isTrue,
+    );
+    expect(
       await runProbe([...baseArgs(), '--index', '9'], output: out),
       exitUsage,
     );

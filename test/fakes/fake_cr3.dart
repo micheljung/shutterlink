@@ -1,9 +1,15 @@
 import 'dart:typed_data';
 
+import 'exif_jpeg.dart';
+
 const _previewUuidHex = 'eaf42b5e1c984b88b9fbb7dc406e4d16';
-final _previewUuid = [
-  for (var i = 0; i < _previewUuidHex.length; i += 2)
-    int.parse(_previewUuidHex.substring(i, i + 2), radix: 16),
+const _canonUuidHex = '85c0b687820f11e08111f4ce462b6a48';
+final _previewUuid = _uuid(_previewUuidHex);
+final _canonUuid = _uuid(_canonUuidHex);
+
+List<int> _uuid(String hex) => [
+  for (var i = 0; i < hex.length; i += 2)
+    int.parse(hex.substring(i, i + 2), radix: 16),
 ];
 
 final fakePreviewJpeg = [0xFF, 0xD8, 1, 2, 3, 4, 0xFF, 0xD9];
@@ -27,10 +33,13 @@ List<int> _largeBox(String type, List<int> payload) => [
   ...payload,
 ];
 
+/// A CR3 with a PRVW preview, and, given an [orientation], Canon's metadata
+/// box in `moov` with that Orientation in CMT1.
 Uint8List fakeCr3({
   int moovPadding = 0,
   bool largeMoov = false,
   int mdatLength = 0,
+  int? orientation,
 }) {
   final preview = _box('PRVW', [
     ..._uint32(0),
@@ -41,7 +50,18 @@ Uint8List fakeCr3({
     ..._uint32(fakePreviewJpeg.length),
     ...fakePreviewJpeg,
   ]);
-  final moov = List.filled(moovPadding, 0);
+  final moov = [
+    if (orientation != null)
+      ..._box('uuid', [
+        ..._canonUuid,
+        ..._box('CNCV', 'CanonCR3_001/00.09.00/00.00.00'.codeUnits),
+        ..._box(
+          'CMT1',
+          exifTiff(endian: Endian.little, orientation: orientation),
+        ),
+      ]),
+    ...List.filled(moovPadding, 0),
+  ];
   return Uint8List.fromList([
     ..._box('ftyp', 'crx '.codeUnits),
     ...(largeMoov ? _largeBox('moov', moov) : _box('moov', moov)),

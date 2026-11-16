@@ -153,10 +153,18 @@ abstract interface class CameraClient {
 
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken});
 
+  /// Whether [thumbnail] already shows a photo the right way up. A camera's
+  /// thumbnail is stored as the sensor saw it, whichever way the camera was
+  /// held.
+  bool get thumbnailsUpright;
+
+  /// Streams [object] from [offset] to [write]: [length] bytes, or to the
+  /// end without one.
   Future<void> download(
     CameraObject object,
     ChunkWriter write, {
     int offset = 0,
+    int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
   });

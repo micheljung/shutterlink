@@ -16,7 +16,7 @@ Optionally upload to your own WebDAV/S3/SFTP server or Immich.
   <img src="docs/screenshots/gallery.png" width="200" alt="Photo grid grouped by day, with downloaded badges and a range selection">
   <img src="docs/screenshots/preview.png" width="200" alt="Full-screen photo preview">
   <img src="docs/screenshots/download.png" width="200" alt="Download sheet showing progress">
-  <img src="docs/screenshots/settings.png" width="200" alt="Settings for download format, preview quality, camera address and download history">
+  <img src="docs/screenshots/settings.png" width="200" alt="Settings for download format, camera address and download history">
 </p>
 
 ## Features
@@ -31,9 +31,14 @@ Optionally upload to your own WebDAV/S3/SFTP server or Immich.
   new** selects everything not downloaded yet. The history can be cleared in
   Settings.
 - Full-screen preview: tap a photo with nothing selected, or its expand icon.
-  Swipe between photos and select from there. Settings choose between the
-  thumbnail (instant) and full resolution (the JPEG, or the CR3's embedded
-  preview).
+  Swipe between photos and select from there. The thumbnail shows at once,
+  and the full resolution (the JPEG, or the CR3's embedded preview) loads
+  behind it in 256 KB requests, so leaving the photo frees the camera link
+  quickly. The last few photos stay loaded while the preview is open.
+  Photos shot in portrait are turned upright, using the EXIF orientation or
+  the CR3's CMT1, and their grid tiles turn too once previewed.
+  **Download** saves the shown photo straight away, reuses what the preview
+  already received, and deselects it.
 - Delete selected photos, or the one in the preview, from the camera after a
   confirmation that counts those not downloaded yet. A RAW+JPEG pair loses
   both files. Hidden on cameras that don't offer PTP DeleteObject.
@@ -166,7 +171,9 @@ The Android build needs JDK 17.
 `bin/probe.dart` runs the whole protocol from a laptop joined to the camera's
 access point, without the app. It pairs, prints the device info and photo
 counts, fetches one thumbnail, downloads one photo and reports the transfer
-rate.
+rate. It saves the thumbnail next to the photo (`<name>.thumb.jpg`) and
+prints the thumbnail's stored size and both EXIF orientations, which shows
+whether the camera turns its thumbnails upright.
 
 ```bash
 fvm dart run bin/probe.dart --host 192.168.1.2 --dump packets.txt
@@ -277,8 +284,8 @@ lib/
     download/           Download planning, progress, resume
     history/            Downloaded-photo marks
     sessions/           Sessions, clock sync, attribution, QR code, upload status
-    settings/           Download format, preview quality, camera address,
-                        upload and Sessions setup
+    settings/           Download format, camera address, upload and
+                        Sessions setup
 android/app/src/main/kotlin/ch/micheljung/shutterlink/
                         Wi-Fi network binding, multicast lock, CR3 saving via MediaStore
 ios/Runner/AppDelegate.swift

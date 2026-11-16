@@ -16,7 +16,6 @@ bool isValidSessionsServerUrl(String? url) {
 class SettingsState extends Equatable {
   const SettingsState({
     required this.format,
-    required this.previewQuality,
     this.hostOverride,
     this.sessionsServerUrl,
     this.sessionsConfigured = false,
@@ -25,7 +24,6 @@ class SettingsState extends Equatable {
   });
 
   final DownloadFormat format;
-  final PreviewQuality previewQuality;
   final String? hostOverride;
   final String? sessionsServerUrl;
   final bool sessionsConfigured;
@@ -37,7 +35,6 @@ class SettingsState extends Equatable {
 
   SettingsState copyWith({
     DownloadFormat? format,
-    PreviewQuality? previewQuality,
     String? Function()? hostOverride,
     String? Function()? sessionsServerUrl,
     bool? sessionsConfigured,
@@ -45,7 +42,6 @@ class SettingsState extends Equatable {
     bool? onboardingSeen,
   }) => SettingsState(
     format: format ?? this.format,
-    previewQuality: previewQuality ?? this.previewQuality,
     hostOverride: hostOverride != null ? hostOverride() : this.hostOverride,
     sessionsServerUrl: sessionsServerUrl != null
         ? sessionsServerUrl()
@@ -58,7 +54,6 @@ class SettingsState extends Equatable {
   @override
   List<Object?> get props => [
     format,
-    previewQuality,
     hostOverride,
     sessionsServerUrl,
     sessionsConfigured,
@@ -72,7 +67,6 @@ class SettingsCubit extends Cubit<SettingsState> {
     : super(
         SettingsState(
           format: _repository.format,
-          previewQuality: _repository.previewQuality,
           hostOverride: _repository.hostOverride,
           sessionsServerUrl: _repository.sessionsServerUrl,
           onboardingSeen: _repository.onboardingSeen,
@@ -87,11 +81,6 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> setFormat(DownloadFormat format) async {
     await _repository.setFormat(format);
     emit(state.copyWith(format: format));
-  }
-
-  Future<void> setPreviewQuality(PreviewQuality quality) async {
-    await _repository.setPreviewQuality(quality);
-    emit(state.copyWith(previewQuality: quality));
   }
 
   Future<void> markOnboardingSeen() async {

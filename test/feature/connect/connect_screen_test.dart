@@ -354,7 +354,6 @@ void main() {
       when(() => settings.state).thenReturn(
         SettingsState(
           format: SettingsRepository.defaultFormat,
-          previewQuality: SettingsRepository.defaultPreviewQuality,
           sessionsConfigured: sessionActive,
         ),
       );
