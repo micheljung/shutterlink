@@ -402,7 +402,7 @@ void main() {
   });
 
   test('baseline holds the entry keys and handles on the card', () async {
-    final baseline = await LiveIngestor.baselineOf(client);
+    final baseline = LiveBaseline.of(cameraKey, await client.listPhotos());
 
     expect(baseline.keys, {keyOf(old), keyOf(jpeg), keyOf(raw)});
     expect(baseline.handles, {old.handle, jpeg.handle, raw.handle});
@@ -422,7 +422,7 @@ void main() {
   });
 
   test('the rescan never asks about the baseline handles', () async {
-    final baseline = await LiveIngestor.baselineOf(client);
+    final baseline = LiveBaseline.of(cameraKey, await client.listPhotos());
     final shot = cameraObject(4, 'IMG_0002.JPG', captureDate: date);
     LiveIngestor rescanning() {
       final created = LiveIngestor(

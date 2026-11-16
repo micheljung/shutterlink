@@ -71,12 +71,6 @@ class LiveIngestor {
   /// Objects saved to the gallery and queued for upload.
   Stream<CameraObject> get ingested => _ingested.stream;
 
-  static Future<LiveBaseline> baselineOf(CameraClient client) async =>
-      LiveBaseline.of(
-        cameraKeyOf(client.deviceInfo),
-        await client.listPhotos(),
-      );
-
   /// How many of [photos] in [format] are neither queued nor uploaded to
   /// the queue's destination; downloads to the phone do not count.
   static Future<int> backlogOf(

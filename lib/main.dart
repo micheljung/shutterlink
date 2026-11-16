@@ -46,6 +46,12 @@ Future<void> main() async {
   final cacheDirectory = await getApplicationCacheDirectory();
   final temporaryDirectory = await getTemporaryDirectory();
   final supportDirectory = await getApplicationSupportDirectory();
+  // Left behind by the removed Sessions prefetch; gone after one start.
+  unawaited(
+    Directory(p.join(supportDirectory.path, 'sessions_prefetch'))
+        .delete(recursive: true)
+        .then((_) {}, onError: (Object _) {}),
+  );
   final photoSaver = PlatformPhotoSaver();
   final destinations = DestinationRepository(prefs);
   final tcpConnector = platformTcpConnector();
