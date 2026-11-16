@@ -57,8 +57,10 @@ Route<void> uploadDraftRoute(
   required UploadSetupCubit Function(UploadSettingsCubit settings) create,
   required Widget screen,
   bool fullscreenDialog = false,
+  RouteSettings? routeSettings,
 }) => MaterialPageRoute(
   fullscreenDialog: fullscreenDialog,
+  settings: routeSettings,
   builder: (_) => BlocProvider.value(
     value: settings,
     child: BlocProvider(create: (_) => create(settings), child: screen),

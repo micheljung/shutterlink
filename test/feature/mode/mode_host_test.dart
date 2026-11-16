@@ -221,6 +221,31 @@ void main() {
       expect(home(tester).read<ModeCubit>().state, isNull);
     });
 
+    testWidgets('a drop keeps the setup screen and what was typed', (
+      tester,
+    ) async {
+      final first = FakeCameraClient(photos(1));
+      answers.addAll([first, FakeCameraClient(photos(1))]);
+      await pumpApp(tester);
+      await tester.tap(connectScreenButton);
+      await tester.pumpAndSettle();
+      await pick(tester, OperatingMode.qrSession);
+      await tester.enterText(
+        find.byType(TextField).first,
+        'https://photos.example.com',
+      );
+
+      first.simulateDisconnect();
+      await tester.pump();
+      await tester.pump();
+      expect(find.byType(SessionsSetupScreen), findsOneWidget);
+      await tester.pump(retryDelay);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SessionsSetupScreen), findsOneWidget);
+      expect(find.text('https://photos.example.com'), findsWidgets);
+    });
+
     testWidgets('QR Session is entered once the server is set up', (
       tester,
     ) async {

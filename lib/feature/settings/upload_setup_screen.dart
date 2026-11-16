@@ -13,11 +13,15 @@ import 'upload_setup_cubit.dart';
 class UploadSetupScreen extends StatefulWidget {
   const UploadSetupScreen({super.key});
 
+  /// Uses no camera, so it stays open when the camera drops.
+  static const routeName = 'upload-setup';
+
   static Route<void> route(UploadSettingsCubit settings) => uploadDraftRoute(
     settings,
     create: UploadSetupCubit.new,
     screen: const UploadSetupScreen(),
     fullscreenDialog: true,
+    routeSettings: const RouteSettings(name: routeName),
   );
 
   @override
