@@ -105,7 +105,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   Future<void> connect() async {
     final previous = state;
     if (previous is ConnectConnecting && !previous.usb) return;
-    if (previous is ConnectConnected && previous.target is! UsbTarget) return;
+    if (previous is ConnectConnected && previous.target.usesCameraWifi) return;
     _supervisor.stop();
     final attempt = ++_attempt;
     _usbAttempt = false;
@@ -153,7 +153,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       case ConnectConnected(:final client, :final target):
         await client.close();
         // A Wi-Fi tap during the close holds the binding by now.
-        if (target is! UsbTarget) await _releaseStale();
+        if (target.usesCameraWifi) await _releaseStale();
       case ConnectConnecting(usb: false) || ConnectChooseCamera():
         await _unbind();
       default:
@@ -188,6 +188,33 @@ class ConnectCubit extends Cubit<ConnectState> {
     _connected(client, target);
   }
 
+  /// Opens the demo camera over [photos]. Nothing can drop it, so it is not
+  /// supervised.
+  Future<void> connectDemo(List<File> photos) async {
+    switch (state) {
+      case ConnectIdle() || ConnectFailed() || ConnectPairingRequired():
+        break;
+      default:
+        return;
+    }
+    final attempt = ++_attempt;
+    final target = DemoTarget(photos);
+    final CameraClient client;
+    try {
+      client = await _connector(target);
+    } on Exception catch (error) {
+      if (_isCurrent(attempt)) {
+        emit(ConnectFailed('Could not open the photos ($error).'));
+      }
+      return;
+    }
+    if (!_isCurrent(attempt)) {
+      await client.close();
+      return;
+    }
+    emit(ConnectConnected(client, target: target));
+  }
+
   void _connected(CameraClient client, ConnectTarget target) {
     emit(ConnectConnected(client, target: target));
     _supervise(client, target);
@@ -200,7 +227,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       target,
       bindingOwner: bindingOwner,
       holdNetwork: _holdNetwork,
-      gateway: target is UsbTarget ? null : _gateway,
+      gateway: target.usesCameraWifi ? _gateway : null,
       discoveredName: _discoveredName,
     ),
   );
@@ -228,15 +255,15 @@ class ConnectCubit extends Cubit<ConnectState> {
   /// connected screens.
   Future<void> _takeOver(UsbCameraRef device) async {
     final current = state;
-    final client = current is ConnectConnected
-        ? current.client
-        : _supervisor.client;
+    final (client, target) = current is ConnectConnected
+        ? (current.client, current.target)
+        : (_supervisor.client, _supervisor.target);
     _supervisor.stop();
     final attempt = ++_attempt;
     _usbAttempt = true;
     emit(const ConnectReconnecting(usb: true));
     unawaited(client?.close());
-    await _unbind();
+    if (target.usesCameraWifi) await _unbind();
     if (!_isCurrent(attempt)) return;
     await _supervisor.supervise(
       null,
@@ -281,11 +308,11 @@ class ConnectCubit extends Cubit<ConnectState> {
   /// stays.
   Future<void> abortReconnect() async {
     if (state is! ConnectReconnecting) return;
-    final usb = _supervisor.target is UsbTarget;
+    final wifi = _supervisor.target.usesCameraWifi;
     _supervisor.stop();
     _attempt++;
     emit(const ConnectIdle());
-    if (!usb) await _unbind();
+    if (wifi) await _unbind();
   }
 
   /// Keeps the Wi-Fi up while the screen is off or mobile data is in use,
@@ -299,7 +326,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       (_) => _supervisor.bindingLost(),
     );
     final current = state;
-    if (current is! ConnectConnected || current.target is UsbTarget) return;
+    if (current is! ConnectConnected || !current.target.usesCameraWifi) return;
     try {
       await _networkBinder.acquireBinding(bindingOwner, holdNetwork: true);
     } on PlatformException {
@@ -384,7 +411,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   Future<void> _releaseUnused() async {
     final inUse = switch (state) {
       ConnectConnecting(usb: false) || ConnectChooseCamera() => true,
-      ConnectConnected(:final target) => target is! UsbTarget,
+      ConnectConnected(:final target) => target.usesCameraWifi,
       ConnectReconnecting(:final usb) => !usb,
       _ => false,
     };
@@ -436,7 +463,7 @@ class ConnectCubit extends Cubit<ConnectState> {
     _attempt++;
     emit(const ConnectIdle());
     await current.client.close();
-    if (current.target is! UsbTarget) await _unbind();
+    if (current.target.usesCameraWifi) await _unbind();
   }
 
   Future<void> _unbind() async {

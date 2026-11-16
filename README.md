@@ -40,6 +40,9 @@ Optionally upload to your own WebDAV/S3/SFTP server or Immich.
   files to `Download/` on Android and to Photos as RAW on iOS.
 - Finds the camera on a home Wi-Fi network via SSDP when it isn't at the
   Wi-Fi gateway.
+- **Try without a camera** on the connect screen: a demo camera whose card
+  holds photos picked on the phone. Deleting there never touches the phone's
+  files.
 - On Android the app binds to the camera's Wi-Fi, so traffic doesn't leave over
   mobile data when the camera network has no internet.
 - A command-line probe (`bin/probe.dart`) to test the protocol from a laptop.
