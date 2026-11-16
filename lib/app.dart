@@ -26,8 +26,10 @@ import 'feature/qr_session/qr_session_cubit.dart';
 import 'feature/sessions/sessions_cubit.dart';
 import 'feature/sessions/sessions_dependencies.dart';
 import 'feature/sessions/sessions_upload_cubit.dart';
+import 'feature/settings/sessions_setup_screen.dart';
 import 'feature/settings/settings_cubit.dart';
 import 'feature/settings/upload_settings_cubit.dart';
+import 'feature/settings/upload_setup_screen.dart';
 import 'feature/upload/upload_status_cubit.dart';
 import 'upload/upload_queue.dart';
 import 'usb/usb_camera_platform.dart';
@@ -275,7 +277,13 @@ class _HomeState extends State<_Home> {
       };
 
   /// The camera dropped. Pushed screens go, since they would cover the
-  /// overlay and may hold the dead client.
+  /// overlay and may hold the dead client. A setup screen stays, so typed
+  /// credentials survive a brief drop.
+  static const _survivesDrop = {
+    UploadSetupScreen.routeName,
+    SessionsSetupScreen.routeName,
+  };
+
   static bool _dropped(ConnectState previous, ConnectState current) =>
       current is ConnectReconnecting && previous is! ConnectReconnecting;
 
@@ -285,7 +293,12 @@ class _HomeState extends State<_Home> {
         listenWhen: (previous, current) =>
             _lost(previous, current) || _dropped(previous, current),
         listener: (context, state) {
-          Navigator.of(context).popUntil((route) => route.isFirst);
+          final dropped = state is ConnectReconnecting;
+          Navigator.of(context).popUntil(
+            (route) =>
+                route.isFirst ||
+                (dropped && _survivesDrop.contains(route.settings.name)),
+          );
           if (state is! ConnectReconnecting) context.read<ModeCubit>().leave();
         },
         buildWhen: (previous, current) =>

@@ -12,8 +12,12 @@ import 'settings_cubit.dart';
 class SessionsSetupScreen extends StatefulWidget {
   const SessionsSetupScreen({super.key});
 
+  /// Uses no camera, so it stays open when the camera drops.
+  static const routeName = 'sessions-setup';
+
   static Route<void> route() => MaterialPageRoute(
     fullscreenDialog: true,
+    settings: const RouteSettings(name: routeName),
     builder: (_) => const SessionsSetupScreen(),
   );
 
