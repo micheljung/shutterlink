@@ -107,7 +107,7 @@ void main() {
     await tester.runAsync(destinationQueue.start);
     addTearDown(() => tester.runAsync(destinationQueue.close));
 
-    await tester.tap(find.text('Connect'));
+    await tester.tap(find.text(ConnectScreen.connectLabel));
     await pumpUntil(
       tester,
       () => find.text(OperatingMode.qrSession.label).evaluate().isNotEmpty,

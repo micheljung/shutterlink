@@ -9,6 +9,7 @@ import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/auto_upload/auto_upload_cubit.dart';
 import 'package:shutterlink/feature/auto_upload/auto_upload_screen.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
+import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/connect/connect_state.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
@@ -248,7 +249,7 @@ void main() {
         preset: ProviderPreset.custom,
       ),
     );
-    await tester.tap(find.text('Connect'));
+    await tester.tap(find.text(ConnectScreen.connectLabel));
     await tester.pumpAndSettle();
     await tester.tap(find.text(OperatingMode.autoUpload.label));
     final autoUpload = home.read<AutoUploadCubit>();

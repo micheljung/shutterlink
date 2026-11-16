@@ -103,6 +103,7 @@ class SettingsSummaryCard extends StatelessWidget {
             const SizedBox(height: Spacing.small),
             Wrap(
               alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
               spacing: Spacing.small,
               children: actions,
             ),
@@ -295,6 +296,7 @@ class ErrorBox extends StatelessWidget {
               const SizedBox(height: Spacing.small),
               Wrap(
                 alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: Spacing.small,
                 children: actions,
               ),

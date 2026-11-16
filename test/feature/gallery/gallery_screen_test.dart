@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
 import 'package:shutterlink/feature/gallery/gallery_cubit.dart';
@@ -109,7 +110,7 @@ void main() {
           .state
           .sessionsConfigured,
     );
-    await tester.tap(find.text('Connect'));
+    await tester.tap(find.text(ConnectScreen.connectLabel));
     await tester.pumpAndSettle();
     await tester.tap(find.text(OperatingMode.browse.label));
     await tester.pump();

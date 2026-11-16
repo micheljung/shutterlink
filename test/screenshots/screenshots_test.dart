@@ -15,10 +15,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/app.dart';
+import 'package:shutterlink/brand/brand_theme.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
 import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
@@ -33,7 +35,13 @@ import '../fakes/fake_camera_client.dart';
 import '../fakes/fake_sessions_credentials.dart';
 import '../fakes/test_app.dart';
 
-const _outputDirectory = 'docs/screenshots';
+const _outputDirectory = String.fromEnvironment(
+  'SCREENSHOTS_DIR',
+  defaultValue: 'docs/screenshots',
+);
+const _brightness = bool.fromEnvironment('SCREENSHOTS_LIGHT')
+    ? Brightness.light
+    : Brightness.dark;
 const _logicalSize = Size(390, 844);
 const _pixelRatio = 3.0;
 const _thumbnailSize = 320;
@@ -41,6 +49,7 @@ const _downloadPollInterval = Duration(milliseconds: 5);
 const _maxDownloadPolls = 2000;
 // Material's Roboto lacks "→"; only Linux typography falls back to DejaVu.
 const _arrowFallbackFont = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
+const _brandFonts = 'assets/fonts';
 final _platform = TargetPlatformVariant.only(TargetPlatform.linux);
 const _settleDuration = Duration(seconds: 1);
 const _settingsScrollStep = 200.0;
@@ -59,7 +68,7 @@ void main() {
 
   testWidgets('mode picker', (tester) async {
     await _pumpApp(tester, _ScreenshotCameraClient());
-    await tester.tap(find.text('Connect'));
+    await tester.tap(find.text(ConnectScreen.connectLabel));
     await tester.pumpAndSettle();
     expect(find.text(ModePickerScreen.title), findsOneWidget);
     await _capture(tester, 'modes');
@@ -248,6 +257,10 @@ Future<void> _loadFonts() async {
     p.join(materialFonts, 'MaterialIcons-Regular.otf'),
   ]);
   await load('DejaVu Sans', [_arrowFallbackFont]);
+  await load(BrandTheme.fontFamily, [
+    for (final weight in ['Regular', 'Medium', 'SemiBold', 'Bold', 'ExtraBold'])
+      p.join(_brandFonts, '${BrandTheme.fontFamily}-$weight.ttf'),
+  ]);
 }
 
 Future<void> _pumpApp(
@@ -260,8 +273,11 @@ Future<void> _pumpApp(
     ..physicalSize = _logicalSize * _pixelRatio
     ..devicePixelRatio = _pixelRatio;
   addTearDown(tester.view.reset);
+  tester.platformDispatcher.platformBrightnessTestValue = _brightness;
+  addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
   final thumbnails = await tester.runAsync(_renderThumbnails);
   SharedPreferences.setMockInitialValues({
+    SettingsRepository.onboardingSeenKey: true,
     if (configured) ...{
       SettingsRepository.sessionsServerUrlKey: _sessionsServerUrl,
     },

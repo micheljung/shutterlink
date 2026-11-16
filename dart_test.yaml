@@ -7,3 +7,5 @@ tags:
     skip: >-
       Needs sshd, sudo -n and SFTP_TEST_USER/SFTP_TEST_PASSWORD; run with
       --tags sftp-root --run-skipped.
+  brand-assets:
+    skip: Renders brand masters; run with --tags brand-assets --run-skipped.

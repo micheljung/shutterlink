@@ -11,6 +11,7 @@ class SettingsRepository {
   static const hostOverrideKey = 'camera_host_override';
   static const previewQualityKey = 'preview_quality';
   static const sessionsServerUrlKey = 'sessions_server_url';
+  static const onboardingSeenKey = 'onboarding_seen';
   static const defaultFormat = DownloadFormat.jpeg;
   static const defaultPreviewQuality = PreviewQuality.thumbnail;
 
@@ -57,4 +58,8 @@ class SettingsRepository {
     }
     return _prefs.setString(sessionsServerUrlKey, trimmed);
   }
+
+  bool get onboardingSeen => _prefs.getBool(onboardingSeenKey) ?? false;
+
+  Future<void> setOnboardingSeen() => _prefs.setBool(onboardingSeenKey, true);
 }

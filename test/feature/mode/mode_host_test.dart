@@ -9,6 +9,7 @@ import 'package:shutterlink/app.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/auto_upload/auto_upload_screen.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
+import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/connect/connection_supervisor.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
@@ -60,7 +61,7 @@ class _MockSessionsUploadCubit extends MockCubit<SessionsUploadState>
 
 void main() {
   final retryDelay = ConnectionSupervisor.initialReconnectDelay;
-  final connectScreenButton = find.text('Connect');
+  final connectScreenButton = find.text(ConnectScreen.connectLabel);
   final overlay = find.byType(ReconnectingOverlay);
 
   late List<Object> answers;
