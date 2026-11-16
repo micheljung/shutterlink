@@ -571,8 +571,9 @@ void main() {
     expect(soon, hasLength(1));
     expect(soon.single.isActive, isTrue);
     soon.single.fire();
-    await _until(() => client.listings == 1);
-    await Future<void>.delayed(_tick * 5);
+    // The rescan schedules the next one when it ends.
+    await _until(() => timers.length == 3);
+    expect(client.listings, 1);
     final scheduled = timers.length;
     await Future<void>.delayed(_tick * 10);
     expect(timers, hasLength(scheduled), reason: 'the shot is resolved');
