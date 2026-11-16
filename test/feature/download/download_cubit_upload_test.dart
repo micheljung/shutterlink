@@ -139,6 +139,29 @@ void main() {
     expect(server.files['2026-11-13/IMG_0001.JPG'], contentFor(jpeg));
   });
 
+  test(
+    'download + upload only uploads a photo fully downloaded earlier',
+    () async {
+      await setUpQueue(destination);
+      final client = FakeCameraClient([jpeg]);
+      await cubit.start(client, groupPhotos([jpeg]), DownloadFormat.jpeg);
+      cubit.dismiss();
+
+      await cubit.start(
+        client,
+        groupPhotos([jpeg]),
+        DownloadFormat.jpeg,
+        alsoUpload: true,
+      );
+      await queue.idle;
+
+      expect(cubit.state.tasks, hasLength(1));
+      expect(cubit.state.alreadyDownloaded, isEmpty);
+      expect(saver.saved, hasLength(1));
+      expect(server.files['2026-11-13/IMG_0001.JPG'], contentFor(jpeg));
+    },
+  );
+
   test('download + upload skips a photo that is already uploaded', () async {
     await setUpQueue(destination);
     final client = FakeCameraClient([jpeg]);
