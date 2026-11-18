@@ -3,10 +3,8 @@ import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shutterlink/brand/brand_theme.dart';
 import 'package:shutterlink/brand/shutterlink_logo.dart';
@@ -209,134 +207,52 @@ void main() {
     });
   });
 
-  group('demo', () {
-    late ConnectCubit connect;
-    late List<ConnectTarget> targets;
-    late int picks;
-
-    Future<void> tapDemo(
-      WidgetTester tester,
-      List<XFile> picked, {
-      PhotoPicker? pickPhotos,
-    }) async {
-      targets = [];
-      picks = 0;
-      final dependencies = await testDependencies(
-        (_) async => FakeCameraClient([]),
-      );
-      connect = ConnectCubit(
-        connector: (target) async {
-          targets.add(target);
-          return FakeCameraClient([]);
-        },
-        identity: dependencies.identity,
-        hostResolver: dependencies.hostResolver,
-        networkBinder: dependencies.networkBinder,
-        claimsUsbVendor: (_) => false,
-      );
-      addTearDown(connect.close);
-      await tester.pumpWidget(
-        MultiBlocProvider(
-          providers: [
-            BlocProvider.value(value: connect),
-            BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
-            BlocProvider(
-              create: (_) => DownloadCubit(
-                saver: dependencies.photoSaver,
-                workDirectory: dependencies.downloadDirectory,
-                history: dependencies.downloadHistory,
-              ),
-            ),
-          ],
-          child: MaterialApp(
-            home: ConnectScreen(
-              pickPhotos: () {
-                picks++;
-                return pickPhotos?.call() ?? Future.value(picked);
-              },
+  testWidgets('the demo connects to an empty demo camera', (tester) async {
+    final targets = <ConnectTarget>[];
+    final dependencies = await testDependencies(
+      (_) async => FakeCameraClient([]),
+    );
+    final connect = ConnectCubit(
+      connector: (target) async {
+        targets.add(target);
+        return FakeCameraClient([]);
+      },
+      identity: dependencies.identity,
+      hostResolver: dependencies.hostResolver,
+      networkBinder: dependencies.networkBinder,
+      claimsUsbVendor: (_) => false,
+    );
+    addTearDown(connect.close);
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: connect),
+          BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
+          BlocProvider(
+            create: (_) => DownloadCubit(
+              saver: dependencies.photoSaver,
+              workDirectory: dependencies.downloadDirectory,
+              history: dependencies.downloadHistory,
             ),
           ),
-        ),
-      );
-      await tester.ensureVisible(find.text(ConnectScreen.demoLabel));
-      await tester.tap(find.text(ConnectScreen.demoLabel));
-      await tester.pump();
-    }
+        ],
+        child: const MaterialApp(home: ConnectScreen()),
+      ),
+    );
+    await tester.ensureVisible(find.text(ConnectScreen.demoLabel));
+    await tester.tap(find.text(ConnectScreen.demoLabel));
+    await tester.pump();
 
-    testWidgets('opens the picked JPEGs as a demo camera', (tester) async {
-      await tapDemo(tester, [
-        XFile('/picked/IMG_0001.JPG'),
-        XFile('/picked/b.jpeg'),
-      ]);
-
-      expect(picks, 1);
-      expect(connect.state, isA<ConnectConnected>());
-      expect((targets.single as DemoTarget).photos.map((file) => file.path), [
-        '/picked/IMG_0001.JPG',
-        '/picked/b.jpeg',
-      ]);
-      expect(find.byType(SnackBar), findsNothing);
-    });
-
-    testWidgets('skips photos that are no JPEG and says so', (tester) async {
-      await tapDemo(tester, [XFile('/picked/a.jpg'), XFile('/picked/b.heic')]);
-
-      expect((targets.single as DemoTarget).photos.map((file) => file.path), [
-        '/picked/a.jpg',
-      ]);
-      expect(find.text(ConnectScreen.skippedText(1)), findsOneWidget);
-    });
-
-    testWidgets('stays without a camera when no JPEG was picked', (
-      tester,
-    ) async {
-      await tapDemo(tester, [XFile('/picked/a.png')]);
-
-      expect(connect.state, const ConnectIdle());
-      expect(targets, isEmpty);
-      expect(find.text(ConnectScreen.skippedText(1)), findsOneWidget);
-    });
-
-    testWidgets('a cancelled picker changes nothing', (tester) async {
-      await tapDemo(tester, []);
-
-      expect(picks, 1);
-      expect(connect.state, const ConnectIdle());
-      expect(find.byType(SnackBar), findsNothing);
-    });
-
-    testWidgets('says when the picker fails', (tester) async {
-      await tapDemo(
-        tester,
-        [],
-        pickPhotos: () async => throw PlatformException(code: 'already_active'),
-      );
-
-      expect(connect.state, const ConnectIdle());
-      expect(find.text(ConnectScreen.pickFailedText), findsOneWidget);
-    });
-
-    testWidgets('opens one picker at a time', (tester) async {
-      final picker = Completer<List<XFile>>();
-      await tapDemo(tester, [], pickPhotos: () => picker.future);
-
-      await tester.tap(find.text(ConnectScreen.demoLabel));
-      expect(picks, 1);
-
-      picker.complete([XFile('/picked/a.jpg')]);
-      await tester.pump();
-
-      expect(targets.single, isA<DemoTarget>());
-    });
+    expect(connect.state, isA<ConnectConnected>());
+    expect(targets.single, isA<DemoTarget>());
   });
+
   group('every state keeps a home', () {
     const sessionCode = 'brave-otter';
     const pairingTitle = 'Pair this phone on the camera';
     const pausedText = 'Download paused. Reconnect to resume it.';
     final connectButton = find.text(ConnectScreen.connectLabel);
     late _MockConnectCubit connect;
-    late int picks;
-
     Future<void> pumpState(
       WidgetTester tester,
       ConnectState state, {
@@ -344,12 +260,12 @@ void main() {
       bool downloadPaused = false,
       bool sessionActive = false,
     }) async {
-      picks = 0;
       connect = _MockConnectCubit();
       when(() => connect.state).thenReturn(state);
       when(() => connect.usbWatcher).thenReturn(FakeUsbCameraWatcher());
       when(connect.connect).thenAnswer((_) async {});
       when(connect.cancelChoice).thenAnswer((_) async {});
+      when(connect.connectDemo).thenAnswer((_) async {});
       final settings = _MockSettingsCubit();
       when(() => settings.state).thenReturn(
         SettingsState(
@@ -388,13 +304,7 @@ void main() {
           ],
           child: MaterialApp(
             theme: BrandTheme.light(),
-            home: ConnectScreen(
-              usbExperimental: usbExperimental,
-              pickPhotos: () async {
-                picks++;
-                return [];
-              },
-            ),
+            home: ConnectScreen(usbExperimental: usbExperimental),
           ),
         ),
       );
@@ -484,7 +394,7 @@ void main() {
       await tester.tap(find.text(ConnectScreen.demoLabel));
       await tester.pump();
 
-      expect(picks, 1);
+      verify(connect.connectDemo).called(1);
     });
 
     testWidgets('the chooser lists the cameras and cancels', (tester) async {

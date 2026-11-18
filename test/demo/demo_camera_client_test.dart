@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -7,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/demo/demo_camera_client.dart';
+import 'package:shutterlink/feature/capture/new_shot_detector.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
 import 'package:shutterlink/feature/gallery/photo_group.dart';
@@ -184,6 +186,61 @@ void main() {
     expect(saver.saved, hasLength(2));
     expect(downloads.state.status, DownloadStatus.completed);
     expect(downloads.state.alreadyDownloaded, hasLength(2));
+  });
+
+  test('a shot from the phone is reported as a new shot', () async {
+    final added = <int>[];
+    client.addedObjects.listen(added.add);
+    await client.delete(2);
+
+    await client.addShot(photo('IMG_0003.jpg', 20));
+    await pumpEventQueue();
+
+    expect(added, [3], reason: 'a deleted handle is never reused');
+    expect(await client.newestFolderHandles(), [1, 3]);
+    final object = (await client.objectInfo(3))!;
+    expect(object.filename, 'IMG_0003.jpg');
+    expect(object.size, 20);
+    expect(object.kind, CameraObjectKind.jpeg);
+    expect((await download(object)).$1, hasLength(20));
+  });
+
+  test('the new-shot detector finds a shot from the phone', () async {
+    final empty = await DemoCameraClient.open(const []);
+    addTearDown(empty.close);
+    final detector = NewShotDetector(
+      client: empty,
+      baseline: (await empty.newestFolderHandles()).toSet(),
+      isResolved: (_) => false,
+      consumerBusy: () => false,
+      periodicTimer: (_, _) => Timer(Duration.zero, () {}),
+    );
+    addTearDown(detector.close);
+    final found = <int>[];
+    detector.handles.listen(found.add);
+    detector.start();
+
+    await empty.addShot(small);
+    await pumpEventQueue();
+
+    expect(found, [1]);
+  });
+
+  test('an empty card takes shots', () async {
+    final empty = await DemoCameraClient.open(const []);
+    addTearDown(empty.close);
+
+    await empty.addShot(small);
+
+    expect((await empty.listPhotos()).single.handle, 1);
+  });
+
+  test('a shot after closing is dropped', () async {
+    await client.close();
+
+    await client.addShot(photo('IMG_0003.jpg', 20));
+
+    expect(await client.objectInfo(3), isNull);
   });
 
   test('deleting takes the photo off the card, never off the phone', () async {

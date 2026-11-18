@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../demo/demo_shutter_button.dart';
 import '../../ptpip/camera_client.dart';
 import '../connect/connect_cubit.dart';
 import '../connect/connect_state.dart';
@@ -47,13 +48,24 @@ class AutoUploadScreen extends StatelessWidget {
     final state = context.watch<AutoUploadCubit>().state;
     final ios = defaultTargetPlatform == TargetPlatform.iOS;
     final backlog = state.backlog;
+    final client = context.select<ConnectCubit, CameraClient?>(
+      (cubit) => switch (cubit.state) {
+        ConnectConnected(:final client) => client,
+        _ => null,
+      },
+    );
     return Scaffold(
+      floatingActionButton: DemoShutterButton(client: client),
       appBar: AppBar(
         title: Text(OperatingMode.autoUpload.label),
         actions: const [UploadStatusIndicator(), ModesButton()],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(Spacing.large),
+        padding: const EdgeInsets.all(Spacing.large).copyWith(
+          bottom: DemoShutterButton.showsFor(client)
+              ? DemoShutterButton.clearance
+              : null,
+        ),
         children: [
           if (ios)
             const _Notice(
@@ -176,7 +188,7 @@ class _Connection extends StatelessWidget {
       ConnectConnected(:final target) => (
         switch (target) {
           UsbTarget() => Icons.usb,
-          DemoTarget() => Icons.photo_library_outlined,
+          DemoTarget() => Icons.photo_camera_outlined,
           WifiTarget() || null => Icons.wifi,
         },
         AutoUploadScreen.waitingText,

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import '../../ptpip/camera_client.dart';
 import '../../usb/usb_camera_platform.dart';
 
@@ -23,12 +21,10 @@ final class UsbTarget extends ConnectTarget {
   final UsbCameraRef device;
 }
 
-/// A pretend camera whose card holds [photos] from this phone, to try the
-/// app without a camera. No network, and nothing to reconnect.
+/// A pretend camera that shoots with the phone's camera, to try the app
+/// without a camera. No network, and nothing to reconnect.
 final class DemoTarget extends ConnectTarget {
-  const DemoTarget(this.photos);
-
-  final List<File> photos;
+  const DemoTarget();
 }
 
 extension ConnectTargetNetwork on ConnectTarget? {

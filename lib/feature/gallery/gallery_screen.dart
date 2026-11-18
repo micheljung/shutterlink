@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/download_history.dart';
 import '../../data/settings_repository.dart';
+import '../../demo/demo_shutter_button.dart';
 import '../../ptpip/camera_client.dart';
 import '../connect/connect_cubit.dart';
 import '../download/download_cubit.dart';
@@ -123,6 +124,10 @@ class _GalleryView extends StatelessWidget {
           isDownloaded: isDownloaded,
         ),
       },
+      floatingActionButton: DemoShutterButton(
+        client: client,
+        onShot: () => cubit.load(quietly: true),
+      ),
       bottomNavigationBar: _DownloadBar(client: client),
     );
   }

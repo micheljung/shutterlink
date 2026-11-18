@@ -9,7 +9,7 @@ Features:
 * Interrupted downloads resume after reconnecting.
 * Auto-upload (Android): Live transfer sends new photos to your server while the app runs in the background.
 * Connects in the camera's access point mode, and finds the camera on your home Wi-Fi.
-* No camera at hand? Try the app with photos picked from your phone.
+* No camera at hand? Try the app with your phone's camera.
 
 Shutterlink is not tested on real hardware yet. Reports are welcome.
 
