@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart';
 import 'package:shutterlink_server/src/app.dart';
+import 'package:shutterlink_server/src/limits.dart' as limits;
 import 'package:shutterlink_server/src/pages.dart';
 import 'package:shutterlink_server/src/tips.dart';
 import 'package:test/test.dart';
@@ -14,6 +15,7 @@ import 'support.dart';
 
 const String _codeC = 'lunar-magic-noble-ocean';
 const Duration _day = Duration(days: 1);
+const String _noStore = 'no-store';
 
 void main() {
   late TestApp server;
@@ -35,6 +37,16 @@ void main() {
           '/s/$codeA/p/..%2Fcreated.jpg',
           '/s/$codeA/p/${key.toUpperCase()}.jpg',
           '/s/$codeA/p/$key',
+          '/s/$codeA/t/..%2F..%2F..%2Fsecret.jpg',
+          '/s/$codeA/t/..%2Fcreated.jpg',
+          '/s/$codeA/t/${key.toUpperCase()}.jpg',
+          '/s/$codeA/t/$key',
+          '/s/$codeA/v/..%2F..%2F..%2Fsecret.jpg',
+          '/s/$codeA/v/..%2Fphotos%2F$key.jpg',
+          '/s/$codeA/v/$key.t.jpg',
+          '/s/..%2F..%2Fsecret/photos.json',
+          '/s/..%2F..%2Fsecret/events',
+          '/s/..%2F..%2Fsecret/t/$key.jpg',
           '/s/$codeA/../secret',
           '/s/..%2Fsessions/all.zip',
           '/secret',
@@ -66,15 +78,28 @@ void main() {
     );
 
     test('wrong code with the right key reveals nothing', () async {
-      final bytes = photoBytes(1);
+      final bytes = jpegBytes(1);
       await server.upload(codeA, bytes);
+      await server.awaitPreviews();
+      final key = keyOf(bytes);
+      for (final kind in ['t', 'v']) {
+        final own = await server.get('/s/$codeA/$kind/$key.jpg');
+        expect(own.headers['content-type'], 'image/jpeg');
+        await bodyBytes(own);
+      }
       for (final path in [
-        '/s/$codeB/p/${keyOf(bytes)}.jpg',
+        '/s/$codeB/p/$key.jpg',
+        '/s/$codeB/t/$key.jpg',
+        '/s/$codeB/v/$key.jpg',
         '/s/$codeB/all.zip',
         '/s/$codeB',
       ]) {
         expect(await bodyBytes(await server.get(path)), onTheirWayPage);
       }
+      final wrong = await server.get('/s/$codeB/photos.json');
+      final unknown = await server.get('/s/$unknownCode/photos.json');
+      expect(wrong.headers, unknown.headers);
+      expect(await bodyText(wrong), await bodyText(unknown));
     });
 
     test('invalid ?code= renders directly and never echoes input', () async {
@@ -99,31 +124,76 @@ void main() {
     });
 
     test('security headers on every response', () async {
-      final bytes = photoBytes(1);
+      final bytes = jpegBytes(1);
       await server.upload(codeA, bytes);
-      final responses = <Response>[
-        await server.get('/'),
-        await server.get('/s/$codeA'),
-        await server.get('/s/$unknownCode'),
-        await server.get('/s/$codeA/p/${keyOf(bytes)}.jpg'),
-        await server.get('/s/$codeA/all.zip'),
-        await server.get('/static/app.css'),
-        await server.get('/healthz'),
-        await server.get('/s?code=$codeA'),
-        await server.call(putRequest(codeA, keyOf(bytes), bytes, token: 'x')),
-        await server.call(Request('POST', origin.resolve('/'))),
+      await server.awaitPreviews();
+      final key = keyOf(bytes);
+      final etag = (await server.get('/s/$codeA/photos.json')).headers['etag']!;
+      final expiresIn = limits.defaultRetention.inSeconds;
+      final responses = <(Response, String)>[
+        (await server.get('/'), _noStore),
+        (await server.get('/s/$codeA'), _noStore),
+        (await server.get('/s/$unknownCode'), _noStore),
+        (await server.get('/s/$codeA/p/$key.jpg'), _noStore),
+        (await server.get('/s/$codeA/all.zip'), _noStore),
+        (await server.get('/static/app.css'), _noStore),
+        (await server.get('/healthz'), _noStore),
+        (await server.get('/s?code=$codeA'), _noStore),
+        (
+          await server.call(putRequest(codeA, key, bytes, token: 'x')),
+          _noStore,
+        ),
+        (await server.call(Request('POST', origin.resolve('/'))), _noStore),
+        (await server.get('/s/$codeA/events'), _noStore),
+        (
+          await server.call(
+            Request('HEAD', origin.resolve('/s/$codeA/events')),
+          ),
+          _noStore,
+        ),
+        (
+          await server.get('/s/$codeA/t/$key.jpg'),
+          'private, max-age=$expiresIn',
+        ),
+        (
+          await server.get('/s/$codeA/v/$key.jpg'),
+          'private, max-age=$expiresIn',
+        ),
+        (await server.get('/s/$codeA/t/${'0' * 64}.jpg'), _noStore),
+        (await server.get('/s/$codeA/photos.json'), 'no-cache'),
+        (await server.get('/s/$unknownCode/photos.json'), 'no-cache'),
+        (
+          await server.call(
+            Request(
+              'GET',
+              origin.resolve('/s/$codeA/photos.json'),
+              headers: {'if-none-match': etag},
+            ),
+          ),
+          'no-cache',
+        ),
       ];
-      for (final response in responses) {
+      for (final (response, cacheControl) in responses) {
         for (final MapEntry(:key, :value) in securityHeaders.entries) {
+          if (key == 'cache-control') continue;
           expect(response.headers[key], value);
         }
-        await bodyBytes(response);
+        expect(response.headers['cache-control'], cacheControl);
+        if (response.headers['content-type'] == 'text/event-stream') {
+          await response.read().first;
+        } else {
+          await bodyBytes(response);
+        }
       }
+      expect(responses.last.$1.statusCode, 304);
+      expect(server.app.doorbell.openStreams, 0);
       expect(
         securityHeaders['content-security-policy'],
         "default-src 'none'; img-src 'self'; style-src 'self'; "
+        "script-src 'self'; connect-src 'self'; font-src 'self'; "
         "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
       );
+      expect(securityHeaders['cache-control'], _noStore);
     });
 
     test('no plain code or SHA-256 of the code on disk', () async {

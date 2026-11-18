@@ -1,6 +1,8 @@
 @TestOn('!windows')
 library;
 
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -53,6 +55,18 @@ Future<void> _upload(Uri url, List<int> bytes) async {
   }
 }
 
+Future<List<Object?>> _photos(Uri url) async {
+  final client = HttpClient();
+  try {
+    final request = await client.getUrl(url.resolve('/s/$codeA/photos.json'));
+    final response = await request.close();
+    final body = await response.transform(utf8.decoder).join();
+    return (jsonDecode(body) as Map<String, Object?>)['photos']! as List;
+  } finally {
+    client.close(force: true);
+  }
+}
+
 void main() {
   late Directory dataDir;
 
@@ -73,6 +87,29 @@ void main() {
       expect(exitCode, 0, reason: server.stderr);
     });
   }
+
+  test('exits with code 0 while an event stream is open', () async {
+    final server = await ServerProcess.start(dataDir);
+    addTearDown(server.kill);
+    await _upload(server.url, photoBytes(1));
+    final client = HttpClient();
+    addTearDown(() => client.close(force: true));
+    final request = await client.getUrl(server.url.resolve('/s/$codeA/events'));
+    final response = await request.close();
+    expect(response.statusCode, HttpStatus.ok);
+    final opened = Completer<void>();
+    response.listen((_) {
+      if (!opened.isCompleted) opened.complete();
+    }, onError: (Object _) {});
+    await opened.future;
+
+    server.process.kill(ProcessSignal.sigterm);
+    final exitCode = await server.process.exitCode.timeout(
+      _exitBound,
+      onTimeout: () => fail('still running $_exitBound after SIGTERM'),
+    );
+    expect(exitCode, 0, reason: server.stderr);
+  });
 
   group(
     'with a preview in flight',
@@ -112,6 +149,9 @@ void main() {
           reason: 'the preview finished before SIGTERM; grow the fixture',
         );
         expect(names, [matches(RegExp(r'^[0-9a-f]{64}\.[0-9a-f]+\.attempt$'))]);
+        expect(await _photos(server.url), [
+          {'key': keyOf(large), 'state': 'pending'},
+        ]);
 
         server.process.kill(ProcessSignal.sigterm);
         final exitCode = await server.process.exitCode.timeout(
@@ -124,7 +164,9 @@ void main() {
         final restarted = await ServerProcess.start(dataDir);
         addTearDown(restarted.kill);
         final deadline = DateTime.now().add(_readyBound);
-        while (!(names = await previewNames()).any(isMarker)) {
+        while (!(names = await previewNames()).any(isMarker) ||
+            ((await _photos(restarted.url)).single! as Map)['state'] !=
+                'ready') {
           if (DateTime.now().isAfter(deadline)) {
             fail('no preview after restart');
           }

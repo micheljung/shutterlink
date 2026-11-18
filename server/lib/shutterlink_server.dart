@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:clock/clock.dart';
+import 'package:meta/meta.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import 'src/app.dart';
@@ -23,6 +24,9 @@ class ShutterlinkServer {
     Object? address,
     int port = 0,
     int previewConcurrency = limits.previewConcurrency,
+    Stream<void>? keepAliveTicks,
+    int sseStreamsPerSession = limits.sseStreamsPerSession,
+    int sseStreamsGlobal = limits.sseStreamsGlobal,
   }) async {
     final app = await ShutterlinkApp.open(
       dataDir: dataDir,
@@ -31,6 +35,9 @@ class ShutterlinkServer {
       retention: retention,
       clock: clock,
       previewConcurrency: previewConcurrency,
+      keepAliveTicks: keepAliveTicks,
+      sseStreamsPerSession: sseStreamsPerSession,
+      sseStreamsGlobal: sseStreamsGlobal,
     );
     final cleanup = await Cleanup.start(app.store);
     final server = await shelf_io.serve(
@@ -51,6 +58,9 @@ class ShutterlinkServer {
   final Cleanup _cleanup;
   final ShutterlinkApp _app;
   final Uri url;
+
+  @visibleForTesting
+  ShutterlinkApp get app => _app;
 
   Future<void> close() async {
     await _cleanup.stop();
