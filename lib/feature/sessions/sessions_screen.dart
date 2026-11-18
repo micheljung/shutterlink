@@ -24,7 +24,10 @@ class SessionsScreen extends StatelessWidget {
       MaterialPageRoute(builder: (_) => const SessionsScreen());
 
   static Future<void> showCode(BuildContext context, Session session) async {
-    final serverUrl = context.read<SettingsCubit>().state.sessionsServerUrl;
+    final serverUrl = context
+        .read<SettingsCubit>()
+        .state
+        .validSessionsServerUrl;
     if (serverUrl == null) return;
     await SessionQrSheet.show(
       context,

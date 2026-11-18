@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../spacing.dart';
 
@@ -64,6 +68,8 @@ class SessionQrCode extends StatelessWidget {
   });
 
   static const defaultSize = 240.0;
+  static const openLabel = 'Open in browser';
+  static const openFailedText = 'No browser could open the link.';
 
   final String serverUrl;
   final String code;
@@ -72,7 +78,7 @@ class SessionQrCode extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final url = sessionPageUrl(serverUrl, code).toString();
+    final url = sessionPageUrl(serverUrl, code);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -89,11 +95,16 @@ class SessionQrCode extends StatelessWidget {
           style: theme.textTheme.headlineSmall,
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: Spacing.small),
-        SelectableText(
-          url,
-          style: theme.textTheme.bodySmall,
-          textAlign: TextAlign.center,
+        const SizedBox(height: Spacing.medium),
+        SizedBox(
+          width: size + 2 * Spacing.medium,
+          child: SessionUrlField(url: url.toString()),
+        ),
+        const SizedBox(height: Spacing.medium),
+        FilledButton.tonalIcon(
+          icon: const Icon(Icons.open_in_browser),
+          label: const Text(openLabel),
+          onPressed: () => _open(context, url),
         ),
       ],
     );
@@ -123,4 +134,87 @@ class SessionQrImage extends StatelessWidget {
       ),
     ),
   );
+}
+
+Future<void> _open(BuildContext context, Uri url) async {
+  final messenger = ScaffoldMessenger.of(context);
+  bool opened;
+  try {
+    opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+  } on PlatformException {
+    opened = false;
+  }
+  if (!opened) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text(SessionQrCode.openFailedText)),
+    );
+  }
+}
+
+/// A one-line, sideways-scrolling address that is copied when tapped.
+class SessionUrlField extends StatefulWidget {
+  const SessionUrlField({super.key, required this.url});
+
+  static const copyLabel = 'Copy link';
+  static const copiedLabel = 'Copied';
+  static const copiedFor = Duration(seconds: 2);
+
+  final String url;
+
+  @override
+  State<SessionUrlField> createState() => _SessionUrlFieldState();
+}
+
+class _SessionUrlFieldState extends State<SessionUrlField> {
+  late final _controller = TextEditingController(text: widget.url);
+  Timer? _copiedTimer;
+
+  @override
+  void didUpdateWidget(SessionUrlField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) _controller.text = widget.url;
+  }
+
+  @override
+  void dispose() {
+    _copiedTimer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.url));
+    if (!mounted) return;
+    _copiedTimer?.cancel();
+    setState(() {
+      _copiedTimer = Timer(SessionUrlField.copiedFor, () {
+        if (mounted) setState(() => _copiedTimer = null);
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final copied = _copiedTimer != null;
+    return TextField(
+      controller: _controller,
+      readOnly: true,
+      showCursor: false,
+      enableInteractiveSelection: false,
+      maxLines: 1,
+      onTap: _copy,
+      style: const TextStyle(fontFamily: 'monospace'),
+      decoration: InputDecoration(
+        isDense: true,
+        filled: true,
+        border: const OutlineInputBorder(),
+        suffixIcon: Icon(
+          copied ? Icons.check : Icons.copy,
+          semanticLabel: copied
+              ? SessionUrlField.copiedLabel
+              : SessionUrlField.copyLabel,
+        ),
+      ),
+    );
+  }
 }

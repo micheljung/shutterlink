@@ -134,9 +134,12 @@ class UploadWorker {
       _status.value = UploadWorkerStatus.waitingForNetwork;
       return false;
     }
-    final serverUrl = Uri.tryParse(_settings.sessionsServerUrl ?? '');
+    final configuredUrl = _settings.sessionsServerUrl;
+    final serverUrl = isValidSessionsServerUrl(configuredUrl)
+        ? Uri.parse(configuredUrl!.trim())
+        : null;
     final token = await _credentials.token();
-    if (serverUrl == null || !serverUrl.hasAuthority || token == null) {
+    if (serverUrl == null || token == null) {
       _status.value = UploadWorkerStatus.notConfigured;
       return false;
     }

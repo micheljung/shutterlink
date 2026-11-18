@@ -120,6 +120,23 @@ void main() {
     );
   }
 
+  testWidgets('a mangled server URL shows no QR code', (tester) async {
+    when(() => settings.state).thenReturn(
+      const SettingsState(
+        format: DownloadFormat.jpeg,
+        sessionsServerUrl:
+            'https://photos.examphttps://photos.example.comtesttoken123 e.com',
+        sessionsConfigured: true,
+      ),
+    );
+    when(() => sessions.state)
+        .thenReturn(SessionsState(loaded: true, sessions: [open]));
+    await pumpScreen(tester);
+
+    expect(find.byType(SessionQrImage), findsNothing);
+    expect(find.text(QrSessionScreen.stopLabel), findsOneWidget);
+  });
+
   testWidgets('an open window shows its QR code and code, and Stop closes '
       'it (AC15)', (tester) async {
     when(() => sessions.state)

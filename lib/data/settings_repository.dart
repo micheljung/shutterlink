@@ -1,5 +1,19 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+const _localHosts = {'localhost', '127.0.0.1', '::1'};
+
+bool isValidSessionsServerUrl(String? url) {
+  final text = url?.trim() ?? '';
+  if (text.contains(RegExp(r'\s'))) return false;
+  final uri = Uri.tryParse(text);
+  if (uri == null || !uri.hasAuthority || uri.host.isEmpty) return false;
+  if (uri.path.contains('//') || uri.hasQuery || uri.hasFragment) {
+    return false;
+  }
+  return uri.scheme == 'https' ||
+      (uri.scheme == 'http' && _localHosts.contains(uri.host));
+}
+
 enum DownloadFormat { jpeg, raw, both }
 
 class SettingsRepository {
