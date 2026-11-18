@@ -80,15 +80,7 @@ class SessionQrCode extends StatelessWidget {
           color: Colors.white,
           child: Padding(
             padding: const EdgeInsets.all(Spacing.medium),
-            child: SizedBox.square(
-              dimension: size,
-              child: PrettyQrView.data(
-                data: url,
-                decoration: const PrettyQrDecoration(
-                  shape: PrettyQrSquaresSymbol(color: Colors.black),
-                ),
-              ),
-            ),
+            child: SessionQrImage(serverUrl: serverUrl, code: code, size: size),
           ),
         ),
         const SizedBox(height: Spacing.large),
@@ -106,4 +98,29 @@ class SessionQrCode extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Just the QR code of a Session's page, black on transparent.
+class SessionQrImage extends StatelessWidget {
+  const SessionQrImage({
+    super.key,
+    required this.serverUrl,
+    required this.code,
+    required this.size,
+  });
+
+  final String serverUrl;
+  final String code;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: PrettyQrView.data(
+      data: sessionPageUrl(serverUrl, code).toString(),
+      decoration: const PrettyQrDecoration(
+        shape: PrettyQrSquaresSymbol(color: Colors.black),
+      ),
+    ),
+  );
 }

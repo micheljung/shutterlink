@@ -132,6 +132,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(open.code), findsOneWidget);
+    expect(find.text(QrSessionScreen.openTitle), findsOneWidget);
 
     await tester.ensureVisible(find.text(QrSessionScreen.stopLabel));
     await tester.pumpAndSettle();
@@ -191,7 +192,9 @@ void main() {
     verify(() => qr.startNew()).called(1);
   });
 
-  testWidgets('shows clock sync for the camera, and Mark now', (tester) async {
+  testWidgets('shows clock sync for the camera, without Mark now', (
+    tester,
+  ) async {
     final clockSync = _MockClockSyncCubit();
     when(() => clockSync.state)
         .thenReturn(const ClockResolved(ClockResolution.fresh, Duration.zero));
@@ -209,10 +212,7 @@ void main() {
     expect(find.byType(ClockSyncBanner), findsOneWidget);
     expect(find.text('Camera clock in sync'), findsOneWidget);
 
-    await tester.tap(find.byTooltip(QrSessionScreen.markNowTooltip));
-    await tester.pump();
-    verify(() => sessions.markNow()).called(1);
-    expect(find.text(QrSessionScreen.markedText), findsOneWidget);
+    expect(find.byIcon(Icons.more_time), findsNothing);
   });
 
   testWidgets('shows no clock sync while the camera reconnects', (

@@ -10,6 +10,16 @@ import 'sessions_state.dart';
 class SessionsScreen extends StatelessWidget {
   const SessionsScreen({super.key});
 
+  static const markTooltip = 'Clock mark';
+  static const markTitle = 'Set a clock mark?';
+  static const markExplanation =
+      "Only needed for a camera whose clock Shutterlink can't read. Tap "
+      'Mark now, take a photo with the camera right away, and connect the '
+      'camera later. Shutterlink then works out the camera clock from that '
+      'photo, so photos go to the right Session.';
+  static const markLabel = 'Mark now';
+  static const markedText = 'Clock marked. Take a photo with the camera now.';
+
   static Route<void> route() =>
       MaterialPageRoute(builder: (_) => const SessionsScreen());
 
@@ -31,7 +41,7 @@ class SessionsScreen extends StatelessWidget {
         title: const Text('Sessions'),
         actions: [
           IconButton(
-            tooltip: 'Mark now for clock sync',
+            tooltip: markTooltip,
             icon: const Icon(Icons.more_time),
             onPressed: () => _markNow(context),
           ),
@@ -61,7 +71,8 @@ class SessionsScreen extends StatelessWidget {
                     '${TimeOfDay.fromDateTime(markedAt.toLocal()).format(context)}',
                   ),
                   subtitle: const Text(
-                    'Take a photo, then connect to the camera.',
+                    'Used to work out the camera clock from the first photo '
+                    'taken after it.',
                   ),
                 ),
               for (final session in state.sessions)
@@ -86,13 +97,29 @@ class SessionsScreen extends StatelessWidget {
   }
 
   Future<void> _markNow(BuildContext context) async {
-    await context.read<SessionsCubit>().markNow();
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Marked. Take a photo now, then connect the camera.'),
+    final mark = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.more_time),
+        title: const Text(markTitle),
+        content: const Text(markExplanation),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(markLabel),
+          ),
+        ],
       ),
     );
+    if (mark != true || !context.mounted) return;
+    await context.read<SessionsCubit>().markNow();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text(markedText)));
   }
 }
 

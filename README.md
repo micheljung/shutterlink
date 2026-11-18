@@ -363,12 +363,15 @@ to view and download their photos for 30 days.
    token. The app checks the token with the server before saving it.
 3. Connect the camera and pick **QR Session**. The mode starts a Session, or
    asks whether to resume the last one, and shows its QR code and Session
-   Code. **Stop**, **Start new Session** and **Resume** are on the same
-   screen. Leaving the mode closes the Session window. Past Sessions are
-   listed under **Sessions** in the mode and under Settings → Sessions.
-4. In QR Session the app reads the camera clock. If the camera does not report
-   its time, tap **Sync clock** and take a photo, or tap **Mark now**, take a
-   photo, and confirm it on the next connect.
+   Code. Tap the code to show it large. **Stop Session**, **Start new
+   Session** and **Resume** are on the same screen. Leaving the mode closes
+   the Session window. Past Sessions are listed under **Past Sessions** in
+   the mode and under Settings → Sessions.
+4. In QR Session the app reads the camera clock and corrects for an offset;
+   the camera's own clock is never changed. If the camera does not report its
+   time, tap **Sync clock** and take a photo. For a camera that is not
+   connected yet, tap **Clock mark** in the Sessions list, take a photo, and
+   confirm it on the next connect.
 
 Photos are collected only in QR Session, and they go only to the Sessions
 server: nothing is saved to the phone or sent to the upload destination. On
