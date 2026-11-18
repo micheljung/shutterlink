@@ -20,3 +20,10 @@ const int previewMaxPixels = 70_000_000;
 /// they get a lower limit.
 const int previewMaxProgressivePixels = 60_000_000;
 const int previewConcurrency = 2;
+
+const Duration sseKeepAlive = Duration(seconds: 15);
+
+/// How long EventSource waits before it reconnects a dropped stream.
+const Duration sseRetry = Duration(seconds: 3);
+const int sseStreamsPerSession = 64;
+const int sseStreamsGlobal = 512;

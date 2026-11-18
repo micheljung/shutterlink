@@ -4,8 +4,10 @@ import 'dart:typed_data';
 
 import 'package:clock/clock.dart';
 import 'package:crypto/crypto.dart';
+import 'package:image/image.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shutterlink_server/src/app.dart';
+import 'package:shutterlink_server/src/limits.dart' as limits;
 import 'package:shutterlink_server/src/tips.dart';
 
 const String codeA = 'apple-banana-cherry-delta';
@@ -26,6 +28,19 @@ String keyOf(List<int> bytes) => sha256.convert(bytes).toString();
 
 List<int> photoBytes(int seed, [int length = 1024]) =>
     List.generate(length, (i) => (i * 31 + seed) & 0xFF);
+
+const int _jpegSide = 48;
+
+Uint8List jpegBytes(int seed) {
+  final image = Image(width: _jpegSide, height: _jpegSide);
+  for (final pixel in image) {
+    pixel
+      ..r = (pixel.x + seed) & 0xFF
+      ..g = (pixel.y + seed) & 0xFF
+      ..b = seed & 0xFF;
+  }
+  return encodeJpg(image);
+}
 
 Stream<List<int>> chunked(List<int> bytes, [int chunkSize = 300]) async* {
   for (var i = 0; i < bytes.length; i += chunkSize) {
@@ -84,6 +99,9 @@ class TestApp {
     int zipConcurrency = 2,
     Duration zipQueueTimeout = const Duration(seconds: 5),
     Duration zipIdleTimeout = const Duration(seconds: 5),
+    Stream<void>? keepAliveTicks,
+    int sseStreamsPerSession = limits.sseStreamsPerSession,
+    int sseStreamsGlobal = limits.sseStreamsGlobal,
   }) async {
     final dataDir = await tempDataDir();
     final now = MutableClockSource(t0);
@@ -97,6 +115,9 @@ class TestApp {
       zipConcurrency: zipConcurrency,
       zipQueueTimeout: zipQueueTimeout,
       zipIdleTimeout: zipIdleTimeout,
+      keepAliveTicks: keepAliveTicks,
+      sseStreamsPerSession: sseStreamsPerSession,
+      sseStreamsGlobal: sseStreamsGlobal,
     );
     return TestApp._(dataDir, now, app);
   }

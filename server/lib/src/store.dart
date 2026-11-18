@@ -55,8 +55,6 @@ class PreviewInfo {
   static const PreviewInfo failed = PreviewInfo._(PreviewStatus.failed);
 
   final PreviewStatus status;
-
-  /// The view's dimensions, set only when ready.
   final int? width;
   final int? height;
 }
@@ -97,7 +95,6 @@ class StoredPhoto {
       StoredPhoto(key, file, size, modified, preview);
 }
 
-/// A photo the backfill scan found without a `.ready` or `.failed` marker.
 class PendingPreview {
   const PendingPreview(this.key, this.crashedAttempts);
 
@@ -108,11 +105,19 @@ class PendingPreview {
 }
 
 class SessionSnapshot {
-  const SessionSnapshot(this.photos, this.createdAt, this.expiresAt);
+  const SessionSnapshot(
+    this.photos,
+    this.createdAt,
+    this.expiresAt,
+    this.generation,
+  );
 
   final List<StoredPhoto> photos;
   final DateTime createdAt;
   final DateTime expiresAt;
+
+  /// The generation read in the same critical section as [photos].
+  final int generation;
 }
 
 class SessionStore {
@@ -202,6 +207,9 @@ class SessionStore {
   /// as [onCommitted].
   void Function(String name, int generation)? onBump;
 
+  /// Called synchronously after a purge removed the Session's generation.
+  void Function(String name)? onPurged;
+
   int _seq = 0;
   final Map<String, (int, DateTime)> _generation = {};
 
@@ -225,10 +233,8 @@ class SessionStore {
   File _tombstone(String name) => File(p.join(_root.path, 'tombstones', name));
   Directory get _tmpDir => Directory(p.join(_root.path, 'tmp'));
 
-  File _newTmpFile() => _tmpFileIn(_tmpDir);
-
   /// A fresh path in `tmp/`, which the cleanup sweeps if it is left behind.
-  File newTmpFile() => _newTmpFile();
+  File newTmpFile() => _tmpFileIn(_tmpDir);
 
   File photoFile(String name, String key) =>
       File(p.join(_photosDir(name).path, '$key$_photoExtension'));
@@ -245,7 +251,7 @@ class SessionStore {
   }
 
   Future<PutResult> put(String code, String key, Stream<List<int>> body) async {
-    final tmp = _newTmpFile();
+    final tmp = newTmpFile();
     try {
       final (size, error) = await _receive(body, tmp, key);
       if (error != null) return PutResult.failed(error);
@@ -285,7 +291,7 @@ class SessionStore {
     if (await _tombstone(name).exists()) {
       return const PutResult.failed(PutError.expired);
     }
-    final target = File(p.join(_photosDir(name).path, '$key$_photoExtension'));
+    final target = photoFile(name, key);
     if (await target.exists()) {
       final created = await _readCreated(name) ?? await _writeCreated(name);
       return PutResult.stored(
@@ -339,7 +345,7 @@ class SessionStore {
 
   Future<DateTime> _writeCreated(String name) async {
     final now = clock.now().toUtc();
-    final tmp = _newTmpFile();
+    final tmp = newTmpFile();
     await tmp.writeAsString(now.toIso8601String(), flush: true);
     await tmp.rename(_createdFile(name).path);
     return now;
@@ -375,13 +381,19 @@ class SessionStore {
       final photos = await _listPhotos(name);
       if (photos.isEmpty) return null;
       final (previews, _) = await _listPreviews(name);
+      final expiresAt = created.add(retention);
+      final (generation, _) = _generation.putIfAbsent(
+        name,
+        () => (++_seq, expiresAt),
+      );
       return SessionSnapshot(
         [
           for (final photo in photos)
             photo.withPreview(previews[photo.key] ?? PreviewInfo.pending),
         ],
         created,
-        created.add(retention),
+        expiresAt,
+        generation,
       );
     });
   }
@@ -536,7 +548,7 @@ class SessionStore {
     return _mutex.run(name, () async {
       if (!isValidKey(key) || await _tombstone(name).exists()) return null;
       if (await _readCreated(name) == null) return null;
-      final file = File(p.join(_photosDir(name).path, '$key$_photoExtension'));
+      final file = photoFile(name, key);
       final stat = await file.stat();
       if (stat.type != FileSystemEntityType.file) return null;
       return StoredPhoto(key, file, stat.size, stat.modified);
@@ -585,5 +597,10 @@ class SessionStore {
     await _tombstone(name).writeAsString(now.toIso8601String(), flush: true);
     await _sessionDir(name).delete(recursive: true);
     _generation.remove(name);
+    try {
+      onPurged?.call(name);
+    } catch (e) {
+      stderr.writeln('Purge notification failed: $e');
+    }
   }
 }
