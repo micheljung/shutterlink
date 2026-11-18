@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'store.dart';
 import 'tips.dart';
+import 'web_assets.g.dart';
 
 const HtmlEscape _text = HtmlEscape(HtmlEscapeMode.element);
 const HtmlEscape _attribute = HtmlEscape(HtmlEscapeMode.attribute);
@@ -21,17 +22,33 @@ const List<String> _months = [
   'December',
 ];
 
-String _page(String title, String body) =>
+const int _eagerImages = 8;
+const String _pendingText = 'Preparing preview…';
+const String _failedText = 'No preview. Tap to download';
+
+String staticUrl(String file) => '/static/$file?v=${webAssets[file]!.version}';
+
+final String _logo = utf8
+    .decode(webAssets['logo.svg']!.bytes)
+    .trim()
+    .replaceFirst('<svg ', '<svg aria-hidden="true" focusable="false" ');
+
+String _page(String title, String body, {String head = ''}) =>
     '''<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
 <title>${_text.convert(title)}</title>
-<link rel="stylesheet" href="/static/app.css">
-</head>
+<link rel="icon" href="${staticUrl('logo.svg')}" type="image/svg+xml">
+<link rel="stylesheet" href="${staticUrl('app.css')}">
+$head</head>
 <body>
+<header class="site">
+<a class="brand" href="/">$_logo<span class="wordmark">shutterlink</span></a>
+</header>
 <main>
 $body
 </main>
@@ -67,17 +84,40 @@ String formatExpiry(DateTime instant) {
   return '<time datetime="$machine">$human</time>';
 }
 
-List<int> galleryPage(String code, SessionSnapshot snapshot, List<Tip> tips) {
+String _tile(String base, StoredPhoto photo, int index) {
+  final key = photo.key;
+  final href = _attribute.convert('$base/p/$key.jpg');
+  final preview = photo.preview;
+  final content = switch (preview.status) {
+    PreviewStatus.ready =>
+      '<img src="${_attribute.convert('$base/t/$key.jpg')}" '
+          'alt="Photo ${index + 1}" '
+          'loading="${index < _eagerImages ? 'eager' : 'lazy'}" '
+          'decoding="async">',
+    PreviewStatus.pending =>
+      '<span class="placeholder pending">$_pendingText</span>',
+    PreviewStatus.failed =>
+      '<span class="placeholder failed">$_failedText</span>',
+  };
+  final viewer = preview.status == PreviewStatus.ready
+      ? ' data-pswp-src="${_attribute.convert('$base/v/$key.jpg')}"'
+            ' data-pswp-width="${preview.width}"'
+            ' data-pswp-height="${preview.height}"'
+      : '';
+  return '<li><a href="$href" download="$key.jpg"$viewer>$content</a></li>';
+}
+
+/// [generationId] is `<bootId>-<g>` for the generation in [snapshot].
+List<int> galleryPage(
+  String code,
+  SessionSnapshot snapshot,
+  List<Tip> tips,
+  String generationId,
+) {
   final base = '/s/${Uri.encodeComponent(code)}';
   final photos = StringBuffer();
-  var index = 0;
-  for (final photo in snapshot.photos) {
-    index++;
-    final href = _attribute.convert('$base/p/${photo.key}.jpg');
-    photos.writeln(
-      '<li><a href="$href" download="${photo.key}.jpg">'
-      '<img src="$href" alt="Photo $index" loading="lazy"></a></li>',
-    );
+  for (final (index, photo) in snapshot.photos.indexed) {
+    photos.writeln(_tile(base, photo, index));
   }
   final tipSection = StringBuffer();
   if (tips.isNotEmpty) {
@@ -98,24 +138,18 @@ List<int> galleryPage(String code, SessionSnapshot snapshot, List<Tip> tips) {
     tipSection.writeln('</section>');
   }
   return utf8.encode(
-    _page('Your photos', '''
+    _page(
+      'Your photos',
+      '''
 <h1>Your photos</h1>
 <p class="expiry">Available until ${formatExpiry(snapshot.expiresAt)}</p>
-<p><a class="button" href="${_attribute.convert('$base/all.zip')}" download>Download all (${snapshot.photos.length})</a></p>
-<ul class="photos">
+<p><a class="button" href="${_attribute.convert('$base/all.zip')}" download>Download all (<span data-count>${snapshot.photos.length}</span>)</a></p>
+<ul class="photos" data-live="${_attribute.convert('$base/photos.json')}" data-events="${_attribute.convert('$base/events')}" data-generation="${_attribute.convert(generationId)}">
 $photos</ul>
-$tipSection'''),
+$tipSection''',
+      head:
+          '<link rel="stylesheet" href="${staticUrl('photoswipe.css')}">\n'
+          '<script type="module" src="${staticUrl('gallery.js')}"></script>\n',
+    ),
   );
 }
-
-final List<int> appCss = utf8.encode('''
-body { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee; }
-main { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
-a { color: #8cf; }
-.button, button { display: inline-block; padding: 0.6rem 1rem; border: 0; border-radius: 0.4rem; background: #8cf; color: #111; font: inherit; text-decoration: none; cursor: pointer; }
-.photos { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
-.photos img { width: 100%; height: 200px; object-fit: cover; border-radius: 0.4rem; }
-.tips .tip { margin: 0 0.5rem 0.5rem 0; }
-form { display: flex; flex-direction: column; gap: 0.75rem; max-width: 24rem; }
-input { padding: 0.6rem; font: inherit; border-radius: 0.4rem; border: 1px solid #555; background: #222; color: inherit; }
-''');
