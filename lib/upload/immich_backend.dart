@@ -29,6 +29,22 @@ Uri immichServerRoot(Uri endpoint) {
   return endpoint.replace(pathSegments: segments);
 }
 
+/// The page of the Immich web app where the user creates API keys, with
+/// that section open; null for an endpoint that isn't a web address yet.
+Uri? immichApiKeysPage(String endpoint) {
+  final uri = Uri.tryParse(endpoint.trim());
+  if (uri == null ||
+      !(uri.isScheme('https') || uri.isScheme('http')) ||
+      uri.host.isEmpty) {
+    return null;
+  }
+  final root = immichServerRoot(uri);
+  return root.replace(
+    pathSegments: [...root.pathSegments, 'user-settings'],
+    queryParameters: {'isOpen': 'api-keys'},
+  );
+}
+
 /// Uploads to the Immich timeline. Immich identifies assets by content, so
 /// names never collide and an identical photo counts as already present.
 class ImmichBackend implements StorageBackend {

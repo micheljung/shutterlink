@@ -424,4 +424,17 @@ void main() {
       expect(tlsServer.assets.values.single.bytes, bytes);
     });
   });
+
+  test('points at the API key settings of the web app', () {
+    expect(
+      immichApiKeysPage('https://photos.example.com/api/').toString(),
+      'https://photos.example.com/user-settings?isOpen=api-keys',
+    );
+    expect(
+      immichApiKeysPage('https://example.com/immich').toString(),
+      'https://example.com/immich/user-settings?isOpen=api-keys',
+    );
+    expect(immichApiKeysPage(''), isNull);
+    expect(immichApiKeysPage('photos.example.com'), isNull);
+  });
 }

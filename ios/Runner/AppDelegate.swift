@@ -19,11 +19,33 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RawPhotoSaver") {
       RawPhotoSaver.register(messenger: registrar.messenger())
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LinkOpener") {
+      LinkOpener.register(messenger: registrar.messenger())
+    }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "IdleTimer") {
       IdleTimer.register(messenger: registrar.messenger())
     }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "UsbCameraBridge") {
       usbCameraBridge = UsbCameraBridge.register(messenger: registrar.messenger())
+    }
+  }
+}
+
+/// Opens a web page in the user's browser.
+enum LinkOpener {
+  static func register(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "ch.micheljung.shutterlink/browser", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "open",
+        let arguments = call.arguments as? [String: Any],
+        let string = arguments["url"] as? String,
+        let url = URL(string: string)
+      else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      UIApplication.shared.open(url) { opened in result(opened) }
     }
   }
 }
