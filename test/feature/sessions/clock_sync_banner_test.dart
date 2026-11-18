@@ -75,6 +75,27 @@ void main() {
     expect(describeOffset(const Duration(seconds: 90)), '90 s behind');
     expect(describeOffset(const Duration(seconds: -3)), '3 s ahead');
     expect(describeOffset(Duration.zero), 'in sync');
+    expect(describeOffset(const Duration(minutes: -5)), '5 min ahead');
+    expect(
+      describeOffset(const Duration(hours: 1, minutes: 5)),
+      '1 h 5 min behind',
+    );
+    expect(describeOffset(const Duration(hours: -2)), '2 h ahead');
+    expect(describeOffset(const Duration(seconds: 3590)), '1 h behind');
+  });
+
+  testWidgets('a clock read from the camera needs no sync photo', (
+    tester,
+  ) async {
+    client.cameraTimeValue = t0.add(const Duration(seconds: 42));
+    final cubit = await pumpBanner(tester);
+    cubit.start();
+    await pumpUntil(tester, () => cubit.state is ClockResolved);
+
+    expect(find.text('Camera clock is 42 s ahead'), findsOneWidget);
+    expect(find.text(ClockSyncBanner.correctedHint), findsOneWidget);
+    expect(find.text(ClockSyncBanner.syncLabel), findsNothing);
+    expect(find.text(ClockSyncBanner.measureLabel), findsNothing);
   });
 
   testWidgets('prompts and confirms an assumed offset', (tester) async {
@@ -87,7 +108,8 @@ void main() {
 
     await tester.tap(find.text('Skip'));
     await pumpUntil(tester, () => cubit.state is ClockResolved);
-    expect(find.text('Camera clock in sync.'), findsOneWidget);
+    expect(find.text('Using the camera clock as it is.'), findsOneWidget);
+    expect(find.text(ClockSyncBanner.measureLabel), findsOneWidget);
   });
 
   testWidgets('a sync shot shows progress and a retry', (tester) async {
@@ -118,7 +140,7 @@ void main() {
 
     await tester.tap(find.text('Use this photo'));
     await pumpUntil(tester, () => cubit.state is ClockResolved);
-    expect(find.text('Camera clock 60 s behind, corrected.'), findsOneWidget);
+    expect(find.text('Camera clock measured: 60 s behind.'), findsOneWidget);
     expect(find.textContaining('60 s behind'), findsWidgets);
   });
 }
