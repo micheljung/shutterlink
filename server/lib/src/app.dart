@@ -15,6 +15,7 @@ import 'pages.dart';
 import 'previews.dart';
 import 'store.dart';
 import 'tips.dart';
+import 'web_assets.g.dart';
 import 'zip_stream.dart';
 
 const Map<String, String> securityHeaders = {
@@ -32,8 +33,10 @@ const String _htmlType = 'text/html; charset=utf-8';
 const String _jsonType = 'application/json';
 const String _bearerPrefix = 'Bearer ';
 const String _photoSuffix = '.jpg';
+const String _jpegType = 'image/jpeg';
 const String _eventStreamType = 'text/event-stream';
 const String _noCache = 'no-cache';
+const String _immutable = 'public, max-age=31536000, immutable';
 const String _lastEventIdHeader = 'last-event-id';
 const String _bufferOutputKey = 'shelf.io.buffer_output';
 final List<int> _emptyPhotos = utf8.encode(
@@ -83,6 +86,12 @@ class ShutterlinkApp {
       maxSessionBytes: maxSessionBytes,
     );
     final previews = PreviewQueue(store, concurrency: previewConcurrency);
+    final doorbell = Doorbell(
+      store,
+      keepAliveTicks: keepAliveTicks,
+      perSession: sseStreamsPerSession,
+      global: sseStreamsGlobal,
+    );
     unawaited(previews.scan());
     return ShutterlinkApp._(
       store,
@@ -92,12 +101,7 @@ class ShutterlinkApp {
       zipQueueTimeout,
       zipIdleTimeout,
       previews,
-      Doorbell(
-        store,
-        keepAliveTicks: keepAliveTicks,
-        perSession: sseStreamsPerSession,
-        global: sseStreamsGlobal,
-      ),
+      doorbell,
     );
   }
 
@@ -127,7 +131,7 @@ class ShutterlinkApp {
     // Liveness only: no parameters, no Session data, no token.
     ..get('/healthz', (Request _) => Response(HttpStatus.noContent))
     ..get('/', (Request _) => _html(landingPage))
-    ..get('/static/app.css', (Request _) => _css())
+    ..get('/static/<file>', _static)
     ..get('/s', _redirect)
     ..get('/s/<code>', _gallery)
     ..get('/s/<code>/p/<file>', _photo)
@@ -163,10 +167,18 @@ class ShutterlinkApp {
 
   static Response _onTheirWay() => _html(onTheirWayPage);
 
-  static Response _css() => Response.ok(
-    appCss,
-    headers: {HttpHeaders.contentTypeHeader: 'text/css; charset=utf-8'},
-  );
+  static Response _static(Request request, String file) {
+    final asset = webAssets[file];
+    if (asset == null) return _onTheirWay();
+    final current = request.url.queryParameters['v'] == asset.version;
+    return Response.ok(
+      asset.bytes,
+      headers: {
+        HttpHeaders.contentTypeHeader: asset.contentType,
+        HttpHeaders.cacheControlHeader: current ? _immutable : _noCache,
+      },
+    );
+  }
 
   static Response _json(int status, Map<String, Object> body) => Response(
     status,
@@ -240,7 +252,14 @@ class ShutterlinkApp {
     if (normalized == null) return _onTheirWay();
     final snapshot = await store.snapshot(normalized);
     if (snapshot == null) return _onTheirWay();
-    return _html(galleryPage(normalized, snapshot, _tips));
+    return _html(
+      galleryPage(
+        normalized,
+        snapshot,
+        _tips,
+        doorbell.eventId(snapshot.generation),
+      ),
+    );
   }
 
   Future<Response> _photo(Request request, String code, String file) async {
@@ -252,7 +271,7 @@ class ShutterlinkApp {
     return Response.ok(
       photo.file.openRead(),
       headers: {
-        HttpHeaders.contentTypeHeader: 'image/jpeg',
+        HttpHeaders.contentTypeHeader: _jpegType,
         HttpHeaders.contentLengthHeader: '${photo.size}',
       },
     );
@@ -276,7 +295,7 @@ class ShutterlinkApp {
     return Response.ok(
       preview.file.openRead(),
       headers: {
-        HttpHeaders.contentTypeHeader: 'image/jpeg',
+        HttpHeaders.contentTypeHeader: _jpegType,
         HttpHeaders.contentLengthHeader: '${preview.size}',
         HttpHeaders.cacheControlHeader: 'private, max-age=${max(0, maxAge)}',
       },

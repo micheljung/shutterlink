@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
+import 'package:shutterlink_server/src/limits.dart' as limits;
 import 'package:shutterlink_server/src/pages.dart';
 import 'package:shutterlink_server/src/tips.dart';
+import 'package:shutterlink_server/src/web_assets.g.dart';
 import 'package:test/test.dart';
 
 import 'support.dart';
@@ -12,6 +15,16 @@ final List<Tip> _tips = [
   Tip.parse('PayPal=https://paypal.me/example'),
   Tip.parse('TWINT <fast>=https://example.com/twint?a=1&b=2'),
 ];
+
+const String _noCache = 'no-cache';
+
+String _versioned(String file) => '/static/$file?v=${webAssets[file]!.version}';
+
+String _text(String html) => html.replaceAll(RegExp('<[^>]*>'), '');
+
+Directory _sessionDir(TestApp server, String code) => Directory(
+  p.join(server.dataDir.path, 'sessions', server.app.store.dirName(code)),
+);
 
 void main() {
   late TestApp server;
@@ -111,6 +124,189 @@ void main() {
       final css = await server.get('/static/app.css');
       expect(css.statusCode, 200);
       expect(css.headers['content-type'], startsWith('text/css'));
+      expect(css.headers['cache-control'], _noCache);
+      expect(await bodyBytes(css), webAssets['app.css']!.bytes);
+    });
+
+    test('tiles work without JS and show their preview state', () async {
+      final ready = jpegBytes(1);
+      final failed = photoBytes(2);
+      final pending = jpegBytes(3);
+      for (final bytes in [ready, failed, pending]) {
+        await server.upload(codeA, bytes);
+      }
+      await server.awaitPreviews();
+      await for (final entity in Directory(
+        p.join(_sessionDir(server, codeA).path, 'previews'),
+      ).list()) {
+        if (p.basename(entity.path).startsWith(keyOf(pending))) {
+          await entity.delete();
+        }
+      }
+      final page = await bodyText(await server.get('/s/$codeA'));
+      final base = '/s/$codeA';
+      final tiles = RegExp(r'<li>.*?</li>').allMatches(page).toList();
+      expect(tiles, hasLength(3));
+      for (final bytes in [ready, failed, pending]) {
+        final key = keyOf(bytes);
+        expect(
+          tiles.where(
+            (t) => t[0]!.startsWith(
+              '<li><a href="$base/p/$key.jpg" download="$key.jpg"',
+            ),
+          ),
+          hasLength(1),
+        );
+      }
+      final readyKey = keyOf(ready);
+      expect(
+        page,
+        contains(
+          '<li><a href="$base/p/$readyKey.jpg" download="$readyKey.jpg" '
+          'data-pswp-src="$base/v/$readyKey.jpg" '
+          'data-pswp-width="48" data-pswp-height="48">'
+          '<img src="$base/t/$readyKey.jpg" alt="Photo',
+        ),
+      );
+      final pendingTile = tiles.singleWhere(
+        (t) => t[0]!.contains(keyOf(pending)),
+      )[0]!;
+      final failedTile = tiles.singleWhere(
+        (t) => t[0]!.contains(keyOf(failed)),
+      )[0]!;
+      for (final tile in [pendingTile, failedTile]) {
+        expect(tile, isNot(contains('<img')));
+        expect(tile, isNot(contains('data-pswp')));
+      }
+      expect(pendingTile, contains('class="placeholder pending"'));
+      expect(failedTile, contains('class="placeholder failed"'));
+      expect(_text(pendingTile), isNotEmpty);
+      expect(_text(failedTile), isNotEmpty);
+      expect(_text(pendingTile), isNot(_text(failedTile)));
+      expect(
+        page,
+        contains(
+          '<a class="button" href="$base/all.zip" download>'
+          'Download all (<span data-count>3</span>)</a>',
+        ),
+      );
+      expect(page, isNot(contains('style=')));
+      expect(page, isNot(contains(RegExp('<script(?! type="module" src=)'))));
+    });
+
+    test('loads the first images eagerly and the rest lazily', () async {
+      const photos = 10;
+      for (var i = 0; i < photos; i++) {
+        await server.upload(codeA, jpegBytes(i));
+      }
+      await server.awaitPreviews();
+      final page = await bodyText(await server.get('/s/$codeA'));
+      final loading = RegExp(r'loading="(\w+)" decoding="async"')
+          .allMatches(page)
+          .map((m) => m[1])
+          .toList();
+      expect(loading, hasLength(photos));
+      expect(loading.take(8), everyElement('eager'));
+      expect(loading.skip(8), everyElement('lazy'));
+    });
+
+    test('the live attributes match photos.json', () async {
+      await server.upload(codeA, jpegBytes(1));
+      await server.awaitPreviews();
+      final page = await bodyText(await server.get('/s/$codeA'));
+      final json = await server.get('/s/$codeA/photos.json');
+      await bodyBytes(json);
+      expect(
+        page,
+        contains(
+          '<ul class="photos" data-live="/s/$codeA/photos.json" '
+          'data-events="/s/$codeA/events" '
+          'data-generation="${json.headers['etag']!.replaceAll('"', '')}">',
+        ),
+      );
+    });
+
+    test('pages link versioned assets', () async {
+      await server.upload(codeA, photoBytes(1));
+      final gallery = await bodyText(await server.get('/s/$codeA'));
+      for (final file in ['app.css', 'photoswipe.css']) {
+        expect(
+          gallery,
+          contains('<link rel="stylesheet" href="${_versioned(file)}">'),
+        );
+      }
+      expect(
+        gallery,
+        contains(
+          '<script type="module" src="${_versioned('gallery.js')}"></script>',
+        ),
+      );
+      for (final page in [
+        await bodyText(await server.get('/')),
+        utf8.decode(onTheirWayPage),
+        gallery,
+      ]) {
+        expect(page, contains(_versioned('app.css')));
+        expect(page, contains('<span class="wordmark">shutterlink</span>'));
+        expect(page, contains('<svg aria-hidden="true"'));
+        expect(page, isNot(contains('style=')));
+      }
+    });
+
+    test('static files are immutable only at their version', () async {
+      for (final MapEntry(key: file, value: asset) in webAssets.entries) {
+        final current = await server.get(_versioned(file));
+        expect(current.statusCode, 200, reason: file);
+        expect(current.headers['content-type'], asset.contentType);
+        expect(
+          current.headers['cache-control'],
+          'public, max-age=31536000, immutable',
+        );
+        expect(await bodyBytes(current), asset.bytes);
+        for (final path in [
+          '/static/$file',
+          '/static/$file?v=000000000000',
+          '/static/$file?v=${asset.version}x',
+        ]) {
+          final stale = await server.get(path);
+          expect(stale.headers['cache-control'], _noCache, reason: path);
+          expect(await bodyBytes(stale), asset.bytes);
+        }
+      }
+      expect(
+        webAssets['gallery.js']!.contentType,
+        startsWith('text/javascript'),
+      );
+      expect(webAssets['manrope-800.woff2']!.contentType, 'font/woff2');
+      for (final path in [
+        '/static/missing.js',
+        '/static/PHOTOSWIPE-LICENSE',
+        '/static/..%2Fpubspec.yaml',
+        '/static/',
+      ]) {
+        final response = await server.get(path);
+        expect(response.headers['cache-control'], 'no-store', reason: path);
+        expect(await bodyBytes(response), onTheirWayPage, reason: path);
+      }
+    });
+
+    test('previews are cached until the Session expires', () async {
+      final bytes = jpegBytes(1);
+      await server.upload(codeA, bytes);
+      await server.awaitPreviews();
+      const elapsed = Duration(days: 29, hours: 23, minutes: 59, seconds: 30);
+      server.now.now = t0.add(elapsed);
+      final remaining = (limits.defaultRetention - elapsed).inSeconds;
+      for (final kind in ['t', 'v']) {
+        final response = await server.get(
+          '/s/$codeA/$kind/${keyOf(bytes)}.jpg',
+        );
+        expect(
+          response.headers['cache-control'],
+          'private, max-age=$remaining',
+        );
+        await bodyBytes(response);
+      }
     });
   });
 

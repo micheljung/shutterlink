@@ -9,6 +9,7 @@ import 'package:shutterlink_server/src/app.dart';
 import 'package:shutterlink_server/src/limits.dart' as limits;
 import 'package:shutterlink_server/src/pages.dart';
 import 'package:shutterlink_server/src/tips.dart';
+import 'package:shutterlink_server/src/web_assets.g.dart';
 import 'package:test/test.dart';
 
 import 'support.dart';
@@ -48,6 +49,9 @@ void main() {
           '/s/..%2F..%2Fsecret/events',
           '/s/..%2F..%2Fsecret/t/$key.jpg',
           '/s/$codeA/../secret',
+          '/static/..%2F..%2Fpubspec.yaml',
+          '/static/..%2Fweb_assets.g.dart',
+          '/static/%2E%2E%2Fapp.css',
           '/s/..%2Fsessions/all.zip',
           '/secret',
           '/sessions',
@@ -136,7 +140,14 @@ void main() {
         (await server.get('/s/$unknownCode'), _noStore),
         (await server.get('/s/$codeA/p/$key.jpg'), _noStore),
         (await server.get('/s/$codeA/all.zip'), _noStore),
-        (await server.get('/static/app.css'), _noStore),
+        (await server.get('/static/app.css'), 'no-cache'),
+        (
+          await server.get(
+            '/static/app.css?v=${webAssets['app.css']!.version}',
+          ),
+          'public, max-age=31536000, immutable',
+        ),
+        (await server.get('/static/unknown.css'), _noStore),
         (await server.get('/healthz'), _noStore),
         (await server.get('/s?code=$codeA'), _noStore),
         (
