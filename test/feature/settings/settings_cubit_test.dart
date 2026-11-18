@@ -126,5 +126,24 @@ void main() {
       expect(isValidSessionsServerUrl('https://'), isFalse);
       expect(isValidSessionsServerUrl('http://127.0.0.1:8080'), isTrue);
     });
+
+    test('a mangled address is rejected', () {
+      expect(
+        isValidSessionsServerUrl(
+          'https://photos.examphttps://photos.example.comtesttoken123 e.com',
+        ),
+        isFalse,
+      );
+      expect(
+        isValidSessionsServerUrl(
+          'https://photos.examphttps://photos.example.com',
+        ),
+        isFalse,
+      );
+      expect(isValidSessionsServerUrl('https://photos .example.com'), isFalse);
+      expect(isValidSessionsServerUrl('https://photos.example.com?a'), isFalse);
+      expect(isValidSessionsServerUrl('https://photos.example.com#a'), isFalse);
+      expect(isValidSessionsServerUrl(' https://photos.example.com/ '), isTrue);
+    });
   });
 }

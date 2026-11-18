@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/settings_repository.dart';
 import '../../data/upload_client.dart';
 import '../sessions/sessions_dependencies.dart';
 import '../spacing.dart';
@@ -136,6 +137,13 @@ class _SessionsSetupScreenState extends State<SessionsSetupScreen> {
     }
   }
 
+  static String? _urlError(String text) {
+    if (text.trim().isEmpty || isValidSessionsServerUrl(text)) return null;
+    return Uri.tryParse(text.trim())?.scheme == 'https'
+        ? 'Not a valid server address'
+        : 'Use https:// (http:// only for localhost)';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -191,11 +199,7 @@ class _SessionsSetupScreenState extends State<SessionsSetupScreen> {
                 border: const OutlineInputBorder(),
                 labelText: 'Server URL',
                 hintText: 'https://photos.example.com',
-                errorText:
-                    value.text.trim().isEmpty ||
-                        isValidSessionsServerUrl(value.text)
-                    ? null
-                    : 'Use https:// (http:// only for localhost)',
+                errorText: _urlError(value.text),
               ),
             ),
           ),

@@ -237,7 +237,7 @@ class _Window extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final serverUrl = context.select<SettingsCubit, String?>(
-      (cubit) => cubit.state.sessionsServerUrl,
+      (cubit) => cubit.state.validSessionsServerUrl,
     );
     return BlocBuilder<SessionsCubit, SessionsState>(
       builder: (context, state) {

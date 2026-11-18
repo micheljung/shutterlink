@@ -4,15 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/sessions_credentials.dart';
 import '../../data/settings_repository.dart';
 
-const _localHosts = {'localhost', '127.0.0.1', '::1'};
-
-bool isValidSessionsServerUrl(String? url) {
-  final uri = Uri.tryParse(url?.trim() ?? '');
-  if (uri == null || !uri.hasAuthority || uri.host.isEmpty) return false;
-  return uri.scheme == 'https' ||
-      (uri.scheme == 'http' && _localHosts.contains(uri.host));
-}
-
 class SettingsState extends Equatable {
   const SettingsState({
     required this.format,
@@ -32,6 +23,11 @@ class SettingsState extends Equatable {
   final int sessionsTokenRevision;
 
   final bool onboardingSeen;
+
+  /// [sessionsServerUrl] when it is usable, so a mangled one never reaches
+  /// a guest.
+  String? get validSessionsServerUrl =>
+      isValidSessionsServerUrl(sessionsServerUrl) ? sessionsServerUrl : null;
 
   SettingsState copyWith({
     DownloadFormat? format,
