@@ -153,6 +153,28 @@ void main() {
     expect(home(tester).read<ModeCubit>().state, isNull);
   });
 
+  testWidgets('back with a selection clears it and stays in Browse', (
+    tester,
+  ) async {
+    answers.add(FakeCameraClient(photos(2)));
+    await pumpApp(tester);
+    await connectAndBrowse(tester);
+    await tester.longPress(find.byType(ThumbnailTile).first);
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    expect(find.byTooltip(ModeBackButton.tooltip), findsNothing);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(GalleryScreen), findsOneWidget);
+    expect(find.text('Photos (2)'), findsOneWidget);
+    expect(home(tester).read<ModeCubit>().state, OperatingMode.browse);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(ModePickerScreen), findsOneWidget);
+  });
+
   testWidgets('back in a pushed screen keeps the mode', (tester) async {
     answers.add(FakeCameraClient(photos(1)));
     await pumpApp(tester);

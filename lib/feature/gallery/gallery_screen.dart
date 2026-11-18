@@ -11,6 +11,7 @@ import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
 import '../mode/mode_back_button.dart';
+import '../mode/mode_host.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
 import '../settings/upload_draft_fields.dart';
@@ -45,6 +46,8 @@ class _GalleryView extends StatelessWidget {
   final CameraClient client;
   final String cameraKey;
 
+  static const clearSelectionTooltip = 'Clear selection';
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<GalleryCubit>().state;
@@ -56,79 +59,94 @@ class _GalleryView extends StatelessWidget {
     final deletable = canDeleteNow(context, client);
     bool isDownloaded(PhotoGroup group) =>
         history.isDownloaded(cameraKey, group.filesFor(format));
-    return Scaffold(
-      appBar: AppBar(
-        leading: const ModeBackButton(),
-        title: Text(
-          state.selected.isEmpty
-              ? 'Photos (${state.groups.length})'
-              : '${state.selected.length} selected',
-        ),
-        actions: [
-          const UploadStatusIndicator(),
-          if (client.canDelete && state.selected.isNotEmpty)
-            IconButton(
-              tooltip: 'Delete from camera',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: deletable
-                  ? () => confirmDelete(context, client, state.selectedGroups)
-                  : null,
-            ),
-          IconButton(
-            tooltip: 'Select new',
-            icon: const Icon(Icons.fiber_new_outlined),
-            onPressed: () => cubit.selectWhere(
-              (group) =>
-                  group.filesFor(format).isNotEmpty && !isDownloaded(group),
-            ),
-          ),
-          IconButton(
-            tooltip: state.allSelected ? 'Select none' : 'Select all',
-            icon: Icon(state.allSelected ? Icons.deselect : Icons.select_all),
-            onPressed: state.allSelected
-                ? cubit.clearSelection
-                : cubit.selectAll,
-          ),
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(SettingsScreen.route()),
-          ),
-          IconButton(
-            tooltip: 'Disconnect',
-            icon: const Icon(Icons.link_off),
-            onPressed: state.deleting
-                ? null
-                : context.read<ConnectCubit>().disconnect,
-          ),
-        ],
-      ),
-      body: switch (state.status) {
-        GalleryStatus.loading => const Center(
-          child: CircularProgressIndicator(),
-        ),
-        GalleryStatus.failed => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Could not list photos: ${state.error}'),
-              TextButton(onPressed: cubit.load, child: const Text('Retry')),
-            ],
-          ),
-        ),
-        GalleryStatus.loaded when state.groups.isEmpty => const Center(
-          child: Text('No photos on the card.'),
-        ),
-        GalleryStatus.loaded => GalleryGrid(
-          client: client,
-          isDownloaded: isDownloaded,
-        ),
+    final selecting = state.selected.isNotEmpty;
+    return ModeBackInterceptor(
+      onBack: () {
+        if (cubit.state.selected.isEmpty) return false;
+        cubit.clearSelection();
+        return true;
       },
-      floatingActionButton: DemoShutterButton(
-        client: client,
-        onShot: () => cubit.load(quietly: true),
+      child: Scaffold(
+        appBar: AppBar(
+          leading: selecting
+              ? IconButton(
+                  tooltip: clearSelectionTooltip,
+                  icon: const Icon(Icons.close),
+                  onPressed: cubit.clearSelection,
+                )
+              : const ModeBackButton(),
+          title: Text(
+            state.selected.isEmpty
+                ? 'Photos (${state.groups.length})'
+                : '${state.selected.length} selected',
+          ),
+          actions: [
+            const UploadStatusIndicator(),
+            if (client.canDelete && state.selected.isNotEmpty)
+              IconButton(
+                tooltip: 'Delete from camera',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: deletable
+                    ? () => confirmDelete(context, client, state.selectedGroups)
+                    : null,
+              ),
+            IconButton(
+              tooltip: 'Select new',
+              icon: const Icon(Icons.fiber_new_outlined),
+              onPressed: () => cubit.selectWhere(
+                (group) =>
+                    group.filesFor(format).isNotEmpty && !isDownloaded(group),
+              ),
+            ),
+            IconButton(
+              tooltip: state.allSelected ? 'Select none' : 'Select all',
+              icon: Icon(state.allSelected ? Icons.deselect : Icons.select_all),
+              onPressed: state.allSelected
+                  ? cubit.clearSelection
+                  : cubit.selectAll,
+            ),
+            IconButton(
+              tooltip: 'Settings',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () =>
+                  Navigator.of(context).push(SettingsScreen.route()),
+            ),
+            IconButton(
+              tooltip: 'Disconnect',
+              icon: const Icon(Icons.link_off),
+              onPressed: state.deleting
+                  ? null
+                  : context.read<ConnectCubit>().disconnect,
+            ),
+          ],
+        ),
+        body: switch (state.status) {
+          GalleryStatus.loading => const Center(
+            child: CircularProgressIndicator(),
+          ),
+          GalleryStatus.failed => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Could not list photos: ${state.error}'),
+                TextButton(onPressed: cubit.load, child: const Text('Retry')),
+              ],
+            ),
+          ),
+          GalleryStatus.loaded when state.groups.isEmpty => const Center(
+            child: Text('No photos on the card.'),
+          ),
+          GalleryStatus.loaded => GalleryGrid(
+            client: client,
+            isDownloaded: isDownloaded,
+          ),
+        },
+        floatingActionButton: DemoShutterButton(
+          client: client,
+          onShot: () => cubit.load(quietly: true),
+        ),
+        bottomNavigationBar: _DownloadBar(client: client),
       ),
-      bottomNavigationBar: _DownloadBar(client: client),
     );
   }
 }
