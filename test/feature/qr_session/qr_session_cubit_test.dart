@@ -271,6 +271,7 @@ void main() {
     cubit = build();
     await enter();
     expect(cubit.state.resumable?.id, previous.id);
+    await _until(() => service.calls.contains('start'));
     final blocker = Directory('${root.path}/sessions.json.tmp')..createSync();
 
     await expectLater(cubit.resume(), completes);
@@ -314,5 +315,150 @@ void main() {
     await fire();
     await _until(() => cubit.state.client == second);
     expect(sessions.collectors, 2);
+  });
+
+  test(
+    'leaving and entering again at once offers the closed Session',
+    () async {
+      cubit = build();
+      await enter();
+      final open = await sessions.repository.active();
+
+      modes
+        ..leave()
+        ..select(OperatingMode.qrSession);
+
+      await _until(() => cubit.state.resumable?.id == open?.id);
+      expect(await windowOpen(), isFalse);
+      expect(cubit.state.active, isTrue);
+    },
+  );
+
+  group('automatic resume', () {
+    test('a window cut off by a killed app is resumed once the camera is '
+        'connected', () async {
+      final cut = await sessions.repository.start();
+      await sessions.settings.setQrSessionAliveAt(DateTime.now());
+
+      cubit = build();
+
+      await _until(() => cubit.state.client == first);
+      expect(modes.state, OperatingMode.qrSession);
+      final active = await sessions.repository.active();
+      expect(active?.id, cut.id);
+      expect(active?.intervals, hasLength(2));
+      expect(cubit.state.resumable, isNull);
+      expect(cubit.state.autoResumed, isTrue);
+    });
+
+    test('stopping the resumed Session drops the resumed notice', () async {
+      await sessions.repository.start();
+      await sessions.settings.setQrSessionAliveAt(DateTime.now());
+      cubit = build();
+      await _until(() => cubit.state.autoResumed);
+
+      await sessions.repository.stop();
+
+      await _until(() => !cubit.state.autoResumed);
+    });
+
+    test(
+      'a cut-off Session that cannot be reopened starts nothing unasked',
+      () async {
+        final cut = await sessions.repository.start();
+        await sessions.repository.markExpired(cut.code);
+        await sessions.settings.setQrSessionAliveAt(DateTime.now());
+
+        cubit = build();
+
+        await _until(() => cubit.state.client == first);
+        expect(modes.state, OperatingMode.qrSession);
+        expect(await windowOpen(), isFalse);
+        expect(cubit.state.resumable, isNull);
+        expect(cubit.state.autoResumed, isFalse);
+      },
+    );
+
+    test('a window cut off long ago is closed and not resumed', () async {
+      await sessions.repository.start();
+      await sessions.settings.setQrSessionAliveAt(
+        DateTime.now().subtract(
+          QrSessionCubit.autoResumeWithin + const Duration(minutes: 1),
+        ),
+      );
+
+      cubit = build();
+
+      await _until(
+        () async =>
+            !await windowOpen() && sessions.settings.qrSessionAliveAt == null,
+      );
+      expect(modes.state, isNull);
+    });
+
+    test(
+      'opening a window from the resume prompt marks it alive at once',
+      () async {
+        await sessions.repository.start();
+        await sessions.repository.stop();
+        cubit = build();
+        await enter();
+        expect(sessions.settings.qrSessionAliveAt, isNull);
+
+        await cubit.resume();
+
+        await _until(() => sessions.settings.qrSessionAliveAt != null);
+      },
+    );
+
+    test('a window the user stopped is not resumed after a kill', () async {
+      cubit = build();
+      await enter();
+      await _until(() async => sessions.settings.qrSessionAliveAt != null);
+      modes.leave();
+      await _until(
+        () async => !await windowOpen() && service.calls.last == 'stop',
+      );
+
+      expect(sessions.settings.qrSessionAliveAt, isNull);
+    });
+
+    test('a mode ended by a lost camera comes back with its Session on the '
+        'next connection', () async {
+      final second = FakeCameraClient(const []);
+      connections.add(second);
+      cubit = build();
+      await enter();
+      final open = await sessions.repository.active();
+
+      first.simulateDisconnect();
+      await pumpEventQueue();
+      modes.connectionLost();
+      await _until(() async => !await windowOpen());
+      await fire();
+
+      await _until(() => cubit.state.client == second);
+      expect(modes.state, OperatingMode.qrSession);
+      expect((await sessions.repository.active())?.id, open?.id);
+      expect(cubit.state.autoResumed, isTrue);
+    });
+
+    test('a mode the user left stays left on the next connection', () async {
+      final second = FakeCameraClient(const []);
+      connections.add(second);
+      cubit = build();
+      await enter();
+
+      modes.leave();
+      await _until(() async => !await windowOpen());
+      first.simulateDisconnect();
+      await pumpEventQueue();
+      await fire();
+      await _until(() => connect.state == ConnectConnected(second));
+      await pumpEventQueue();
+
+      expect(modes.state, isNull);
+      expect(cubit.state.active, isFalse);
+    });
   });
 }

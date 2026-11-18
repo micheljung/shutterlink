@@ -27,6 +27,8 @@ class QrSessionScreen extends StatelessWidget {
   static const sessionsTooltip = 'Past Sessions';
   static const notificationsHint =
       'Notifications are off, so the mode only shows here.';
+  static const autoResumedText =
+      'Resumed the Session that was open when the connection was lost.';
   static const openTitle = 'Session open';
   static const openHint = 'Guests scan this code to see your photos.';
   static const openDetail = 'Every photo you take now goes to their gallery.';
@@ -83,6 +85,10 @@ class QrSessionScreen extends StatelessWidget {
                     icon: Icons.notifications_off_outlined,
                     text: notificationsHint,
                   ),
+                  const SizedBox(height: Spacing.medium),
+                ],
+                if (state.autoResumed) ...[
+                  const _Notice(icon: Icons.restart_alt, text: autoResumedText),
                   const SizedBox(height: Spacing.medium),
                 ],
                 if (client != null && clockSync != null) ...[

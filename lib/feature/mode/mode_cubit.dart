@@ -7,8 +7,28 @@ import 'operating_mode.dart';
 class ModeCubit extends Cubit<OperatingMode?> {
   ModeCubit() : super(null);
 
-  void select(OperatingMode mode) => emit(mode);
+  bool _leftForConnectionLoss = false;
+
+  /// The last mode ended because the camera was lost, not because the user
+  /// left it.
+  bool get leftForConnectionLoss => _leftForConnectionLoss;
+
+  void select(OperatingMode mode) {
+    _leftForConnectionLoss = false;
+    emit(mode);
+  }
 
   /// Back to the picker. Queued uploads keep draining.
-  void leave() => emit(null);
+  void leave() {
+    _leftForConnectionLoss = false;
+    emit(null);
+  }
+
+  /// The camera is gone, so the mode ends without the user asking. A mode
+  /// the user already left stays left by the user.
+  void connectionLost() {
+    if (state == null) return;
+    _leftForConnectionLoss = true;
+    emit(null);
+  }
 }

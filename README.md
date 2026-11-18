@@ -365,7 +365,9 @@ to view and download their photos for 30 days.
    asks whether to resume the last one, and shows its QR code and Session
    Code. Tap the code to show it large. **Stop Session**, **Start new
    Session** and **Resume** are on the same screen. Leaving the mode closes
-   the Session window. Past Sessions are listed under **Past Sessions** in
+   the Session window. If the app is killed or the camera is lost with a
+   window open, QR Session comes back with that Session on the next connect,
+   unless more than 30 minutes have passed. Past Sessions are listed under **Past Sessions** in
    the mode and under Settings → Sessions.
 4. In QR Session the app reads the camera clock and corrects for an offset;
    the camera's own clock is never changed. If the camera does not report its
