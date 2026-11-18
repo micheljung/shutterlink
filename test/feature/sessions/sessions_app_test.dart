@@ -119,7 +119,7 @@ void main() {
     );
     await pumpUntil(
       tester,
-      () => find.byType(SessionQrCode).evaluate().isNotEmpty,
+      () => find.byType(SessionQrImage).evaluate().isNotEmpty,
     );
     expect(sessions.clockSyncs, 1);
     expect(sessions.collectors, 1);

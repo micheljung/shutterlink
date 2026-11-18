@@ -156,4 +156,23 @@ void main() {
     expect(find.text('Start new Session'), findsOneWidget);
     expect(find.text('Resume'), findsNothing);
   });
+
+  testWidgets('Clock mark explains itself and marks only when confirmed', (
+    tester,
+  ) async {
+    final sessions = await pumpScreen(tester);
+
+    await tester.tap(find.byTooltip(SessionsScreen.markTooltip));
+    await tester.pumpAndSettle();
+    expect(find.text(SessionsScreen.markExplanation), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(sessions.state.markedAt, isNull);
+
+    await tester.tap(find.byTooltip(SessionsScreen.markTooltip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(SessionsScreen.markLabel));
+    await pumpUntil(tester, () => sessions.state.markedAt != null);
+    expect(find.text(SessionsScreen.markedText), findsOneWidget);
+  });
 }
