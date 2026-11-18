@@ -5,23 +5,24 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import 'src/app.dart';
 import 'src/cleanup.dart';
-import 'src/limits.dart';
+import 'src/limits.dart' as limits;
 import 'src/tips.dart';
 
 export 'src/limits.dart' show defaultRetention;
 export 'src/tips.dart';
 
 class ShutterlinkServer {
-  ShutterlinkServer._(this._server, this._cleanup, this.url);
+  ShutterlinkServer._(this._server, this._cleanup, this._app, this.url);
 
   static Future<ShutterlinkServer> start({
     required Directory dataDir,
     required String uploadToken,
     List<Tip> tips = const [],
-    Duration retention = defaultRetention,
+    Duration retention = limits.defaultRetention,
     Clock clock = const Clock(),
     Object? address,
     int port = 0,
+    int previewConcurrency = limits.previewConcurrency,
   }) async {
     final app = await ShutterlinkApp.open(
       dataDir: dataDir,
@@ -29,6 +30,7 @@ class ShutterlinkServer {
       tips: tips,
       retention: retention,
       clock: clock,
+      previewConcurrency: previewConcurrency,
     );
     final cleanup = await Cleanup.start(app.store);
     final server = await shelf_io.serve(
@@ -40,16 +42,19 @@ class ShutterlinkServer {
     return ShutterlinkServer._(
       server,
       cleanup,
+      app,
       Uri(scheme: 'http', host: server.address.address, port: server.port),
     );
   }
 
   final HttpServer _server;
   final Cleanup _cleanup;
+  final ShutterlinkApp _app;
   final Uri url;
 
   Future<void> close() async {
     await _cleanup.stop();
     await _server.close(force: true);
+    await _app.close();
   }
 }

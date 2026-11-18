@@ -13,3 +13,10 @@ const Duration zipQueueTimeout = Duration(seconds: 30);
 
 /// How long a zip download may go without the client taking more data.
 const Duration zipIdleTimeout = Duration(seconds: 60);
+
+const int previewMaxPixels = 70_000_000;
+
+/// Progressive JPEGs are decoded at full resolution whatever the scale, so
+/// they get a lower limit.
+const int previewMaxProgressivePixels = 60_000_000;
+const int previewConcurrency = 2;

@@ -112,5 +112,10 @@ class TestApp {
 
   Future<Response> get(String path) => call(getRequest(path));
 
-  Future<void> close() => dataDir.delete(recursive: true);
+  Future<void> awaitPreviews() => app.previews.idle;
+
+  Future<void> close() async {
+    await app.close();
+    await dataDir.delete(recursive: true);
+  }
 }

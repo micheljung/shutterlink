@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:clock/clock.dart';
 import 'package:crypto/crypto.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'cleanup.dart';
@@ -18,6 +19,16 @@ const int _tmpNameLength = 16;
 const String _ownerOnlyMode = '600';
 const String _photoExtension = '.jpg';
 const int _byteValues = 256;
+const int _bootIdLength = 8;
+const String _readySuffix = '.ready';
+const String _failedSuffix = '.failed';
+const String _attemptSuffix = '.attempt';
+
+final RegExp _readyPattern = RegExp(r'^([0-9a-f]{64})\.(\d+)x(\d+)\.ready$');
+final RegExp _failedPattern = RegExp(r'^([0-9a-f]{64})\.failed$');
+final RegExp _attemptPattern = RegExp(
+  r'^([0-9a-f]{64})\.([0-9a-f]+)\.attempt$',
+);
 
 enum PutError { tooLarge, shaMismatch, expired, sessionFull }
 
@@ -33,13 +44,67 @@ class PutResult {
   final PutError? error;
 }
 
+enum PreviewStatus { pending, ready, failed }
+
+class PreviewInfo {
+  const PreviewInfo.ready(int this.width, int this.height)
+    : status = PreviewStatus.ready;
+  const PreviewInfo._(this.status) : width = null, height = null;
+
+  static const PreviewInfo pending = PreviewInfo._(PreviewStatus.pending);
+  static const PreviewInfo failed = PreviewInfo._(PreviewStatus.failed);
+
+  final PreviewStatus status;
+
+  /// The view's dimensions, set only when ready.
+  final int? width;
+  final int? height;
+}
+
+enum PreviewKind {
+  thumbnail('.t.jpg'),
+  view('.v.jpg');
+
+  const PreviewKind(this.suffix);
+
+  final String suffix;
+}
+
+class PreviewFile {
+  const PreviewFile(this.file, this.size, this.expiresAt);
+
+  final File file;
+  final int size;
+  final DateTime expiresAt;
+}
+
 class StoredPhoto {
-  const StoredPhoto(this.key, this.file, this.size, this.modified);
+  const StoredPhoto(
+    this.key,
+    this.file,
+    this.size,
+    this.modified, [
+    this.preview = PreviewInfo.pending,
+  ]);
 
   final String key;
   final File file;
   final int size;
   final DateTime modified;
+  final PreviewInfo preview;
+
+  StoredPhoto withPreview(PreviewInfo preview) =>
+      StoredPhoto(key, file, size, modified, preview);
+}
+
+/// A photo the backfill scan found without a `.ready` or `.failed` marker.
+class PendingPreview {
+  const PendingPreview(this.key, this.crashedAttempts);
+
+  final String key;
+
+  /// Attempts left by earlier boots that never finished.
+  final int crashedAttempts;
 }
 
 class SessionSnapshot {
@@ -59,7 +124,7 @@ class SessionStore {
     required this.maxPhotoBytes,
     required this.maxSessionBytes,
     required this.maxSessionPhotos,
-  });
+  }) : bootId = _randomHex(_bootIdLength);
 
   static Future<SessionStore> open(
     Directory root, {
@@ -126,12 +191,35 @@ class SessionStore {
   final KeyedMutex _mutex = KeyedMutex();
   final KeyedLock zipLocks = KeyedLock();
 
+  /// Random per [open], so a generation from an earlier boot never matches.
+  final String bootId;
+
+  /// Called synchronously, inside the Session mutex, after a new photo is
+  /// stored. It must not await anything that takes the Session mutex.
+  void Function(String name, String key)? onCommitted;
+
+  /// Called synchronously after each generation bump, under the same rules
+  /// as [onCommitted].
+  void Function(String name, int generation)? onBump;
+
+  int _seq = 0;
+  final Map<String, (int, DateTime)> _generation = {};
+
+  @visibleForTesting
+  int snapshotCalls = 0;
+
   String dirName(String code) => sessionDirName(_secret, code);
 
   Directory _sessionDir(String name) =>
       Directory(p.join(_root.path, 'sessions', name));
   Directory _photosDir(String name) =>
       Directory(p.join(_sessionDir(name).path, 'photos'));
+  Directory _previewsDir(String name) =>
+      Directory(p.join(_sessionDir(name).path, 'previews'));
+  File _previewPath(String name, String key, PreviewKind kind) =>
+      File(p.join(_previewsDir(name).path, '$key${kind.suffix}'));
+  File _attemptFile(String name, String key) =>
+      File(p.join(_previewsDir(name).path, '$key.$bootId$_attemptSuffix'));
   File _createdFile(String name) =>
       File(p.join(_sessionDir(name).path, 'created'));
   File _tombstone(String name) => File(p.join(_root.path, 'tombstones', name));
@@ -139,13 +227,21 @@ class SessionStore {
 
   File _newTmpFile() => _tmpFileIn(_tmpDir);
 
-  static File _tmpFileIn(Directory dir) {
+  /// A fresh path in `tmp/`, which the cleanup sweeps if it is left behind.
+  File newTmpFile() => _newTmpFile();
+
+  File photoFile(String name, String key) =>
+      File(p.join(_photosDir(name).path, '$key$_photoExtension'));
+
+  static File _tmpFileIn(Directory dir) =>
+      File(p.join(dir.path, _randomHex(_tmpNameLength)));
+
+  static String _randomHex(int length) {
     final random = Random.secure();
-    final name = List.generate(
-      _tmpNameLength,
+    return List.generate(
+      length,
       (_) => random.nextInt(_byteValues).toRadixString(16).padLeft(2, '0'),
     ).join();
-    return File(p.join(dir.path, name));
   }
 
   Future<PutResult> put(String code, String key, Stream<List<int>> body) async {
@@ -205,8 +301,34 @@ class SessionStore {
     await _sessionDir(name).create(recursive: true);
     final created = await _readCreated(name) ?? await _writeCreated(name);
     await _photosDir(name).create();
+    await _previewsDir(name).create();
     await tmp.rename(target.path);
+    _bump(name, created);
+    try {
+      onCommitted?.call(name, key);
+    } catch (e) {
+      stderr.writeln('Preview scheduling failed: $e');
+    }
     return PutResult.stored(created: true, expiresAt: created.add(retention));
+  }
+
+  void _bump(String name, DateTime created) {
+    final generation = ++_seq;
+    _generation[name] = (generation, created.add(retention));
+    try {
+      onBump?.call(name, generation);
+    } catch (e) {
+      stderr.writeln('Change notification failed: $e');
+    }
+  }
+
+  /// The Session's change counter, unique within this boot, or null for a
+  /// Session that is unknown, empty, purged or expired. Takes no lock.
+  int? generationOf(String name) {
+    final entry = _generation[name];
+    if (entry == null) return null;
+    final (generation, expiresAt) = entry;
+    return clock.now().isBefore(expiresAt) ? generation : null;
   }
 
   Future<DateTime?> _readCreated(String name) async {
@@ -244,6 +366,7 @@ class SessionStore {
   }
 
   Future<SessionSnapshot?> snapshot(String code) {
+    snapshotCalls++;
     final name = dirName(code);
     return _mutex.run(name, () async {
       if (await _tombstone(name).exists()) return null;
@@ -251,7 +374,160 @@ class SessionStore {
       if (created == null) return null;
       final photos = await _listPhotos(name);
       if (photos.isEmpty) return null;
-      return SessionSnapshot(photos, created, created.add(retention));
+      final (previews, _) = await _listPreviews(name);
+      return SessionSnapshot(
+        [
+          for (final photo in photos)
+            photo.withPreview(previews[photo.key] ?? PreviewInfo.pending),
+        ],
+        created,
+        created.add(retention),
+      );
+    });
+  }
+
+  Future<(Map<String, PreviewInfo>, Map<String, List<String>>)> _listPreviews(
+    String name,
+  ) async {
+    final states = <String, PreviewInfo>{};
+    final attempts = <String, List<String>>{};
+    final dir = _previewsDir(name);
+    if (!await dir.exists()) return (states, attempts);
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+      final base = p.basename(entity.path);
+      if (_readyPattern.firstMatch(base) case final m?) {
+        states[m[1]!] = PreviewInfo.ready(int.parse(m[2]!), int.parse(m[3]!));
+      } else if (_failedPattern.firstMatch(base) case final m?) {
+        states.putIfAbsent(m[1]!, () => PreviewInfo.failed);
+      } else if (_attemptPattern.firstMatch(base) case final m?) {
+        attempts.putIfAbsent(m[1]!, () => []).add(m[2]!);
+      }
+    }
+    return (states, attempts);
+  }
+
+  /// The created time of a live Session that previews may be written to.
+  /// Null after a purge, so a late job never recreates the Session.
+  Future<DateTime?> _previewTarget(String name) async {
+    if (await _tombstone(name).exists()) return null;
+    if (!await _sessionDir(name).exists()) return null;
+    return _readCreated(name);
+  }
+
+  Future<void> _deleteAttempts(String name, String key) async {
+    await for (final entity in _previewsDir(name).list()) {
+      final base = p.basename(entity.path);
+      if (base.startsWith('$key.') && base.endsWith(_attemptSuffix)) {
+        await entity.delete();
+      }
+    }
+  }
+
+  Stream<String> sessionNames() =>
+      Directory(p.join(_root.path, 'sessions'))
+          .list()
+          .where((entity) => entity is Directory)
+          .map((entity) => p.basename(entity.path));
+
+  /// Seeds the generation of a live Session and lists its photos without a
+  /// preview marker. Expired, empty and purged Sessions give an empty list.
+  Future<List<PendingPreview>> scanSession(String name) {
+    return _mutex.run(name, () async {
+      final created = await _previewTarget(name);
+      if (created == null) return const [];
+      if (!clock.now().isBefore(created.add(retention))) return const [];
+      final photos = await _listPhotos(name);
+      if (photos.isEmpty) return const [];
+      _generation.putIfAbsent(name, () => (++_seq, created.add(retention)));
+      final (states, attempts) = await _listPreviews(name);
+      return [
+        for (final photo in photos)
+          if (!states.containsKey(photo.key))
+            PendingPreview(
+              photo.key,
+              (attempts[photo.key] ?? const [])
+                  .where((boot) => boot != bootId)
+                  .length,
+            ),
+      ];
+    });
+  }
+
+  /// Records that this boot started a job, so a crash can be told apart
+  /// from a clean shutdown. False if the Session is gone.
+  Future<bool> writeAttempt(String name, String key) {
+    return _mutex.run(name, () async {
+      if (await _previewTarget(name) == null) return false;
+      await _previewsDir(name).create();
+      await _attemptFile(name, key).create();
+      return true;
+    });
+  }
+
+  Future<void> deleteAttempt(String name, String key) {
+    return _mutex.run(name, () async {
+      final attempt = _attemptFile(name, key);
+      if (await attempt.exists()) await attempt.delete();
+    });
+  }
+
+  /// Moves finished renditions into place. Writes nothing, and deletes the
+  /// tmp files, if the Session is gone.
+  Future<bool> commitPreview(
+    String name,
+    String key,
+    File thumbnail,
+    File view,
+    int width,
+    int height,
+  ) {
+    return _mutex.run(name, () async {
+      try {
+        final created = await _previewTarget(name);
+        if (created == null) return false;
+        await _previewsDir(name).create();
+        await thumbnail.rename(
+          _previewPath(name, key, PreviewKind.thumbnail).path,
+        );
+        await view.rename(_previewPath(name, key, PreviewKind.view).path);
+        await File(
+          p.join(_previewsDir(name).path, '$key.${width}x$height$_readySuffix'),
+        ).create();
+        await _deleteAttempts(name, key);
+        _bump(name, created);
+        return true;
+      } finally {
+        for (final file in [thumbnail, view]) {
+          if (await file.exists()) await file.delete();
+        }
+      }
+    });
+  }
+
+  Future<bool> markFailed(String name, String key) {
+    return _mutex.run(name, () async {
+      final created = await _previewTarget(name);
+      if (created == null) return false;
+      await _previewsDir(name).create();
+      await File(p.join(_previewsDir(name).path, '$key$_failedSuffix'))
+          .create();
+      await _deleteAttempts(name, key);
+      _bump(name, created);
+      return true;
+    });
+  }
+
+  Future<PreviewFile?> previewFile(String code, String key, PreviewKind kind) {
+    final name = dirName(code);
+    return _mutex.run(name, () async {
+      if (!isValidKey(key) || await _tombstone(name).exists()) return null;
+      final created = await _readCreated(name);
+      if (created == null) return null;
+      final file = _previewPath(name, key, kind);
+      final stat = await file.stat();
+      if (stat.type != FileSystemEntityType.file) return null;
+      return PreviewFile(file, stat.size, created.add(retention));
     });
   }
 
@@ -308,5 +584,6 @@ class SessionStore {
     if (now.isBefore(created.add(retention))) return;
     await _tombstone(name).writeAsString(now.toIso8601String(), flush: true);
     await _sessionDir(name).delete(recursive: true);
+    _generation.remove(name);
   }
 }

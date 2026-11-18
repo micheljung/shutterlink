@@ -10,6 +10,7 @@ import 'codes.dart';
 import 'limits.dart' as limits;
 import 'locks.dart';
 import 'pages.dart';
+import 'previews.dart';
 import 'store.dart';
 import 'tips.dart';
 import 'zip_stream.dart';
@@ -37,6 +38,7 @@ class ShutterlinkApp {
     this._zipSlots,
     this._zipQueueTimeout,
     this._zipIdleTimeout,
+    this.previews,
   );
 
   static Future<ShutterlinkApp> open({
@@ -50,6 +52,7 @@ class ShutterlinkApp {
     int zipConcurrency = limits.zipConcurrency,
     Duration zipQueueTimeout = limits.zipQueueTimeout,
     Duration zipIdleTimeout = limits.zipIdleTimeout,
+    int previewConcurrency = limits.previewConcurrency,
   }) async {
     if (uploadToken.isEmpty) {
       throw ArgumentError.value(
@@ -65,6 +68,8 @@ class ShutterlinkApp {
       maxPhotoBytes: maxPhotoBytes,
       maxSessionBytes: maxSessionBytes,
     );
+    final previews = PreviewQueue(store, concurrency: previewConcurrency);
+    unawaited(previews.scan());
     return ShutterlinkApp._(
       store,
       uploadToken,
@@ -72,15 +77,21 @@ class ShutterlinkApp {
       Semaphore(zipConcurrency),
       zipQueueTimeout,
       zipIdleTimeout,
+      previews,
     );
   }
 
   final SessionStore store;
+  final PreviewQueue previews;
   final String _uploadToken;
   final List<Tip> _tips;
   final Semaphore _zipSlots;
   final Duration _zipQueueTimeout;
   final Duration _zipIdleTimeout;
+
+  /// Stops preview generation. Call after the HTTP server has stopped, so
+  /// no upload can queue a new job.
+  Future<void> close() => previews.close();
 
   late final Handler handler = const Pipeline()
       .addMiddleware(_addSecurityHeaders)
