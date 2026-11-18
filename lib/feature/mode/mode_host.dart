@@ -35,6 +35,9 @@ class _ModeHostState extends State<ModeHost> {
   /// once it notices the drop and pauses.
   CameraClient? _resumeOn;
 
+  /// Asked in turn, newest first, before back leaves the mode.
+  final _backHandlers = <bool Function()>[];
+
   @override
   Widget build(BuildContext context) {
     final connection = context.watch<ConnectCubit>().state;
@@ -68,22 +71,29 @@ class _ModeHostState extends State<ModeHost> {
       child: PopScope(
         canPop: mode == null,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) context.read<ModeCubit>().leave();
+          if (didPop) return;
+          for (final handler in _backHandlers.reversed) {
+            if (handler()) return;
+          }
+          context.read<ModeCubit>().leave();
         },
-        child: AttachedClient(
-          client: reconnecting == null ? client : null,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              IgnorePointer(
-                ignoring: reconnecting != null,
-                child: client == null
-                    ? const SizedBox.shrink()
-                    : _screenFor(mode, client),
-              ),
-              if (reconnecting != null)
-                ReconnectingOverlay(state: reconnecting),
-            ],
+        child: _ModeBackHandlers(
+          handlers: _backHandlers,
+          child: AttachedClient(
+            client: reconnecting == null ? client : null,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                IgnorePointer(
+                  ignoring: reconnecting != null,
+                  child: client == null
+                      ? const SizedBox.shrink()
+                      : _screenFor(mode, client),
+                ),
+                if (reconnecting != null)
+                  ReconnectingOverlay(state: reconnecting),
+              ],
+            ),
           ),
         ),
       ),
@@ -130,4 +140,58 @@ class _ModeHostState extends State<ModeHost> {
         OperatingMode.autoUpload => const AutoUploadScreen(),
         OperatingMode.qrSession => const QrSessionScreen(),
       };
+}
+
+class _ModeBackHandlers extends InheritedWidget {
+  const _ModeBackHandlers({required this.handlers, required super.child});
+
+  final List<bool Function()> handlers;
+
+  @override
+  bool updateShouldNotify(_ModeBackHandlers oldWidget) =>
+      handlers != oldWidget.handlers;
+}
+
+/// Lets a mode handle back itself before it leaves the mode, e.g. to clear
+/// a selection. [onBack] returns whether it handled back. A PopScope can't
+/// do this, since ModeHost's own PopScope on the same route would leave the
+/// mode on the same press.
+class ModeBackInterceptor extends StatefulWidget {
+  const ModeBackInterceptor({
+    super.key,
+    required this.onBack,
+    required this.child,
+  });
+
+  final bool Function() onBack;
+  final Widget child;
+
+  @override
+  State<ModeBackInterceptor> createState() => _ModeBackInterceptorState();
+}
+
+class _ModeBackInterceptorState extends State<ModeBackInterceptor> {
+  List<bool Function()>? _handlers;
+
+  bool _handle() => widget.onBack();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final handlers = context
+        .dependOnInheritedWidgetOfExactType<_ModeBackHandlers>()
+        ?.handlers;
+    if (handlers == _handlers) return;
+    _handlers?.remove(_handle);
+    _handlers = handlers?..add(_handle);
+  }
+
+  @override
+  void dispose() {
+    _handlers?.remove(_handle);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

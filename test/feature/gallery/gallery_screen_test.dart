@@ -148,6 +148,18 @@ void main() {
     expect(find.text('Photos (3)'), findsOneWidget);
   });
 
+  testWidgets('the close button ends the selection', (tester) async {
+    await pumpGallery(tester);
+    await tester.longPress(find.byType(ThumbnailTile).first);
+    await tester.pump();
+    expect(find.text('1 selected'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear selection'));
+    await tester.pump();
+    expect(find.text('Photos (3)'), findsOneWidget);
+    expect(find.byTooltip('Clear selection'), findsNothing);
+  });
+
   testWidgets('leaving the gallery cancels thumbnail requests', (tester) async {
     final client = await pumpGallery(tester);
     expect(client.thumbnailTokens, hasLength(3));
