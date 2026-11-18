@@ -111,6 +111,33 @@ To build the image yourself, from the repository root:
 docker build -f server/Dockerfile -t shutterlink-server .
 ```
 
+## Gallery
+
+Guests see a grid of thumbnails and open each photo in a full-screen viewer
+with swipe and zoom. Every tile and the viewer's download button fetch the
+untouched original. Without JavaScript the page is a plain grid of download
+links.
+
+- **Previews.** After each upload the server makes a thumbnail (short edge
+  400 px) and a viewer image (long edge 2048 px), with EXIF removed and the
+  orientation applied. They are generated in the background, newest upload
+  first; photos uploaded before an upgrade are processed after the new
+  ones. Until a preview is ready the tile shows "Preparing preview…". Photos
+  over 70 MP (60 MP for progressive JPEGs) or that can't be decoded get no
+  preview and are still downloadable. Small hosts such as a Raspberry Pi
+  generate previews more slowly.
+- **Disk use.** Previews typically add about 5 % to a Session's size. They
+  don't count toward the 2 GiB Session limit, so in the worst case (photos
+  that compress far better than their previews) they reach about 3× the
+  originals. Only the upload token holder can cause that. Previews are
+  deleted with their Session.
+- **Live updates.** An open gallery adds new photos without a reload. The
+  page listens on `/s/<code>/events`, a Server-Sent Events stream that only
+  says "something changed", and then fetches `/s/<code>/photos.json`. It
+  also checks every 10 s in case a proxy buffers the stream, and if the
+  stream can't be opened it polls every 5 s instead. Streams are capped at 64 per Session and
+  512 in total; over the cap, guests get the polling fallback.
+
 ## Reverse proxy
 
 The server speaks plain HTTP and is meant to sit behind a TLS-terminating
@@ -130,6 +157,15 @@ server {
         proxy_pass http://127.0.0.1:8080;
     }
 
+    location ~ ^/s/[^/]+/events$ {
+        limit_req zone=gallery burst=60 nodelay;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8080;
     }
@@ -140,6 +176,17 @@ Keep `client_max_body_size` at or above the 50 MiB photo limit; otherwise
 the proxy rejects large photos with a bare 413, which the app shows as a
 server configuration problem instead of dropping the photo.
 
+- The `events` location keeps live updates from being buffered. Caddy needs
+  no extra configuration: it flushes `text/event-stream` responses
+  immediately.
+- Enable HTTP/2 at the proxy (`listen 443 ssl; http2 on;` in nginx). Over
+  HTTP/1.1 each open gallery tab holds one of the browser's 6 connections
+  to your server.
+- On bare metal, raise the open-file limit to at least 2048
+  (`ulimit -n 2048`, or `LimitNOFILE=2048` in a systemd unit) to cover the
+  512 event streams plus uploads and downloads. The Docker image inherits
+  the daemon's limit, which is usually higher.
+
 ## Privacy and security
 
 - The Session Code is the only credential for a gallery. Unknown, empty,
@@ -149,10 +196,17 @@ server configuration problem instead of dropping the photo.
   (`<data-dir>/secret`, created on first run with mode 0600). Neither the code
   nor its plain hash is stored.
 - Every response carries `Content-Security-Policy: default-src 'none';
-  img-src 'self'; style-src 'self'; form-action 'self'; base-uri 'none';
-  frame-ancestors 'none'` plus `Cache-Control: no-store`,
-  `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` and
-  `X-Content-Type-Options: nosniff`. Pages contain no scripts.
+  img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self';
+  font-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors
+  'none'` plus `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` and
+  `X-Content-Type-Options: nosniff`. Pages load only scripts, styles and
+  fonts served by the server itself; nothing comes from third parties.
+- Responses are `Cache-Control: no-store`, except previews (`private`,
+  cached until the Session expires), `photos.json` (`no-cache`) and static
+  assets (immutable when requested with their version).
+- Unknown, empty, expired and purged codes get identical `photos.json` and
+  event-stream responses, so live updates reveal nothing about other
+  Sessions.
 - Uploads require `Authorization: Bearer <token>`, compared in constant time.
 
 ## Retention
@@ -168,6 +222,8 @@ expired Session get `410 Gone` and the app stops retrying them.
 - "Download all" streams an uncompressed zip. At most 2 zips are built at a
   time; further requests wait up to 30 s and then get `503` with
   `Retry-After`.
+- Previews are skipped above 70 MP, or 60 MP for progressive JPEGs. Up to
+  2 previews are generated at a time.
 - Single process only: Sessions are locked in memory, so do not run several
   instances on one data directory.
 
@@ -190,12 +246,36 @@ to check the token during setup.
 
 `GET /healthz` answers `204` without a token, for health checks.
 
+## Rollback
+
+Going back to an older image or release is safe. Older servers ignore the
+`previews/` directory in each Session and delete it with the Session, and
+browsers' cached previews expire with the Session.
+
 ## Development
 
 ```bash
 dart test        # from server/
 ```
 
+The gallery's scripts, styles, fonts and icon live in `web/` and are
+embedded into `lib/src/web_assets.g.dart`, so the server needs no files at
+runtime. After editing `web/`, regenerate it from `server/`:
+
+```bash
+dart run tool/embed_web.dart
+```
+
+A test fails if the embedded assets don't match `web/`.
+
 `package:shutterlink_server/shutterlink_server.dart` exposes
 `ShutterlinkServer.start(...)`, which the app's end-to-end test uses to run
 the server in-process.
+
+## Third-party assets
+
+- [PhotoSwipe](https://photoswipe.com) 5.4.4, unmodified, MIT licensed:
+  [`web/PHOTOSWIPE-LICENSE`](web/PHOTOSWIPE-LICENSE), version and checksums in
+  [`web/PHOTOSWIPE-VERSION`](web/PHOTOSWIPE-VERSION).
+- [Manrope](https://github.com/googlefonts/manrope) (weights 600 and 800),
+  SIL Open Font License 1.1: [`web/OFL.txt`](web/OFL.txt).
