@@ -8,7 +8,7 @@ import '../connect/connect_cubit.dart';
 import '../connect/connect_state.dart';
 import '../gallery/thumbnail_cache.dart';
 import '../mode/attached_client.dart';
-import '../mode/modes_button.dart';
+import '../mode/mode_back_button.dart';
 import '../mode/operating_mode.dart';
 import '../settings/upload_draft_fields.dart';
 import '../settings/upload_settings_cubit.dart';
@@ -57,8 +57,9 @@ class AutoUploadScreen extends StatelessWidget {
     return Scaffold(
       floatingActionButton: DemoShutterButton(client: client),
       appBar: AppBar(
+        leading: const ModeBackButton(),
         title: Text(OperatingMode.autoUpload.label),
-        actions: const [UploadStatusIndicator(), ModesButton()],
+        actions: const [UploadStatusIndicator()],
       ),
       body: ListView(
         padding: const EdgeInsets.all(Spacing.large).copyWith(

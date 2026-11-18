@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../demo/demo_shutter_button.dart';
-import '../mode/modes_button.dart';
+import '../mode/mode_back_button.dart';
 import '../mode/operating_mode.dart';
 import '../sessions/active_session_indicator.dart';
 import '../sessions/clock_sync_banner.dart';
@@ -47,6 +47,7 @@ class QrSessionScreen extends StatelessWidget {
     return Scaffold(
       floatingActionButton: DemoShutterButton(client: client),
       appBar: AppBar(
+        leading: const ModeBackButton(),
         title: Text(OperatingMode.qrSession.label),
         actions: [
           const UploadStatusIndicator(),
@@ -60,7 +61,6 @@ class QrSessionScreen extends StatelessWidget {
             icon: const Icon(Icons.list_alt),
             onPressed: () => Navigator.of(context).push(SessionsScreen.route()),
           ),
-          const ModesButton(),
         ],
       ),
       body: ListView(

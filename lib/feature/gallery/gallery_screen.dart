@@ -10,7 +10,7 @@ import '../download/download_cubit.dart';
 import '../download/download_sheet.dart';
 import '../download/download_state.dart';
 import '../history/download_history_cubit.dart';
-import '../mode/modes_button.dart';
+import '../mode/mode_back_button.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
 import '../settings/upload_draft_fields.dart';
@@ -58,6 +58,7 @@ class _GalleryView extends StatelessWidget {
         history.isDownloaded(cameraKey, group.filesFor(format));
     return Scaffold(
       appBar: AppBar(
+        leading: const ModeBackButton(),
         title: Text(
           state.selected.isEmpty
               ? 'Photos (${state.groups.length})'
@@ -88,7 +89,6 @@ class _GalleryView extends StatelessWidget {
                 ? cubit.clearSelection
                 : cubit.selectAll,
           ),
-          const ModesButton(),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),

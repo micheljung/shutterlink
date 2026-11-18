@@ -10,8 +10,8 @@ import 'package:shutterlink/data/destination_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/data/upload_worker.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
+import 'package:shutterlink/feature/mode/mode_back_button.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
-import 'package:shutterlink/feature/mode/modes_button.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/session_collector.dart';
 import 'package:shutterlink/feature/sessions/session_qr_sheet.dart';
@@ -145,7 +145,7 @@ void main() {
     expect(destinationQueue.snapshot.items, isEmpty);
     expect(saver.saved, isEmpty);
 
-    await tester.tap(find.byTooltip(ModesButton.tooltip));
+    await tester.tap(find.byTooltip(ModeBackButton.tooltip));
     await pumpUntil(
       tester,
       () => find.byType(ModePickerScreen).evaluate().isNotEmpty,
