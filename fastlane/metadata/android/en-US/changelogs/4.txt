@@ -1,0 +1,4 @@
+* QR Session gallery: photos open in a full-screen viewer with swipe and zoom
+* New photos appear in the gallery by themselves, no reload needed
+* Faster gallery: guests get small previews, the full photo on demand
+* Gallery in the Shutterlink look
