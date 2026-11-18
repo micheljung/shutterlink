@@ -34,6 +34,7 @@ object AppEngine {
         mediaSaver = MediaSaver(appContext).also { it.register(messenger) }
         liveService = LiveService(appContext).also { it.register(messenger) }
         usbBridge = UsbBridge(appContext).also { it.register(messenger) }
+        LinkOpener(appContext).register(messenger)
         FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
         return engine
     }

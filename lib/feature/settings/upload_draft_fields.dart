@@ -2,8 +2,10 @@ import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/link_opener.dart';
 import '../../upload/backend_factory.dart';
 import '../../upload/destination.dart';
+import '../../upload/immich_backend.dart';
 import '../../upload/provider_preset.dart';
 import '../../upload/remote_path.dart';
 import '../../upload/storage_backend.dart';
@@ -366,6 +368,43 @@ class _UploadServerFieldsState extends State<UploadServerFields> {
   }
 }
 
+const immichKeyHelp =
+    'Create an API key in Immich: open the API key settings below and tap '
+    'New API key. Name it Shutterlink, select only the asset.upload '
+    'permission, create it, then copy the key here.';
+
+/// Opens the API key settings of the Immich server being set up.
+class _ImmichKeysLink extends StatelessWidget {
+  const _ImmichKeysLink({required this.page});
+
+  final Uri? page;
+
+  static const label = 'Open API key settings';
+
+  @override
+  Widget build(BuildContext context) {
+    final page = this.page;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Spacing.large),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: OutlinedButton.icon(
+          icon: const Icon(Icons.open_in_new),
+          label: const Text(label),
+          onPressed: page == null ? null : () => _open(context, page),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context, Uri page) async {
+    if (await const LinkOpener().open(page) || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Could not open a browser. Open $page yourself.')),
+    );
+  }
+}
+
 /// The credentials, worded for the provider.
 class UploadSignInFields extends StatefulWidget {
   const UploadSignInFields({super.key});
@@ -417,15 +456,15 @@ class _UploadSignInFieldsState extends State<UploadSignInFields> {
         'Create an R2 API token with Object Read & Write for this bucket.',
       ProviderPreset.hetznerStorageBox =>
         'Turn on SSH support for the Storage Box in Hetzner Console.',
-      ProviderPreset.immich =>
-        'Create an API key in Immich under Account Settings, API Keys. It '
-            'needs the asset.upload permission.',
+      ProviderPreset.immich => immichKeyHelp,
       ProviderPreset.custom => null,
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (help != null) _Help(help),
+        if (preset == ProviderPreset.immich)
+          _ImmichKeysLink(page: immichApiKeysPage(state.destination.endpoint)),
         if (preset != ProviderPreset.hetznerStorageBox &&
             state.type != DestinationType.immich)
           _DraftField(

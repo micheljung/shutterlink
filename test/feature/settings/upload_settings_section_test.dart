@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/data/destination_repository.dart';
+import 'package:shutterlink/data/link_opener.dart';
 import 'package:shutterlink/feature/settings/upload_draft_fields.dart';
 import 'package:shutterlink/feature/settings/upload_settings_cubit.dart';
 import 'package:shutterlink/feature/settings/upload_settings_section.dart';
@@ -267,6 +268,24 @@ void main() {
 
     expect(find.text('Step 3 of 4 · Sign in'), findsOneWidget);
     expect(field('Username'), findsNothing);
+    final opened = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      LinkOpener.channel,
+      (call) async {
+        opened.add(call.arguments);
+        return true;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        LinkOpener.channel,
+        null,
+      ),
+    );
+    await tap(tester, 'Open API key settings');
+    expect(opened, [
+      {'url': 'https://photos.example.com/user-settings?isOpen=api-keys'},
+    ]);
     answers.add(
       const AuthenticationException(
         'The API key lacks the asset.upload permission.',
