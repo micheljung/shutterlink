@@ -113,8 +113,8 @@ void main() {
     test('finds nothing and opens nothing', () async {
       const platform = NoUsbCameraPlatform();
       final watcher = platform.watcher;
-      expect(platform.isExperimental, isFalse);
-      expect(AndroidUsbPlatform().isExperimental, isFalse);
+      expect(platform.support, UsbSupport.none);
+      expect(AndroidUsbPlatform().support, UsbSupport.verified);
       watcher.start('connect');
       watcher.stop('connect');
 

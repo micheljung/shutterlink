@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/identity_repository.dart';
+import '../../usb/usb_camera_platform.dart';
 import '../spacing.dart';
 
 abstract final class SetupSteps {
@@ -15,6 +16,19 @@ abstract final class SetupSteps {
     'The first time, confirm "${IdentityRepository.friendlyName}" on the '
         'camera when it asks to pair.',
   ];
+
+  /// USB copy, kept out of [all] so it is not numbered as a Wi-Fi step.
+  static const usbHint =
+      'Or plug the camera in with a USB cable while Shutterlink is open.';
+  static const usbExperimentalLabel = 'USB (experimental)';
+  static const usbFooterTitle = 'Prefer a cable?';
+  static const usbFooter =
+      'Open Shutterlink, switch the camera on and plug it into this phone '
+      'with a USB data cable, through an OTG adapter if needed. Allow USB '
+      'access when asked.';
+  static const usbReplug =
+      'Nothing happens? Unplug the cable and push it back in firmly at both '
+      'ends.';
 
   static const cameraMenu = [
     'MENU',
@@ -117,6 +131,54 @@ class SetupStepList extends StatelessWidget {
               ],
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// How to connect with a cable instead, after the Wi-Fi steps. Shows nothing
+/// where the platform has no USB support.
+class UsbCableNote extends StatelessWidget {
+  const UsbCableNote({super.key, required this.support});
+
+  final UsbSupport support;
+
+  @override
+  Widget build(BuildContext context) {
+    if (support == UsbSupport.none) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final body = theme.textTheme.bodyLarge?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: Spacing.medium),
+        Row(
+          children: [
+            Icon(Icons.usb, color: theme.colorScheme.primary),
+            const SizedBox(width: Spacing.small),
+            Expanded(
+              child: Text(
+                SetupSteps.usbFooterTitle,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (support == UsbSupport.experimental)
+          Text(
+            SetupSteps.usbExperimentalLabel,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        const SizedBox(height: Spacing.small),
+        Text(SetupSteps.usbFooter, style: body),
+        const SizedBox(height: Spacing.small),
+        Text(SetupSteps.usbReplug, style: body),
       ],
     );
   }

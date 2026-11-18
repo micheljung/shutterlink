@@ -769,6 +769,12 @@ void main() {
     testWidgets('the overlay asks for USB access when the user must act', (
       tester,
     ) async {
+      // The picker's USB waves repeat forever, so settling needs them still.
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
       final first = FakeCameraClient(photos(1));
       final second = FakeCameraClient(photos(2));
       answers.addAll([first, second]);

@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../brand/brand_intro.dart';
 import '../../brand/brand_theme.dart';
+import '../../usb/usb_camera_platform.dart';
 import '../spacing.dart';
 import 'setup_steps.dart';
 
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key, required this.onDone});
+  const OnboardingScreen({
+    super.key,
+    required this.onDone,
+    this.usbSupport = UsbSupport.none,
+  });
 
   static const skipLabel = 'Skip';
   static const nextLabel = 'Next';
@@ -18,6 +23,9 @@ class OnboardingScreen extends StatefulWidget {
   static String progressText(int page) => '${page + 1} of $pageCount';
 
   final VoidCallback onDone;
+
+  /// Whether the phone page also offers the cable.
+  final UsbSupport usbSupport;
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -91,7 +99,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 child: PageView(
                   controller: _controller,
                   onPageChanged: (page) => setState(() => _page = page),
-                  children: const [_WelcomePage(), _CameraPage(), _PhonePage()],
+                  children: [
+                    const _WelcomePage(),
+                    const _CameraPage(),
+                    _PhonePage(usbSupport: widget.usbSupport),
+                  ],
                 ),
               ),
               Padding(
@@ -196,7 +208,9 @@ class _CameraPage extends StatelessWidget {
 }
 
 class _PhonePage extends StatelessWidget {
-  const _PhonePage();
+  const _PhonePage({required this.usbSupport});
+
+  final UsbSupport usbSupport;
 
   static const _iconSize = 96.0;
 
@@ -205,6 +219,7 @@ class _PhonePage extends StatelessWidget {
     title: OnboardingScreen.phoneTitle,
     first: OnboardingScreen.cameraStepCount,
     count: SetupSteps.all.length - OnboardingScreen.cameraStepCount,
+    footer: UsbCableNote(support: usbSupport),
     illustration: Icon(
       Icons.wifi_tethering,
       size: _iconSize,
@@ -219,12 +234,14 @@ class _StepsPage extends StatelessWidget {
     required this.first,
     required this.count,
     required this.illustration,
+    this.footer,
   });
 
   final String title;
   final int first;
   final int count;
   final Widget illustration;
+  final Widget? footer;
 
   static const _titleSpacing = -0.8;
 
@@ -248,6 +265,7 @@ class _StepsPage extends StatelessWidget {
       ),
       const SizedBox(height: Spacing.large),
       SetupStepList(first: first, count: count),
+      ?footer,
     ],
   );
 }

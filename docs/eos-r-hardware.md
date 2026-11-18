@@ -36,3 +36,32 @@ disagree with `test/ptpip/fake_camera.dart`, these notes are correct.
   for 3 s, and the probe gave up with "No PTP response". This has been seen
   once. If it happens again, the 3 s response timeout may be too short over
   Wi-Fi.
+
+## USB
+
+Observed on 2026-11-17 with a Pixel 8, a USB cable plugged into the phone
+through a USB-A to USB-C OTG adapter, and the camera's Wi-Fi function
+disabled. The phone was watched over wireless `adb` (`dumpsys usb`, `logcat`).
+
+- **Device:** `04a9:32da` "Canon Inc. / Canon Digital Camera", one
+  configuration (max power 36 mA), one interface of class 6/1/1 (PTP still
+  image) with bulk-in 0x82, bulk-out 0x01 and interrupt-in 0x83 (512/512/64
+  bytes). It matches `usb_device_filter.xml`.
+- **Physical contact:** the first attempts showed nothing on the phone:
+  `dumpsys usb` reported port0 `connected=false`, `no-power`, `no-data` and no
+  host connections. After a replug the camera enumerated; one attach dropped
+  after about 0.4 s before a later one held. The same cable works with a PC,
+  and the adapter works with a card reader, so this was the plug seating, not
+  the app.
+  "Unplug and push it back in firmly" is the first thing to try.
+- **Plugging in with the app closed opens nothing:** three activities match a
+  PTP camera (`com.android.gallery3d/.ingest.IngestActivity`,
+  `com.android.mtp/.ReceiverActivity` and Shutterlink's `MainActivity`), no
+  default was stored for the device, and Android showed no chooser: it logged
+  `starting of usb overlay activities` and the launcher kept focus. So the app
+  tells users to open Shutterlink first, then plug in.
+- **With Shutterlink open:** the app enumerated the already-plugged camera,
+  showed the USB permission dialog and, once allowed, reached the mode picker
+  with "Connected over USB".
+- **Untested:** whether the camera offers USB while its Wi-Fi function is
+  enabled.

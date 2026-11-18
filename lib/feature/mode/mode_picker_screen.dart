@@ -15,6 +15,7 @@ import '../spacing.dart';
 import '../upload/upload_status_indicator.dart';
 import 'mode_cubit.dart';
 import 'operating_mode.dart';
+import 'usb_waves_indicator.dart';
 
 /// Shown after a connect: the user picks what happens to photos.
 class ModePickerScreen extends StatelessWidget {
@@ -160,20 +161,23 @@ class _ConnectionStatus extends StatelessWidget {
     final online = BrandColors.online(theme.brightness);
     return Row(
       children: [
-        Container(
-          width: _dotSize,
-          height: _dotSize,
-          decoration: BoxDecoration(
-            color: online,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: online.withValues(alpha: _glowAlpha),
-                blurRadius: _glowBlur,
-              ),
-            ],
+        if (connection.target is UsbTarget)
+          const UsbWavesIndicator()
+        else
+          Container(
+            width: _dotSize,
+            height: _dotSize,
+            decoration: BoxDecoration(
+              color: online,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: online.withValues(alpha: _glowAlpha),
+                  blurRadius: _glowBlur,
+                ),
+              ],
+            ),
           ),
-        ),
         const SizedBox(width: Spacing.medium),
         Expanded(
           child: Text(

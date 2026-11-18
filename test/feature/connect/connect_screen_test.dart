@@ -23,6 +23,7 @@ import 'package:shutterlink/feature/sessions/sessions_cubit.dart';
 import 'package:shutterlink/feature/sessions/sessions_state.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/usb/usb_camera_platform.dart';
 
 import '../../fakes/fake_camera_client.dart';
 import '../../fakes/fake_usb_camera_watcher.dart';
@@ -120,7 +121,7 @@ void main() {
 
     Future<void> showScreen(
       WidgetTester tester, {
-      bool usbExperimental = false,
+      UsbSupport usbSupport = UsbSupport.none,
     }) async {
       watcher = FakeUsbCameraWatcher()..permitted.add(usbCamera());
       opened = Completer<CameraClient>();
@@ -147,9 +148,7 @@ void main() {
               ),
             ),
           ],
-          child: MaterialApp(
-            home: ConnectScreen(usbExperimental: usbExperimental),
-          ),
+          child: MaterialApp(home: ConnectScreen(usbSupport: usbSupport)),
         ),
       );
     }
@@ -197,13 +196,19 @@ void main() {
       opened.complete(FakeCameraClient([]));
     });
 
-    testWidgets('labels USB as experimental only when asked', (tester) async {
-      await showScreen(tester);
-      expect(find.text(ConnectScreen.usbExperimentalLabel), findsNothing);
+    testWidgets('hides the USB hint while connecting over USB', (tester) async {
+      await showScreen(tester, usbSupport: UsbSupport.verified);
+      expect(find.text(SetupSteps.usbHint, skipOffstage: false), findsOne);
 
-      await showScreen(tester, usbExperimental: true);
-      await tester.ensureVisible(find.text(ConnectScreen.usbExperimentalLabel));
-      expect(find.text(ConnectScreen.usbExperimentalLabel), findsOneWidget);
+      watcher.attach(usbCamera());
+      await tester.pump();
+
+      expect(
+        find.text(ConnectScreen.usbConnectingText, skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.text(SetupSteps.usbHint, skipOffstage: false), findsNothing);
+      opened.complete(FakeCameraClient([]));
     });
   });
 
@@ -256,7 +261,7 @@ void main() {
     Future<void> pumpState(
       WidgetTester tester,
       ConnectState state, {
-      bool usbExperimental = false,
+      UsbSupport usbSupport = UsbSupport.none,
       bool downloadPaused = false,
       bool sessionActive = false,
     }) async {
@@ -304,7 +309,7 @@ void main() {
           ],
           child: MaterialApp(
             theme: BrandTheme.light(),
-            home: ConnectScreen(usbExperimental: usbExperimental),
+            home: ConnectScreen(usbSupport: usbSupport),
           ),
         ),
       );
@@ -363,11 +368,51 @@ void main() {
       await expectConnectTappable(tester);
     });
 
+    testWidgets('offers no USB where the platform has none', (tester) async {
+      await pumpState(tester, const ConnectIdle());
+
+      expect(find.text(SetupSteps.usbHint), findsNothing);
+      expect(find.text(ConnectScreen.usbExperimentalLabel), findsNothing);
+    });
+
     testWidgets('labels USB as experimental', (tester) async {
-      await pumpState(tester, const ConnectIdle(), usbExperimental: true);
+      await pumpState(
+        tester,
+        const ConnectIdle(),
+        usbSupport: UsbSupport.experimental,
+      );
 
       expect(find.text(ConnectScreen.usbExperimentalLabel), findsOneWidget);
+      expect(find.text(SetupSteps.usbHint), findsOneWidget);
       await expectConnectTappable(tester);
+    });
+
+    testWidgets('offers verified USB without a label', (tester) async {
+      await pumpState(
+        tester,
+        const ConnectIdle(),
+        usbSupport: UsbSupport.verified,
+      );
+
+      expect(find.text(SetupSteps.usbHint), findsOneWidget);
+      expect(find.text(ConnectScreen.usbExperimentalLabel), findsNothing);
+      await expectConnectTappable(tester);
+    });
+
+    testWidgets('the setup guide ends with the cable note', (tester) async {
+      await pumpState(
+        tester,
+        const ConnectIdle(),
+        usbSupport: UsbSupport.verified,
+      );
+
+      await tester.tap(find.text(ConnectScreen.setupGuideLabel));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(SetupSteps.usbReplug));
+
+      expect(find.text(SetupSteps.usbFooterTitle), findsOneWidget);
+      expect(find.text(SetupSteps.usbFooter), findsOneWidget);
+      expect(find.text(SetupSteps.usbReplug), findsOneWidget);
     });
 
     testWidgets('Connect stays tappable with every notice shown', (
@@ -376,7 +421,7 @@ void main() {
       await pumpState(
         tester,
         const ConnectPairingRequired(),
-        usbExperimental: true,
+        usbSupport: UsbSupport.experimental,
         downloadPaused: true,
         sessionActive: true,
       );

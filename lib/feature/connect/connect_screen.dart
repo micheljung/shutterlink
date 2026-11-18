@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../brand/brand_intro.dart';
 import '../../data/identity_repository.dart';
 import '../../data/ssdp_discovery.dart';
+import '../../usb/usb_camera_platform.dart';
 import '../download/download_cubit.dart';
 import '../download/download_state.dart';
 import '../onboarding/setup_steps.dart';
@@ -14,12 +15,12 @@ import 'connect_cubit.dart';
 import 'connect_state.dart';
 
 class ConnectScreen extends StatefulWidget {
-  const ConnectScreen({super.key, this.usbExperimental = false});
+  const ConnectScreen({super.key, this.usbSupport = UsbSupport.none});
 
   /// Owner of the USB watch while this screen shows.
   static const usbWatchOwner = 'connect';
   static const usbConnectingText = 'Connecting over USB…';
-  static const usbExperimentalLabel = 'USB (experimental)';
+  static const usbExperimentalLabel = SetupSteps.usbExperimentalLabel;
   static const connectLabel = 'Connect';
   static const setupGuideLabel = 'Setup guide';
   static const demoLabel = 'Try without a camera';
@@ -28,8 +29,8 @@ class ConnectScreen extends StatefulWidget {
   /// chooser scrolls instead of hiding the content above it.
   static const _chooserHeightFraction = 0.5;
 
-  /// Labels USB as experimental, where it is not verified on hardware.
-  final bool usbExperimental;
+  /// Whether to offer the cable, and to label it experimental.
+  final UsbSupport usbSupport;
 
   @override
   State<ConnectScreen> createState() => _ConnectScreenState();
@@ -63,7 +64,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    builder: (_) => const _SetupGuide(),
+    builder: (_) => _SetupGuide(usbSupport: widget.usbSupport),
   );
 
   static bool _showsDemo(ConnectState state) =>
@@ -89,10 +90,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: _Intro(
-                state: state,
-                usbExperimental: widget.usbExperimental,
-              ),
+              child: _Intro(state: state, usbSupport: widget.usbSupport),
             ),
             SafeArea(
               top: false,
@@ -159,10 +157,10 @@ class _ConnectScreenState extends State<ConnectScreen> {
 }
 
 class _Intro extends StatelessWidget {
-  const _Intro({required this.state, required this.usbExperimental});
+  const _Intro({required this.state, required this.usbSupport});
 
   final ConnectState state;
-  final bool usbExperimental;
+  final UsbSupport usbSupport;
 
   @override
   Widget build(BuildContext context) {
@@ -174,12 +172,17 @@ class _Intro extends StatelessWidget {
         if (state is ConnectPairingRequired) const _PairingCard(),
         if (state is ConnectFailed) _ErrorCard(message: state.message),
         const _PausedDownloadNotice(),
-        if (usbExperimental)
-          const ListTile(
+        if (usbSupport != UsbSupport.none &&
+            !(state is ConnectConnecting && state.usb))
+          ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.usb),
-            title: Text(ConnectScreen.usbExperimentalLabel),
-            subtitle: Text('Or connect the camera with a USB cable.'),
+            leading: const Icon(Icons.usb),
+            title: usbSupport == UsbSupport.experimental
+                ? const Text(SetupSteps.usbExperimentalLabel)
+                : const Text(SetupSteps.usbHint),
+            subtitle: usbSupport == UsbSupport.experimental
+                ? const Text(SetupSteps.usbHint)
+                : null,
           ),
       ],
     );
@@ -187,7 +190,9 @@ class _Intro extends StatelessWidget {
 }
 
 class _SetupGuide extends StatelessWidget {
-  const _SetupGuide();
+  const _SetupGuide({required this.usbSupport});
+
+  final UsbSupport usbSupport;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -206,6 +211,7 @@ class _SetupGuide extends StatelessWidget {
       ),
       const SizedBox(height: Spacing.large),
       SetupStepList(first: 0, count: SetupSteps.all.length),
+      UsbCableNote(support: usbSupport),
     ],
   );
 }

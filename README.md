@@ -92,9 +92,10 @@ Early. Be aware of what has and hasn't been verified:
   byte-complete, at 0.13 MB/s with a weak signal and 3.6 MB/s near the
   router. Its camera clock is read from Canon's camera-time property. After a
   connection closes, the camera is unreachable for about 15 seconds. The app
-  itself has **not yet been run on physical Android or iOS devices**.
-- USB is tested against emulated cameras only; it has not been tried with a
-  real camera yet.
+  itself has connected over USB on a Pixel 8; its Wi-Fi path has **not yet
+  been verified on a physical phone**, and it has not run on iOS hardware.
+- USB on Android works with a real EOS R on a Pixel 8 (through an OTG
+  adapter); see [`docs/eos-r-hardware.md`](docs/eos-r-hardware.md#usb).
 - The Android release APK builds, and CI checks it on every push. The **iOS
   build has not been compiled yet**; the Swift code (RAW save to Photos) is
   untested.
@@ -131,11 +132,14 @@ after auto power off.
 
 ## Connect over USB
 
-1. Plug the camera into the phone with a USB cable and switch it on.
-2. **Android:** allow Shutterlink to access the camera. Tick **Always open**,
-   so that Shutterlink can reconnect on its own after a re-plug; without it,
-   the app asks you to allow access again. Shutterlink goes straight to the
-   mode picker, and a running mode keeps going over the cable.
+1. Open Shutterlink, switch the camera on and plug it into the phone with a
+   USB data cable, through an OTG adapter if the phone needs one. Plugging in
+   while Shutterlink is closed does not reliably open it, because other apps
+   also handle cameras.
+2. **Android:** allow Shutterlink to access the camera. Shutterlink goes
+   straight to the mode picker, and a running mode keeps going over the
+   cable. If nothing happens, unplug the cable and push it back in firmly at
+   both ends.
 3. **iOS (experimental):** allow Shutterlink to control the camera. This uses
    ImageCaptureCore and has not been verified on hardware.
 
@@ -262,7 +266,7 @@ A new maker or model is one profile file plus one entry in
 `lib/ptp/profile_registry.dart`. A camera no profile matches still works
 through the generic PTP profile. The Android USB filter
 (`android/app/src/main/res/xml/usb_device_filter.xml`) matches the PTP
-still-image class only, so any PTP camera offers to open Shutterlink and a
+still-image class only, so any PTP camera is offered to Shutterlink and a
 new maker's camera needs no edit there. It deliberately lists no vendor IDs,
 which would also match that maker's printers and scanners.
 

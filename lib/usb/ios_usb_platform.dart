@@ -26,7 +26,7 @@ class IosUsbPlatform implements UsbCameraPlatform {
 
   /// Built without a device to try it on.
   @override
-  bool get isExperimental => true;
+  UsbSupport get support => UsbSupport.experimental;
 
   StreamSubscription<Object?>? _events;
   IosUsbPassthrough? _passthrough;

@@ -98,13 +98,13 @@ class FakeUsbCameraWatcher implements UsbCameraWatcher {
 
 /// A USB platform around [watcher]; the app's connector opens the cameras.
 class FakeUsbCameraPlatform implements UsbCameraPlatform {
-  FakeUsbCameraPlatform(this.watcher);
+  FakeUsbCameraPlatform(this.watcher, {this.support = UsbSupport.none});
 
   @override
   final FakeUsbCameraWatcher watcher;
 
   @override
-  bool get isExperimental => false;
+  final UsbSupport support;
 
   @override
   Future<UsbCameraLink> open(UsbCameraRef device) =>

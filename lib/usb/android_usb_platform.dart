@@ -30,7 +30,7 @@ class AndroidUsbPlatform implements UsbCameraPlatform {
   late final AndroidUsbCameraWatcher watcher;
 
   @override
-  bool get isExperimental => false;
+  UsbSupport get support => UsbSupport.verified;
 
   StreamSubscription<Object?>? _events;
   AndroidUsbPipe? _pipe;

@@ -188,7 +188,7 @@ void main() {
     });
 
     test('is experimental', () {
-      expect(platform.isExperimental, isTrue);
+      expect(platform.support, UsbSupport.experimental);
     });
 
     test('names a camera without a product name', () async {

@@ -179,7 +179,7 @@ class ShutterlinkApp extends StatelessWidget {
           title: 'Shutterlink',
           theme: BrandTheme.light(),
           darkTheme: BrandTheme.dark(),
-          home: _Home(usbExperimental: dependencies.usb.isExperimental),
+          home: _Home(usbSupport: dependencies.usb.support),
         ),
       ),
     ),
@@ -236,9 +236,9 @@ class _SessionsUploadsState extends State<_SessionsUploads>
 }
 
 class _Home extends StatefulWidget {
-  const _Home({required this.usbExperimental});
+  const _Home({required this.usbSupport});
 
-  final bool usbExperimental;
+  final UsbSupport usbSupport;
 
   @override
   State<_Home> createState() => _HomeState();
@@ -312,8 +312,9 @@ class _HomeState extends State<_Home> {
             BlocSelector<SettingsCubit, SettingsState, bool>(
               selector: (state) => state.onboardingSeen,
               builder: (context, seen) => seen
-                  ? ConnectScreen(usbExperimental: widget.usbExperimental)
+                  ? ConnectScreen(usbSupport: widget.usbSupport)
                   : OnboardingScreen(
+                      usbSupport: widget.usbSupport,
                       onDone: context.read<SettingsCubit>().markOnboardingSeen,
                     ),
             ),

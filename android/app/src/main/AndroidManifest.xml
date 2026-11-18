@@ -42,7 +42,8 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Plugging in a camera offers to open the app, see usb_device_filter.xml. -->
+            <!-- Lets Android offer the app for a plugged-in camera, see usb_device_filter.xml.
+                 Other camera handlers can keep it from opening; see docs/eos-r-hardware.md. -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
             </intent-filter>

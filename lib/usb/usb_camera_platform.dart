@@ -103,11 +103,22 @@ abstract interface class UsbCameraWatcher {
   void stop(String owner);
 }
 
+/// How far a platform's USB camera support goes, which the UI tells the user.
+enum UsbSupport {
+  /// No USB camera support; the UI does not offer the cable.
+  none,
+
+  /// Not verified on hardware; the UI labels it.
+  experimental,
+
+  /// Verified with a real camera.
+  verified,
+}
+
 abstract interface class UsbCameraPlatform {
   UsbCameraWatcher get watcher;
 
-  /// USB support is not verified on hardware; the UI labels it.
-  bool get isExperimental;
+  UsbSupport get support;
 
   /// Opens [device] for PTP. Throws [UsbTransferException] when it cannot.
   Future<UsbCameraLink> open(UsbCameraRef device);
@@ -121,7 +132,7 @@ class NoUsbCameraPlatform implements UsbCameraPlatform {
   UsbCameraWatcher get watcher => const NoUsbCameraWatcher();
 
   @override
-  bool get isExperimental => false;
+  UsbSupport get support => UsbSupport.none;
 
   @override
   Future<UsbCameraLink> open(UsbCameraRef device) =>
