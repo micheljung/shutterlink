@@ -15,9 +15,9 @@ import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
 import 'package:shutterlink/feature/gallery/gallery_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
+import 'package:shutterlink/feature/mode/mode_back_button.dart';
 import 'package:shutterlink/feature/mode/mode_cubit.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
-import 'package:shutterlink/feature/mode/modes_button.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/mode/reconnecting_overlay.dart';
 import 'package:shutterlink/feature/preview/preview_screen.dart';
@@ -135,7 +135,7 @@ void main() {
     await connectAndBrowse(tester);
     expect(find.byType(GalleryScreen), findsOneWidget);
 
-    await tester.tap(find.byTooltip(ModesButton.tooltip));
+    await tester.tap(find.byTooltip(ModeBackButton.tooltip));
     await tester.pumpAndSettle();
     expect(find.byType(ModePickerScreen), findsOneWidget);
     expect(home(tester).read<ModeCubit>().state, isNull);
@@ -210,7 +210,7 @@ void main() {
 
       expect(find.byType(AutoUploadScreen), findsOneWidget);
       expect(find.text(OperatingMode.autoUpload.label), findsOneWidget);
-      await tester.tap(find.byTooltip(ModesButton.tooltip));
+      await tester.tap(find.byTooltip(ModeBackButton.tooltip));
       await tester.pumpAndSettle();
       expect(find.byType(ModePickerScreen), findsOneWidget);
     });
@@ -292,7 +292,7 @@ void main() {
 
       expect(find.byType(QrSessionScreen), findsOneWidget);
       expect(find.text(OperatingMode.qrSession.label), findsOneWidget);
-      await tester.tap(find.byTooltip(ModesButton.tooltip));
+      await tester.tap(find.byTooltip(ModeBackButton.tooltip));
       await pumpUntil(
         tester,
         () => find.byType(ModePickerScreen).evaluate().isNotEmpty,
@@ -686,7 +686,7 @@ void main() {
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip(ModesButton.tooltip));
+    await tester.tap(find.byTooltip(ModeBackButton.tooltip));
     await tester.pumpAndSettle();
     expect(find.byType(ModePickerScreen), findsOneWidget);
     client.chunkGate!.complete();

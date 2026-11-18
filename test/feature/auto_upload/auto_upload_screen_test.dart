@@ -14,8 +14,8 @@ import 'package:shutterlink/feature/connect/connect_state.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
 import 'package:shutterlink/feature/mode/attached_client.dart';
+import 'package:shutterlink/feature/mode/mode_back_button.dart';
 import 'package:shutterlink/feature/mode/mode_cubit.dart';
-import 'package:shutterlink/feature/mode/modes_button.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/upload_settings_cubit.dart';
@@ -262,7 +262,7 @@ void main() {
     expect(sessions.collectors, 0);
     expect(sessions.clockSyncs, 0);
     expect(await tester.runAsync(sessions.queue.items), isEmpty);
-    await tester.tap(find.byTooltip(ModesButton.tooltip));
+    await tester.tap(find.byTooltip(ModeBackButton.tooltip));
     await tester.pumpAndSettle();
   });
 }
