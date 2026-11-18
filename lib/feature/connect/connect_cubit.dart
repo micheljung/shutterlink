@@ -188,9 +188,9 @@ class ConnectCubit extends Cubit<ConnectState> {
     _connected(client, target);
   }
 
-  /// Opens the demo camera over [photos]. Nothing can drop it, so it is not
-  /// supervised.
-  Future<void> connectDemo(List<File> photos) async {
+  /// Opens the demo camera with an empty card. Nothing can drop it, so it is
+  /// not supervised.
+  Future<void> connectDemo() async {
     switch (state) {
       case ConnectIdle() || ConnectFailed() || ConnectPairingRequired():
         break;
@@ -198,13 +198,13 @@ class ConnectCubit extends Cubit<ConnectState> {
         return;
     }
     final attempt = ++_attempt;
-    final target = DemoTarget(photos);
+    const target = DemoTarget();
     final CameraClient client;
     try {
       client = await _connector(target);
     } on Exception catch (error) {
       if (_isCurrent(attempt)) {
-        emit(ConnectFailed('Could not open the photos ($error).'));
+        emit(ConnectFailed('Could not open the demo camera ($error).'));
       }
       return;
     }

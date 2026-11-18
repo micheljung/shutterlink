@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/feature/gallery/gallery_cubit.dart';
+import 'package:shutterlink/feature/gallery/gallery_state.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 import 'package:shutterlink/ptpip/canon_eos.dart';
 
@@ -151,5 +152,19 @@ void main() {
 
     expect(cubit.state.groups.single.key, kept.key);
     expect(cubit.state.selected, {kept.key});
+  });
+
+  test('a quiet load keeps the grid up and shows new shots', () async {
+    final client = FakeCameraClient([single]);
+    final cubit = await loaded(client);
+    final statuses = <GalleryStatus>[];
+    cubit.stream.listen((state) => statuses.add(state.status));
+    client.objects.add(raw);
+
+    await cubit.load(quietly: true);
+    await pumpEventQueue();
+
+    expect(statuses, [GalleryStatus.loaded]);
+    expect(cubit.state.groups, hasLength(2));
   });
 }

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../demo/demo_shutter_button.dart';
 import '../mode/modes_button.dart';
 import '../mode/operating_mode.dart';
 import '../sessions/active_session_indicator.dart';
@@ -44,6 +45,7 @@ class QrSessionScreen extends StatelessWidget {
     final clockSync = state.clockSync;
     final resumable = state.resumable;
     return Scaffold(
+      floatingActionButton: DemoShutterButton(client: client),
       appBar: AppBar(
         title: Text(OperatingMode.qrSession.label),
         actions: [
@@ -62,7 +64,11 @@ class QrSessionScreen extends StatelessWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(Spacing.large),
+        padding: const EdgeInsets.all(Spacing.large).copyWith(
+          bottom: DemoShutterButton.showsFor(client)
+              ? DemoShutterButton.clearance
+              : null,
+        ),
         children: [
           if (state.notificationsDenied)
             const Card(

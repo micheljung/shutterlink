@@ -10,10 +10,11 @@ import '../data/exif.dart';
 import '../ptp/ptp_constants.dart';
 import '../ptpip/camera_client.dart';
 
-/// A pretend camera whose card holds photos from this phone. Deleting only
-/// takes a photo off the card; the phone's file stays.
+/// A pretend camera whose card holds photos from this phone, with shots from
+/// the phone's camera added as new shots. Deleting only takes a photo off the
+/// card; the phone's file stays.
 class DemoCameraClient implements CameraClient {
-  DemoCameraClient._(this._photos);
+  DemoCameraClient._(this._photos) : _lastHandle = _photos.keys.fold(0, max);
 
   static const manufacturer = 'Shutterlink';
   static const model = 'Demo camera';
@@ -26,21 +27,22 @@ class DemoCameraClient implements CameraClient {
   static Future<DemoCameraClient> open(List<File> photos) async {
     final entries = <int, (File, CameraObject)>{};
     for (final (index, file) in photos.indexed) {
-      final stat = await file.stat();
       final handle = index + 1;
-      entries[handle] = (
-        file,
-        CameraObject(
-          handle: handle,
-          storageId: storageId,
-          filename: p.basename(file.path),
-          size: stat.size,
-          captureDate: exifCaptureDate(await _header(file)) ?? stat.modified,
-          kind: CameraObjectKind.jpeg,
-        ),
-      );
+      entries[handle] = (file, await _object(handle, file));
     }
     return DemoCameraClient._(entries);
+  }
+
+  static Future<CameraObject> _object(int handle, File file) async {
+    final stat = await file.stat();
+    return CameraObject(
+      handle: handle,
+      storageId: storageId,
+      filename: p.basename(file.path),
+      size: stat.size,
+      captureDate: exifCaptureDate(await _header(file)) ?? stat.modified,
+      kind: CameraObjectKind.jpeg,
+    );
   }
 
   static Future<Uint8List> _header(File file) async {
@@ -53,6 +55,9 @@ class DemoCameraClient implements CameraClient {
   }
 
   final Map<int, (File, CameraObject)> _photos;
+
+  /// Handles are never reused, also not after a delete, as on a real card.
+  int _lastHandle;
   final _disconnected = Completer<void>();
   final _added = StreamController<int>.broadcast();
   final _storageChanged = StreamController<void>.broadcast();
@@ -154,6 +159,16 @@ class DemoCameraClient implements CameraClient {
     } finally {
       await file.close();
     }
+  }
+
+  /// Puts [shot] on the card and reports it the way a camera reports a new
+  /// shot.
+  Future<void> addShot(File shot) async {
+    final handle = ++_lastHandle;
+    final object = await _object(handle, shot);
+    if (_disconnected.isCompleted) return;
+    _photos[handle] = (shot, object);
+    _added.add(handle);
   }
 
   @override

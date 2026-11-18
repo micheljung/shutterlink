@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
 import 'package:shutterlink/data/identity_repository.dart';
@@ -19,8 +18,6 @@ import '../../upload/upload_fakes.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  late Directory directory;
-  late List<File> photos;
   late SharedPreferences prefs;
   late RecordingBinder binder;
   late FakeUsbCameraWatcher watcher;
@@ -33,10 +30,6 @@ void main() {
   Completer<CameraClient>? demoGate;
 
   setUp(() async {
-    directory = Directory.systemTemp.createTempSync('shutterlink_demo');
-    photos = [
-      File(p.join(directory.path, 'IMG_0001.JPG'))..writeAsBytesSync([1, 2]),
-    ];
     SharedPreferences.setMockInitialValues({});
     prefs = await SharedPreferences.getInstance();
     binder = RecordingBinder();
@@ -55,7 +48,7 @@ void main() {
         if (failure != null) throw failure;
         final gate = demoGate;
         if (gate != null) return gate.future;
-        return DemoCameraClient.open(target.photos);
+        return DemoCameraClient.open(const []);
       },
       identity: IdentityRepository(prefs),
       hostResolver: CameraHostResolver(
@@ -75,22 +68,21 @@ void main() {
 
   tearDown(() async {
     await cubit.close();
-    directory.deleteSync(recursive: true);
   });
 
   Future<CameraClient> connectDemo() async {
-    await cubit.connectDemo(photos);
+    await cubit.connectDemo();
     final state = cubit.state as ConnectConnected;
     expect(state.target, isA<DemoTarget>());
     return state.client;
   }
 
-  test('opens the picked photos without network or identity', () async {
+  test('opens an empty card without network or identity', () async {
     final client = await connectDemo();
 
     expect(client, isA<DemoCameraClient>());
-    expect((targets.single as DemoTarget).photos, photos);
-    expect((await client.listPhotos()).single.filename, 'IMG_0001.JPG');
+    expect(targets.single, isA<DemoTarget>());
+    expect(await client.listPhotos(), isEmpty);
     expect(binder.calls, isEmpty);
     expect(discoveries, 0);
     expect(prefs.getKeys(), isEmpty, reason: 'no pairing identity is made');
@@ -137,7 +129,7 @@ void main() {
     final states = <ConnectState>[];
     cubit.stream.listen(states.add);
 
-    final opening = cubit.connectDemo(photos);
+    final opening = cubit.connectDemo();
     await cubit.connect();
     gate.complete(late);
     await opening;
@@ -160,16 +152,16 @@ void main() {
   test('is ignored while a camera is connected', () async {
     await cubit.connect();
 
-    await cubit.connectDemo(photos);
+    await cubit.connectDemo();
 
     expect(cubit.state, ConnectConnected(other));
     expect(targets.whereType<DemoTarget>(), isEmpty);
   });
 
-  test('says when the photos cannot be opened', () async {
+  test('says when the demo camera cannot be opened', () async {
     demoFailure = const FileSystemException('gone');
 
-    await cubit.connectDemo(photos);
+    await cubit.connectDemo();
 
     expect(cubit.state, isA<ConnectFailed>());
     expect(binder.calls, isEmpty);

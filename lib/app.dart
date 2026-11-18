@@ -12,6 +12,7 @@ import 'data/live_service.dart';
 import 'data/network_binder.dart';
 import 'data/photo_saver.dart';
 import 'data/settings_repository.dart';
+import 'demo/phone_camera.dart';
 import 'feature/auto_upload/auto_upload_cubit.dart';
 import 'feature/connect/connect_cubit.dart';
 import 'feature/connect/connect_screen.dart';
@@ -55,7 +56,7 @@ class AppDependencies {
     required this.sessions,
     required this.claimsUsbVendor,
     this.usb = const NoUsbCameraPlatform(),
-    this.pickPhotos = pickSystemPhotos,
+    this.phoneCamera = const PhoneCamera(),
   });
 
   final SettingsRepository settings;
@@ -80,8 +81,8 @@ class AppDependencies {
   final UsbVendorClaim claimsUsbVendor;
   final UsbCameraPlatform usb;
 
-  /// Picks the photos for the demo camera.
-  final PhotoPicker pickPhotos;
+  /// Shoots for the demo camera.
+  final PhoneCamera phoneCamera;
 }
 
 class ShutterlinkApp extends StatelessWidget {
@@ -95,6 +96,7 @@ class ShutterlinkApp extends StatelessWidget {
       RepositoryProvider.value(value: dependencies.thumbnailCache),
       RepositoryProvider.value(value: dependencies.networkBinder),
       RepositoryProvider.value(value: dependencies.sessions),
+      RepositoryProvider.value(value: dependencies.phoneCamera),
     ],
     child: MultiBlocProvider(
       providers: [
@@ -177,10 +179,7 @@ class ShutterlinkApp extends StatelessWidget {
           title: 'Shutterlink',
           theme: BrandTheme.light(),
           darkTheme: BrandTheme.dark(),
-          home: _Home(
-            usbExperimental: dependencies.usb.isExperimental,
-            pickPhotos: dependencies.pickPhotos,
-          ),
+          home: _Home(usbExperimental: dependencies.usb.isExperimental),
         ),
       ),
     ),
@@ -237,10 +236,9 @@ class _SessionsUploadsState extends State<_SessionsUploads>
 }
 
 class _Home extends StatefulWidget {
-  const _Home({required this.usbExperimental, required this.pickPhotos});
+  const _Home({required this.usbExperimental});
 
   final bool usbExperimental;
-  final PhotoPicker pickPhotos;
 
   @override
   State<_Home> createState() => _HomeState();
@@ -314,10 +312,7 @@ class _HomeState extends State<_Home> {
             BlocSelector<SettingsCubit, SettingsState, bool>(
               selector: (state) => state.onboardingSeen,
               builder: (context, seen) => seen
-                  ? ConnectScreen(
-                      usbExperimental: widget.usbExperimental,
-                      pickPhotos: widget.pickPhotos,
-                    )
+                  ? ConnectScreen(usbExperimental: widget.usbExperimental)
                   : OnboardingScreen(
                       onDone: context.read<SettingsCubit>().markOnboardingSeen,
                     ),

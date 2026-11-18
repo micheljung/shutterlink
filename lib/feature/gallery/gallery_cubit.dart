@@ -11,8 +11,9 @@ class GalleryCubit extends Cubit<GalleryState> {
 
   final CameraClient _client;
 
-  Future<void> load() async {
-    emit(state.copyWith(status: GalleryStatus.loading));
+  /// Lists the card. [quietly] keeps the grid up meanwhile, for a refresh.
+  Future<void> load({bool quietly = false}) async {
+    if (!quietly) emit(state.copyWith(status: GalleryStatus.loading));
     try {
       final groups = groupPhotos(await _client.listPhotos());
       if (isClosed) return;

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -138,15 +136,12 @@ void main() {
 
   testWidgets('says how the camera is connected', (tester) async {
     when(() => connect.state).thenReturn(
-      ConnectConnected(
-        FakeCameraClient([]),
-        target: DemoTarget([File('demo.jpg')]),
-      ),
+      ConnectConnected(FakeCameraClient([]), target: const DemoTarget()),
     );
     await pumpPicker(tester);
 
     expect(
-      find.text(ModePickerScreen.statusText(DemoTarget(const []))),
+      find.text(ModePickerScreen.statusText(const DemoTarget())),
       findsOneWidget,
     );
   });

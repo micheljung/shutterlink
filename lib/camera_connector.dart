@@ -11,5 +11,5 @@ CameraConnector cameraConnector({required UsbCameraPlatform usb}) =>
       WifiTarget(:final host, :final identity) =>
         await PtpIpCameraClient.connect(host: host, identity: identity),
       UsbTarget(:final device) => await connectUsb(await usb.open(device)),
-      DemoTarget(:final photos) => await DemoCameraClient.open(photos),
+      DemoTarget() => await DemoCameraClient.open(const []),
     };
