@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../data/live_service.dart';
 import '../../data/session_repository.dart';
+import '../../data/settings_repository.dart';
 import '../../ptpip/camera_client.dart';
 import '../connect/connect_cubit.dart';
 import '../connect/connect_state.dart';
@@ -24,6 +25,7 @@ class QrSessionState extends Equatable {
     this.client,
     this.clockSync,
     this.notificationsDenied = false,
+    this.autoResumed = false,
   });
 
   /// The mode is open.
@@ -42,6 +44,10 @@ class QrSessionState extends Equatable {
   /// The mode runs, but its notification is hidden.
   final bool notificationsDenied;
 
+  /// The mode came back by itself with the Session that was cut off when
+  /// the camera or the app went away.
+  final bool autoResumed;
+
   @override
   List<Object?> get props => [
     active,
@@ -49,6 +55,7 @@ class QrSessionState extends Equatable {
     client,
     clockSync,
     notificationsDenied,
+    autoResumed,
   ];
 }
 
@@ -78,12 +85,24 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   static const unreachableText = 'Camera not reachable';
   static const userActionText = 'Open Shutterlink to allow USB access';
 
+  /// A Session cut off longer ago than this is not resumed by itself, so
+  /// a camera connected much later sends nothing to old guests unasked.
+  static const autoResumeWithin = Duration(minutes: 30);
+
+  /// How often a running mode notes that it is alive, which dates a cut-off
+  /// found at the next start.
+  static const aliveInterval = Duration(minutes: 1);
+
   final ConnectCubit _connect;
   final ModeCubit _modes;
   final LiveService _service;
   final SessionsDependencies _sessions;
   final Clock _clock;
   late final Future<void> _cleanup;
+
+  /// The last leave, which an enter right after it waits for, so the
+  /// window it closes is not taken for an open one.
+  Future<void> _leaving = Future.value();
   late final StreamSubscription<OperatingMode?> _modeSubscription;
   late final StreamSubscription<ConnectState> _connectSubscription;
   late final StreamSubscription<void> _stopSubscription;
@@ -98,14 +117,23 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   bool _ready = false;
   int _session = 0;
   LiveStatus? _reported;
+  Timer? _alive;
+  StreamSubscription<void>? _windowChanges;
+
+  /// The Session cut off by a lost camera or a killed app, and when; it is
+  /// resumed once the camera connects again.
+  String? _interruptedId;
+  DateTime? _interruptedAt;
 
   SessionRepository get _repository => _sessions.repository;
+
+  SettingsRepository get _settings => _sessions.settings;
 
   /// Opens a new window of the offered Session.
   Future<void> resume() async {
     final resumable = state.resumable;
     if (resumable == null || !_active) return;
-    _emit(_copy(resumable: () => null));
+    _emit(_copy(resumable: () => null, autoResumed: false));
     await _openWindow(() async {
       try {
         await _repository.reactivate(resumable.id);
@@ -118,7 +146,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   /// Starts a new Session instead of the offered one.
   Future<void> startNew() async {
     if (!_active) return;
-    _emit(_copy(resumable: () => null));
+    _emit(_copy(resumable: () => null, autoResumed: false));
     await _openWindow(_repository.start);
   }
 
@@ -132,21 +160,52 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     }
   }
 
-  /// A window left open by a crash or a kill collects nothing any more.
+  /// A window left open by a crash or a kill collects nothing any more. It
+  /// is closed, and resumed once the camera connects, if QR Session ran it
+  /// until recently.
   Future<void> _closeLeftoverWindow() async {
     try {
-      if (await _repository.active() != null) await _repository.stop();
+      final active = await _repository.active();
+      final aliveAt = _settings.qrSessionAliveAt;
+      if (active != null) {
+        if (aliveAt != null) {
+          _interruptedId = active.id;
+          _interruptedAt = aliveAt;
+        }
+        await _repository.stop();
+      }
+      if (aliveAt != null) await _settings.setQrSessionAliveAt(null);
     } on Exception {
       // Leaving the mode stops it again.
     }
+    if (!isClosed) _resumeInterrupted(_connect.state);
   }
+
+  /// Brings QR Session back with the cut-off Session once a camera is
+  /// connected again, unless too much time has passed or the user picked
+  /// another mode meanwhile.
+  void _resumeInterrupted(ConnectState connection) {
+    final at = _interruptedAt;
+    if (_interruptedId == null || at == null || _active) return;
+    if (_now().difference(at) > autoResumeWithin || _modes.state != null) {
+      _interruptedId = null;
+      _interruptedAt = null;
+      return;
+    }
+    if (connection is ConnectConnected) _modes.select(OperatingMode.qrSession);
+  }
+
+  DateTime _now() => _clock.now().toUtc();
 
   void _onMode(OperatingMode? mode) {
     if (isClosed) return;
     if (mode == OperatingMode.qrSession && !_active) {
       unawaited(_enter());
     } else if (mode != OperatingMode.qrSession && _active) {
-      unawaited(_leave());
+      _leaving = _leave(connectionLost: _modes.leftForConnectionLoss);
+    } else if (mode != null && mode != OperatingMode.qrSession) {
+      _interruptedId = null;
+      _interruptedAt = null;
     }
   }
 
@@ -160,10 +219,26 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     final session = ++_session;
     _emit(const QrSessionState(active: true));
     await _cleanup;
+    await _leaving;
+    if (!_isCurrent(session)) return;
+    final interrupted = _interruptedId;
+    _interruptedId = null;
+    _interruptedAt = null;
+    if (interrupted != null) {
+      try {
+        await _repository.reactivate(interrupted);
+        if (_isCurrent(session)) _emit(_copy(autoResumed: true));
+      } on Object {
+        // Offered below, but not started unasked.
+      }
+    }
     await _openWindow(() async {
+      if (await _repository.active() != null) return;
       final resumable = await _resumable();
       if (!_isCurrent(session)) return;
       if (resumable == null) {
+        // The user didn't pick the mode; the screen offers a new Session.
+        if (interrupted != null) return;
         await _repository.start();
       } else {
         _emit(_copy(resumable: () => resumable));
@@ -178,7 +253,37 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     if (!_isCurrent(session)) return;
     unawaited(_connect.setHoldNetwork(true));
     _ready = true;
+    _markAlive();
+    _alive = Timer.periodic(aliveInterval, (_) => _markAlive());
+    _windowChanges = _repository.changes.listen((_) => _markAlive());
     _onConnection(_connect.state);
+  }
+
+  /// Notes that the mode runs while a window is open, so a window found
+  /// open at the next start is known to have been cut off just now.
+  void _markAlive() => unawaited(
+    _guardRepository(() async {
+      final open = await _repository.active() != null;
+      if (!_active) return;
+      if (!open && state.autoResumed) _emit(_copy(autoResumed: false));
+      await _settings.setQrSessionAliveAt(open ? _now() : null);
+    }),
+  );
+
+  Future<void> _guardRepository(Future<void> Function() call) async {
+    try {
+      await call();
+    } on Exception {
+      // Only an automatic resume after a kill depends on it.
+    }
+  }
+
+  Future<Session?> _activeSession() async {
+    try {
+      return await _repository.active();
+    } on Exception {
+      return null;
+    }
   }
 
   /// The newest Session that may still get a new window.
@@ -190,22 +295,39 @@ class QrSessionCubit extends Cubit<QrSessionState> {
         .firstOrNull;
   }
 
-  Future<void> _leave() async {
+  /// A lost camera keeps the open Session to resume; the user leaving
+  /// does not.
+  Future<void> _leave({required bool connectionLost}) async {
     _active = false;
     _ready = false;
     _session++;
     _reported = null;
     _client = null;
+    _alive?.cancel();
+    _alive = null;
+    unawaited(_windowChanges?.cancel());
+    _windowChanges = null;
     final detaching = _detach();
     _emit(const QrSessionState());
     unawaited(_connect.setHoldNetwork(false));
+    if (connectionLost) {
+      final active = await _activeSession();
+      _interruptedId = active?.id;
+      _interruptedAt = active == null ? null : _now();
+    } else {
+      _interruptedId = null;
+      _interruptedAt = null;
+    }
+    await _guardRepository(() => _settings.setQrSessionAliveAt(null));
     await _guard(_repository.stop);
     await _guard(_service.stop);
     await detaching;
   }
 
   void _onConnection(ConnectState connection) {
-    if (!_ready || isClosed) return;
+    if (isClosed) return;
+    if (!_active) return _resumeInterrupted(connection);
+    if (!_ready) return;
     switch (connection) {
       case ConnectConnected(:final client) when client != _client:
         unawaited(_attach(client, _session));
@@ -319,12 +441,14 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     CameraClient? Function()? client,
     ClockSyncCubit? Function()? clockSync,
     bool? notificationsDenied,
+    bool? autoResumed,
   }) => QrSessionState(
     active: state.active,
     resumable: resumable == null ? state.resumable : resumable(),
     client: client == null ? state.client : client(),
     clockSync: clockSync == null ? state.clockSync : clockSync(),
     notificationsDenied: notificationsDenied ?? state.notificationsDenied,
+    autoResumed: autoResumed ?? state.autoResumed,
   );
 
   void _emit(QrSessionState next) {
@@ -334,6 +458,8 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   @override
   Future<void> close() async {
     final active = _active;
+    _alive?.cancel();
+    await _windowChanges?.cancel();
     _active = false;
     _ready = false;
     _session++;

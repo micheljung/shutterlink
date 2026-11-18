@@ -302,7 +302,9 @@ class _HomeState extends State<_Home> {
                 route.isFirst ||
                 (dropped && _survivesDrop.contains(route.settings.name)),
           );
-          if (state is! ConnectReconnecting) context.read<ModeCubit>().leave();
+          if (state is! ConnectReconnecting) {
+            context.read<ModeCubit>().connectionLost();
+          }
         },
         buildWhen: (previous, current) =>
             _screenOf(previous) != _screenOf(current),
