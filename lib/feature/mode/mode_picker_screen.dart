@@ -23,7 +23,7 @@ class ModePickerScreen extends StatelessWidget {
   static const title = 'Choose a mode';
 
   /// Enters [mode] once what it needs is set up: a destination for Auto
-  /// Upload, the Sessions server for QR Session.
+  /// Upload, the Sessions server for Live Share.
   static Future<void> enter(BuildContext context, OperatingMode mode) async {
     final modes = context.read<ModeCubit>();
     final connect = context.read<ConnectCubit>();

@@ -257,7 +257,7 @@ void main() {
       expect(find.byType(AutoUploadScreen), findsOneWidget);
     });
 
-    testWidgets('QR Session asks for the Sessions server, and backing out '
+    testWidgets('Live Share asks for the Sessions server, and backing out '
         'stays on the picker', (tester) async {
       await pumpPicker(tester);
 
@@ -294,7 +294,7 @@ void main() {
       expect(find.text('https://photos.example.com'), findsWidgets);
     });
 
-    testWidgets('QR Session is entered once the server is set up', (
+    testWidgets('Live Share is entered once the server is set up', (
       tester,
     ) async {
       await pumpPicker(tester);

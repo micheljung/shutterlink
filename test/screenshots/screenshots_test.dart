@@ -200,7 +200,7 @@ void main() {
     await _capture(tester, 'sessions_setup_token');
   }, variant: _platform);
 
-  testWidgets('QR Session', (tester) async {
+  testWidgets('Live Share', (tester) async {
     final client = _ScreenshotCameraClient()..cameraLag = Duration.zero;
     await _pumpApp(tester, client, configured: true);
     await _enterMode(tester, OperatingMode.qrSession);

@@ -18,7 +18,7 @@ import '../spacing.dart';
 import '../upload/upload_status_indicator.dart';
 import 'qr_session_cubit.dart';
 
-/// QR Session: guests scan the code, and every shot taken while the
+/// Live Share: guests scan the code, and every shot taken while the
 /// window is open goes to their gallery on the Sessions server.
 class QrSessionScreen extends StatelessWidget {
   const QrSessionScreen({super.key});

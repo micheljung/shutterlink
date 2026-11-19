@@ -59,7 +59,7 @@ class QrSessionState extends Equatable {
   ];
 }
 
-/// Runs QR Session while [ModeCubit] has it selected: shots taken during an
+/// Runs Live Share while [ModeCubit] has it selected: shots taken during an
 /// open Session window go to the Sessions server only, in the background
 /// too. Leaving the mode closes the window. The connection itself belongs
 /// to [ConnectCubit].
@@ -78,7 +78,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     _onMode(_modes.state);
   }
 
-  static const title = 'QR Session';
+  static const title = 'Live Share';
   static const connectingText = 'Connecting to the camera';
   static const runningText = 'Sending new photos to the Session';
   static const reconnectingText = 'Reconnecting to the camera';
@@ -161,7 +161,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   }
 
   /// A window left open by a crash or a kill collects nothing any more. It
-  /// is closed, and resumed once the camera connects, if QR Session ran it
+  /// is closed, and resumed once the camera connects, if Live Share ran it
   /// until recently.
   Future<void> _closeLeftoverWindow() async {
     try {
@@ -181,7 +181,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     if (!isClosed) _resumeInterrupted(_connect.state);
   }
 
-  /// Brings QR Session back with the cut-off Session once a camera is
+  /// Brings Live Share back with the cut-off Session once a camera is
   /// connected again, unless too much time has passed or the user picked
   /// another mode meanwhile.
   void _resumeInterrupted(ConnectState connection) {

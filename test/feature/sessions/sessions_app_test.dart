@@ -85,7 +85,7 @@ void main() {
     );
   }
 
-  testWidgets('QR Session syncs the clock, shows the code and sends a shot '
+  testWidgets('Live Share syncs the clock, shows the code and sends a shot '
       'to the Sessions server only, even with a destination set (AC15, '
       'AC16, AC20)', (tester) async {
     late AppDependencies dependencies;

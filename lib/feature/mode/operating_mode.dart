@@ -13,7 +13,7 @@ enum OperatingMode {
     Icons.cloud_upload_outlined,
   ),
   qrSession(
-    'QR Session',
+    'Live Share',
     'Share new shots with guests through a QR code.',
     Icons.qr_code_2,
   );

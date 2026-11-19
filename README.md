@@ -16,7 +16,7 @@ USB cable. No Canon app, no account, and no cloud you don't own.
 
 <p>
   <img src="docs/screenshots/connect.png" width="200" alt="Start screen with a Connect button, a demo mode and the setup guide">
-  <img src="docs/screenshots/modes.png" width="200" alt="Mode picker with Browse &amp; Download, Auto Upload and QR Session">
+  <img src="docs/screenshots/modes.png" width="200" alt="Mode picker with Browse &amp; Download, Auto Upload and Live Share">
   <img src="docs/screenshots/gallery.png" width="200" alt="Photos on the camera's card, grouped by day, with downloaded badges and a range selection">
   <img src="docs/screenshots/guest_gallery.png" width="200" alt="The guest's web gallery with their photos and a Download all button">
 </p>
@@ -76,11 +76,11 @@ with no cable and no sorting afterwards.
 
 <br clear="right">
 
-### QR Session: everyone gets their photos
+### Live Share: everyone gets their photos
 
-<img src="docs/screenshots/qr_session.png" width="200" align="right" alt="QR Session with a QR code and a Session Code for the person being photographed">
+<img src="docs/screenshots/qr_session.png" width="200" align="right" alt="Live Share with a QR code and a Session Code for the person being photographed">
 
-Shooting portraits at an event, a party or on the street? Start a QR Session,
+Shooting portraits at an event, a party or on the street? Start Live Share,
 let the person scan the code, and every photo you take of them shows up in
 their own private web gallery a few seconds later. They need no app and no
 account.
@@ -96,7 +96,7 @@ account.
 - **Optional tips.** The gallery can show tip buttons, for example for
   PayPal or TWINT.
 - **Self-hosted.** Galleries live on your own small server and are deleted
-  after 30 days by default. See [Set up QR Sessions](#set-up-qr-sessions).
+  after 30 days by default. See [Set up Live Share](#set-up-live-share).
 
 <br clear="right">
 
@@ -167,14 +167,14 @@ Upload**. Nothing is uploaded anywhere until you set up a destination.
 For Immich, create an API key with the `asset.upload` permission. Photos go
 to your timeline, not an album, and photos Immich already has are skipped.
 
-### Set up QR Sessions
+### Set up Live Share
 
 1. Run the Sessions server, for example with the ready-made Docker image
    `ghcr.io/micheljung/shutterlink-server`, behind HTTPS. See
    [`server/README.md`](server/README.md).
 2. In the app, open **Settings → Sessions → Connect Sessions** and enter your
    server's address and upload token.
-3. Connect the camera and choose **QR Session**. Show the QR code, or tap the
+3. Connect the camera and choose **Live Share**. Show the QR code, or tap the
    Session Code to show it large. **Stop Session** and **Start new Session**
    are on the same screen, and past Sessions are listed under **Past
    Sessions**.
@@ -190,16 +190,16 @@ If a camera doesn't report its time, tap **Sync clock** and take a photo.
 | Android | Gallery, album `Shutterlink` | `Download/Shutterlink/` |
 | iPhone | Photos | Photos, together with its JPEG. If that fails: the Files app, in Shutterlink's folder |
 
-Photos from a QR Session only go to your Sessions server, not to the phone
+Photos shared with Live Share only go to your Sessions server, not to the phone
 or to your Auto Upload destination.
 
 ## Good to know
 
 - Photos only. Videos are not shown.
 - While the phone is connected to the camera's Wi-Fi, uploads need another
-  connection to the internet, such as mobile data. QR Sessions use it
+  connection to the internet, such as mobile data. Live Share uses it
   automatically; for Auto Upload, allow mobile data in its settings.
-- Photos reach a QR Session within a few seconds of the shot.
+- Photos reach a Live Share Session within a few seconds of the shot.
 - If you change the camera's clock (or it resets), connect once or tap
   **Sync clock** before shooting the next Session, so photos aren't matched
   to the wrong person.
