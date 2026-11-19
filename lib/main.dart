@@ -45,6 +45,7 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final settings = SettingsRepository(prefs);
+  await settings.migrateLegacyKeys();
   final cacheDirectory = await getApplicationCacheDirectory();
   final temporaryDirectory = await getTemporaryDirectory();
   final supportDirectory = await getApplicationSupportDirectory();

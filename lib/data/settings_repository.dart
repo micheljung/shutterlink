@@ -23,10 +23,23 @@ class SettingsRepository {
   static const hostOverrideKey = 'camera_host_override';
   static const sessionsServerUrlKey = 'sessions_server_url';
   static const onboardingSeenKey = 'onboarding_seen';
-  static const liveShareAliveAtKey = 'qr_session_alive_at';
+  static const liveShareAliveAtKey = 'live_share_alive_at';
+
+  // TODO: Remove with migrateLegacyKeys once versionCode 6 is released.
+  static const legacyLiveShareAliveAtKey = 'qr_session_alive_at';
   static const defaultFormat = DownloadFormat.jpeg;
 
   final SharedPreferences _prefs;
+
+  // TODO: Remove once versionCode 6 is released.
+  Future<void> migrateLegacyKeys() async {
+    final aliveAt = _prefs.getInt(legacyLiveShareAliveAtKey);
+    if (aliveAt == null) return;
+    if (!_prefs.containsKey(liveShareAliveAtKey)) {
+      await _prefs.setInt(liveShareAliveAtKey, aliveAt);
+    }
+    await _prefs.remove(legacyLiveShareAliveAtKey);
+  }
 
   DownloadFormat get format {
     final name = _prefs.getString(formatKey);
