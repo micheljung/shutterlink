@@ -273,6 +273,14 @@ browsers' cached previews expire with the Session. They also ignore the
 `deleted/` markers, so a photo a guest deleted is stored again if the app
 re-uploads it after the rollback.
 
+## Demo server
+
+The project runs a public demo instance for trying Live Share, with a
+published token and much tighter limits than a normal deployment. Its
+URL, limits, proxy setup and operator runbook (kill switch, abuse,
+acceptance test) are in
+[`../docs/launch/demo-server.md`](../docs/launch/demo-server.md).
+
 ## Development
 
 ```bash
