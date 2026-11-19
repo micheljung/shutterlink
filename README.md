@@ -132,6 +132,15 @@ Download the APK from the
 and open it on your Android phone. On iPhone, build the app from source; see
 [docs/development.md](docs/development.md).
 
+[<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" height="54" alt="Get it on Obtainium">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/micheljung/shutterlink)
+
+Obtainium installs and updates the app straight from the GitHub releases.
+
+The GitHub and Obtainium APKs are signed with a different key than any
+other distribution stream, such as a Google Play build. Android refuses to
+update one with the other, so to switch, uninstall the app first. Your
+settings and the app's data are lost, so save what you need beforehand.
+
 ### Connect over Wi-Fi
 
 1. On the camera, open **MENU → Wireless communication settings → Wi-Fi function**.
@@ -184,6 +193,21 @@ to your timeline, not an album, and photos Immich already has are skipped.
 Shutterlink reads the camera's clock to match each photo to the right
 Session, and corrects for a camera clock that is off, without changing it.
 If a camera doesn't report its time, tap **Sync clock** and take a photo.
+
+#### Try Live Share on the demo server
+
+No server of your own yet? A public demo server is run by the maintainer
+as a separate community service, not as part of the app:
+
+- Server address: `https://demo.shutterlink.micheljung.ch`
+- Upload token: `643db5698319e126825cb18e35dea87c` (public, shared by everyone)
+- Limits: uploads are rate limited per IP address, a Session holds at most
+  2 GiB, and everything is deleted after about 25 hours. It may be reset or
+  shut down at any time.
+
+**Anyone with a gallery link can add photos to that gallery and download
+all of them as a zip. Don't upload private photos.** To report abuse or
+have something removed, write to shutterlink@micheljung.ch.
 
 ## Where photos are saved
 
