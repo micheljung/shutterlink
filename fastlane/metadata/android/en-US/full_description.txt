@@ -1,16 +1,33 @@
-Shutterlink downloads JPEG and CR3 photos from a Canon EOS R to your phone over the camera's Wi-Fi. It talks to the camera directly using PTP/IP. No cloud of ours, no account, no Canon app. Optionally upload to your own WebDAV, S3 or SFTP server, or to Immich.
+Shutterlink gets the photos off your camera and onto your phone, backs them up to your own server as you shoot, and hands the people you photograph their pictures before they walk away. It talks to the camera directly, over the camera's own Wi-Fi or a USB cable. No camera maker's app, no account, and no cloud you don't own.
 
-Features:
-* Thumbnail grid of the memory card, grouped by day. A RAW+JPEG pair is one tile.
-* Download as JPEG, RAW (CR3) or both. Files are saved byte-identical to the originals.
-* Downloaded photos are marked and skipped on later downloads. "Select new" selects everything not yet downloaded.
-* Full-screen preview with swipe. Choose thumbnail or full-resolution quality in Settings.
-* Select a whole day, or long-press and drag to select a range.
-* Interrupted downloads resume after reconnecting.
-* Auto-upload (Android): Live transfer sends new photos to your server while the app runs in the background.
-* Connects in the camera's access point mode, and finds the camera on your home Wi-Fi.
-* No camera at hand? Try the app with your phone's camera.
+Browse & Download
+* See everything on the memory card, newest first, grouped by day. A RAW+JPEG pair is one tile.
+* Long-press and drag to select a range, select a whole day, or tap Select new for everything you haven't downloaded yet.
+* Open any photo full screen and swipe through the card.
+* Save JPEG, RAW (CR3) or both, byte-identical to what the camera wrote.
+* Downloaded photos are marked and skipped next time. Interrupted downloads resume after reconnecting.
 
-Shutterlink is not tested on real hardware yet. Reports are welcome.
+Auto Upload to your own server
+* Every new shot goes to your storage while you keep shooting: Immich, Nextcloud/ownCloud or any WebDAV server, Backblaze B2, AWS S3, Cloudflare R2 and other S3-compatible storage, or any SFTP server such as a Hetzner Storage Box.
+* Keeps going in the background, so you can pocket the phone.
+* Choose whether uploads may use mobile data: never, JPEGs only, or always.
+* Passwords and keys stay in the phone's secure storage. Self-signed certificates and SFTP host keys are confirmed once and pinned.
+* Nothing is uploaded until you set up a destination.
 
-Canon and EOS are trademarks of Canon Inc. This project is not affiliated with or endorsed by Canon.
+Live Share: everyone gets their photos
+* Start a Live Share, let the person scan the QR code, and every photo you take of them appears in their own private web gallery a few seconds later. They need no app and no account.
+* Guests swipe and zoom through full-screen photos, download one or all of them, and can delete photos or their whole gallery.
+* One Live Share is one Session with its own link and a readable code. Photos taken while no Session runs are never shared.
+* Galleries live on your own small Sessions server (open source, ready-made Docker image) and are deleted after 30 days by default.
+
+And also
+* Try without a camera: your phone's camera becomes a demo camera, so you can try every mode.
+* Finds the camera on your home Wi-Fi by itself.
+* Camera traffic stays on the camera's Wi-Fi and never goes out over mobile data.
+* No ads, no analytics, no tracking. Photos and settings go only to the servers you configure.
+
+Tested with the Canon EOS R.
+
+Other cameras that offer PTP over Wi-Fi or USB should work with basic support (JPEG only). Reports are welcome on the project page.
+
+Canon and EOS are trademarks of Canon Inc. Shutterlink is an independent open-source project, not affiliated with or endorsed by Canon.
