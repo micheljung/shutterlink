@@ -1,0 +1,6 @@
+* QR Session resumes by itself after the camera or the app went away
+* Redesigned QR Session screen; tap the QR code to show it large
+* Camera clock banner says Shutterlink corrects for the offset
+* Back arrow to leave a mode; close button to clear a selection in Browse
+* Immich setup links straight to its API key settings
+* Broken Sessions server URLs are rejected; tap the guest link to copy it

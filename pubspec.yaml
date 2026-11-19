@@ -3,7 +3,7 @@ description: >-
   Download JPEG and CR3 photos from a Canon EOS R to your phone over the
   camera's Wi-Fi, using a pure-Dart PTP/IP client.
 publish_to: 'none'
-version: 1.3.0+4
+version: 1.4.0+5
 
 environment:
   sdk: ^3.13.4
