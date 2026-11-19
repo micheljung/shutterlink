@@ -2,114 +2,135 @@
 
 # Shutterlink
 
-Download JPEG and CR3 photos from a Canon EOS R to your phone over the
-camera's own Wi-Fi or a USB cable. No cloud of ours, no Canon app, just PTP
-written in pure Dart.
-Optionally upload to your own WebDAV/S3/SFTP server or Immich.
+Get the photos off your Canon camera and onto your phone, back them up to
+your own server as you shoot, and hand the people you photograph their
+pictures before they walk away.
+
+Shutterlink talks to the camera directly, over the camera's own Wi-Fi or a
+USB cable. No Canon app, no account, and no cloud you don't own.
 
 [![CI](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml/badge.svg)](https://github.com/micheljung/shutterlink/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**[Download for Android](https://github.com/micheljung/shutterlink/releases/latest)**
+
 <p>
-  <img src="docs/screenshots/connect.png" width="200" alt="Start screen with the Shutterlink logo, a Connect button, a demo mode and the setup guide">
+  <img src="docs/screenshots/connect.png" width="200" alt="Start screen with a Connect button, a demo mode and the setup guide">
   <img src="docs/screenshots/modes.png" width="200" alt="Mode picker with Browse &amp; Download, Auto Upload and QR Session">
-  <img src="docs/screenshots/gallery.png" width="200" alt="Photo grid grouped by day, with downloaded badges and a range selection">
-  <img src="docs/screenshots/preview.png" width="200" alt="Full-screen photo preview">
-  <img src="docs/screenshots/download.png" width="200" alt="Download sheet showing progress">
-  <img src="docs/screenshots/settings.png" width="200" alt="Settings for download format, camera address and download history">
+  <img src="docs/screenshots/gallery.png" width="200" alt="Photos on the camera's card, grouped by day, with downloaded badges and a range selection">
+  <img src="docs/screenshots/guest_gallery.png" width="200" alt="The guest's web gallery with their photos and a Download all button">
 </p>
 
-## Features
+## What you can do
 
-- Thumbnail grid of the memory card, newest first and grouped by day. A
-  RAW+JPEG pair is one tile.
-- Select some or all photos and download them as JPEG, RAW (CR3), or both.
-- Tap a photo to select it once something is selected. Long-press and drag to
-  select a range, across rows and days. Select or deselect a whole day from its
-  header.
-- Downloaded photos get a badge and are skipped on later downloads. **Select
-  new** selects everything not downloaded yet. The history can be cleared in
-  Settings.
-- Full-screen preview: tap a photo with nothing selected, or its expand icon.
-  Swipe between photos and select from there. The thumbnail shows at once,
-  and the full resolution (the JPEG, or the CR3's embedded preview) loads
-  behind it in 256 KB requests, so leaving the photo frees the camera link
-  quickly. The last few photos stay loaded while the preview is open.
-  Photos shot in portrait are turned upright, using the EXIF orientation or
-  the CR3's CMT1, and their grid tiles turn too once previewed.
-  **Download** saves the shown photo straight away, reuses what the preview
-  already received, and deselects it.
-- Delete selected photos, or the one in the preview, from the camera after a
-  confirmation that counts those not downloaded yet. A RAW+JPEG pair loses
-  both files. Hidden on cameras that don't offer PTP DeleteObject.
-- Per-file and overall progress. Cancel stops within one chunk.
-- Interrupted downloads resume from the last received byte after reconnecting.
-- Files are saved byte-identical to the originals: JPEGs to the gallery, CR3
-  files to `Download/` on Android and to Photos as RAW on iOS.
-- Finds the camera on a home Wi-Fi network via SSDP when it isn't at the
-  Wi-Fi gateway.
-- **Try without a camera** on the connect screen: a demo camera that shoots
-  with the phone's camera. Each photo arrives as a new shot, so every mode
-  can be tried. Deleting there never touches the phone's files.
-- On Android the app binds to the camera's Wi-Fi, so traffic doesn't leave over
-  mobile data when the camera network has no internet.
-- A command-line probe (`bin/probe.dart`) to test the protocol from a laptop.
-- Optional [Sessions](#sessions): a private web gallery per person you
-  photograph, shared by QR code.
+After connecting, pick what you want to do.
 
-## Auto-upload (Android)
+### Browse & Download
 
-Photos can be uploaded to your own server. Nothing is sent anywhere unless you
-add a destination in Settings.
+<img src="docs/screenshots/preview.png" width="200" align="right" alt="Full-screen photo preview with a Download button">
 
-- **Destinations:** WebDAV, S3-compatible storage, SFTP or Immich. **Set up
-  upload** in Settings guides you through it, with presets for
-  Nextcloud/ownCloud, Backblaze B2, AWS S3, Cloudflare R2, Hetzner Storage Box
-  and Immich. Credentials are kept in secure storage.
-- **Immich:** photos go to the timeline, not an album. Use an API key with
-  the `asset.upload` permission. A photo Immich already has is not uploaded
-  again.
-- **Auto Upload:** a mode picked after connecting. New shots are uploaded,
-  on Android also in the background, and the photos already on the card can
-  be included on entry. On iPhone, keep the app open; the screen stays on
-  while the mode is open.
-- **Network policy:** uploads over mobile data are `off`, `jpeg` only, or
-  `all`. Wi-Fi is always allowed.
-- **Trust on first use:** the first time you connect to an SFTP host or a
-  self-signed HTTPS certificate, you confirm its fingerprint. It is pinned, and
-  a later change blocks uploads to that server.
-- **Keep local copy:** per destination. When off, the saved file is removed
-  after a successful upload (Android may ask for confirmation).
+See everything on the memory card, newest first and grouped by day, and
+save the shots you want to your phone.
 
-## Status
+- **Pick quickly.** Long-press and drag to select a range, select a whole
+  day at once, or tap **Select new** to get everything you haven't
+  downloaded yet.
+- **Look before you save.** Open any photo full screen, swipe through the
+  card, and save the one you're looking at with **Download**. Portrait shots
+  are shown upright.
+- **JPEG, RAW or both.** RAW+JPEG pairs show as one photo. Files are saved
+  exactly as the camera wrote them: JPEGs to your gallery, CR3 RAW files to
+  `Download/` on Android and to Photos on iPhone.
+- **Nothing twice.** Downloaded photos get a badge and are skipped next
+  time.
+- **Interruptions don't cost you.** If the connection drops, tap **Resume**
+  once the camera is back, and the download continues where it stopped.
+- **Free up the card.** Delete photos from the camera, with a warning that
+  counts the ones you haven't saved yet.
 
-Early. Be aware of what has and hasn't been verified:
+<br clear="right">
 
-- The protocol layer and the app are tested against an in-process emulated
-  camera (`test/ptpip/fake_camera.dart`).
-- On a real EOS R (firmware 3-1.8.0, on a home Wi-Fi network) the probe CLI
-  has paired, listed the card, fetched a thumbnail and downloaded a JPEG
-  byte-complete, at 0.13 MB/s with a weak signal and 3.6 MB/s near the
-  router. Its camera clock is read from Canon's camera-time property. After a
-  connection closes, the camera is unreachable for about 15 seconds. The app
-  itself has **not yet been run on physical Android or iOS devices**.
-- USB is tested against emulated cameras only; it has not been tried with a
-  real camera yet.
-- The Android release APK builds, and CI checks it on every push. The **iOS
-  build has not been compiled yet**; the Swift code (RAW save to Photos) is
-  untested.
+### Auto Upload to your own server
 
-Reports from real hardware are very welcome.
+<img src="docs/screenshots/auto_upload.png" width="200" align="right" alt="Auto Upload showing the destination, counters and the most recent shots">
+
+Every new shot goes straight to your own storage while you keep shooting,
+with no cable and no sorting afterwards.
+
+- **Your storage, your choice:** Nextcloud/ownCloud or any WebDAV server,
+  Backblaze B2, AWS S3, Cloudflare R2 or other S3-compatible storage, a
+  Hetzner Storage Box or any SFTP server, or Immich. A guided setup asks only
+  for what your provider needs.
+- **Photos already on the card** can go along too. Shutterlink asks when you
+  start.
+- **Keeps going in the background** on Android, so you can pocket the phone.
+  On iPhone, keep the app open.
+- **Mind your data plan.** Choose whether uploads use mobile data never, for
+  JPEGs only, or always.
+- **Phone storage stays free.** Turn off **Keep photos in gallery after
+  upload**, and a photo is removed from the phone once your server has it.
+- **Safe by default.** Passwords and keys stay in the phone's secure storage.
+  The first time you connect to a server with a self-signed certificate or
+  an SFTP host, you confirm its fingerprint, and Shutterlink refuses to
+  upload if it ever changes.
+
+<br clear="right">
+
+### QR Session: everyone gets their photos
+
+<img src="docs/screenshots/qr_session.png" width="200" align="right" alt="QR Session with a QR code and a Session Code for the person being photographed">
+
+Shooting portraits at an event, a party or on the street? Start a QR Session,
+let the person scan the code, and every photo you take of them shows up in
+their own private web gallery a few seconds later. They need no app and no
+account.
+
+- **Live.** New photos appear in the gallery while the guest watches.
+- **Easy to keep.** Guests swipe and zoom through full-screen photos and
+  download single photos or all of them at once.
+- **One gallery per person.** Each Session has its own link and a readable
+  code such as `apple-banana-cherry-delta`. Photos taken while no Session is
+  running are never shared.
+- **Pick up where you left off.** If the app or the camera drops out, the
+  Session comes back on its own when you reconnect within 30 minutes.
+- **Optional tips.** The gallery can show tip buttons, for example for
+  PayPal or TWINT.
+- **Self-hosted.** Galleries live on your own small server and are deleted
+  after 30 days by default. See [Set up QR Sessions](#set-up-qr-sessions).
+
+<br clear="right">
+
+### And also
+
+- **Try it without a camera.** **Try without a camera** on the start screen
+  turns your phone's camera into a demo camera, so you can try every mode.
+- **Wi-Fi or cable.** Join the camera's Wi-Fi, or plug it in with a USB
+  cable. On your home Wi-Fi, Shutterlink finds the camera by itself.
+- **Your mobile data stays yours.** On Android, camera traffic stays on the
+  camera's Wi-Fi and never goes out over mobile data.
 
 ## Supported cameras
 
 | Camera | Status |
 |---|---|
-| Canon EOS R | Protocol verified with the probe CLI (firmware 3-1.8.0); app untested on hardware |
-| Other Canon EOS bodies with Wi-Fi "Remote control (EOS Utility)" | Untested; may work |
-| Other PTP cameras | Basic support: JPEG only, no instant new-shot events (Auto Upload and Sessions find new shots by re-scanning) |
+| Canon EOS R | Works on Android, over Wi-Fi and USB |
+| Other Canon EOS cameras with Wi-Fi "Remote control (EOS Utility)" | Not tried yet; likely to work |
+| Other cameras that offer PTP ("PTP" or "PC connection" USB mode) | Basic support: JPEG only, and new shots are noticed a little later |
 
-## Camera setup
+The iPhone app builds, but hasn't been tried with a real camera yet, over
+Wi-Fi or USB. Reports from other cameras and from iPhones are very
+welcome; see [Contributing](#contributing).
+
+## Get started
+
+### Install
+
+Download the APK from the
+[latest release](https://github.com/micheljung/shutterlink/releases/latest)
+and open it on your Android phone. On iPhone, build the app from source; see
+[docs/development.md](docs/development.md).
+
+### Connect over Wi-Fi
 
 1. On the camera, open **MENU → Wireless communication settings → Wi-Fi function**.
 2. Choose **Remote control (EOS Utility) → Add a device**.
@@ -118,312 +139,77 @@ Reports from real hardware are very welcome.
 5. Open Shutterlink and tap **Connect**.
 6. The first time, confirm **"Shutterlink"** on the camera when it asks to pair.
 
-Later connections skip step 6. The camera address defaults to the Wi-Fi
-gateway; you can override it in Settings.
+Later connections skip step 6.
 
-If the camera is in infrastructure mode on your home Wi-Fi instead, join the
-same network and tap **Connect**: the app finds the camera via SSDP and asks
-which one to use if there are several. To pair on that network, select the
-saved connection under **Remote control (EOS Utility)**, press **OK** at
-**Start pairing devices**, then tap **Connect** and confirm **"Shutterlink"**.
-The EOS R also asks for this OK after it has left the network, for example
-after auto power off.
+**Camera on your home Wi-Fi instead?** Join the same network and tap
+**Connect**: Shutterlink finds the camera, and asks which one if there are
+several. To pair, select the saved connection under **Remote control (EOS
+Utility)** on the camera, press **OK** at **Start pairing devices**, then tap
+**Connect** and confirm **"Shutterlink"**. The EOS R asks for this OK again
+after it has left the network, for example after auto power off.
 
-## Connect over USB
+### Connect over USB
 
 1. Plug the camera into the phone with a USB cable and switch it on.
-2. **Android:** allow Shutterlink to access the camera. Tick **Always open**,
-   so that Shutterlink can reconnect on its own after a re-plug; without it,
-   the app asks you to allow access again. Shutterlink goes straight to the
-   mode picker, and a running mode keeps going over the cable.
-3. **iOS (experimental):** allow Shutterlink to control the camera. This uses
-   ImageCaptureCore and has not been verified on hardware.
+2. **Android:** allow Shutterlink to access the camera and tick **Always
+   open**, so Shutterlink reconnects by itself after you re-plug the cable.
+3. **iPhone (experimental):** allow Shutterlink to control the camera.
 
-No Wi-Fi, pairing or camera address is needed. Plugging in a Canon camera
-takes over a Wi-Fi connection, and tapping **Connect** takes it back. Other USB
-devices, such as a phone in photo transfer mode, connect only when nothing
-else is connected, and a camera that was already plugged in when the app
-started never takes over.
+No Wi-Fi or pairing is needed. Plugging in a Canon camera takes over from a
+Wi-Fi connection, and tapping **Connect** switches back.
 
-## Install
+### Set up Auto Upload
 
-- **F-Droid:** [submitted](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/57043), pending inclusion. F-Droid builds the app from this
-  repository and signs it.
-- **From source:** see [Build and run](#build-and-run).
+Open **Settings → Upload → Set up upload**, pick your provider and fill in
+the few fields it asks for. Then connect the camera and choose **Auto
+Upload**. Nothing is uploaded anywhere until you set up a destination.
 
-Releases are described in [RELEASING.md](RELEASING.md).
+For Immich, create an API key with the `asset.upload` permission. Photos go
+to your timeline, not an album, and photos Immich already has are skipped.
 
-## Build and run
+### Set up QR Sessions
 
-Requires [FVM](https://fvm.app) (the Flutter version is pinned in `.fvmrc`).
+1. Run the Sessions server, for example with the ready-made Docker image
+   `ghcr.io/micheljung/shutterlink-server`, behind HTTPS. See
+   [`server/README.md`](server/README.md).
+2. In the app, open **Settings → Sessions → Connect Sessions** and enter your
+   server's address and upload token.
+3. Connect the camera and choose **QR Session**. Show the QR code, or tap the
+   Session Code to show it large. **Stop Session** and **Start new Session**
+   are on the same screen, and past Sessions are listed under **Past
+   Sessions**.
 
-```bash
-fvm install
-fvm flutter pub get
-fvm flutter run                 # on a connected device
-fvm flutter build apk --release # Android APK
-```
+Shutterlink reads the camera's clock to match each photo to the right
+Session, and corrects for a camera clock that is off, without changing it.
+If a camera doesn't report its time, tap **Sync clock** and take a photo.
 
-The Android build needs JDK 17.
+## Where photos are saved
 
-## Probe CLI
-
-`bin/probe.dart` runs the whole protocol from a laptop joined to the camera's
-access point, without the app. It pairs, prints the device info and photo
-counts, fetches one thumbnail, downloads one photo and reports the transfer
-rate. It saves the thumbnail next to the photo (`<name>.thumb.jpg`) and
-prints the thumbnail's stored size and both EXIF orientations, which shows
-whether the camera turns its thumbnails upright.
-
-```bash
-fvm dart run bin/probe.dart --host 192.168.1.2 --dump packets.txt
-```
-
-| Option | Default | Meaning |
+| | JPEG | RAW (CR3) |
 |---|---|---|
-| `--host` | (required) | Camera IP, usually the Wi-Fi gateway address |
-| `--clock` | off | Print the device properties and the camera clock, then exit (no download) |
-| `--watch-events` | off | Skip download; log Canon GetEvent records (type, size, hex) every second until Ctrl-C |
-| `--port` | `15740` | PTP/IP port |
-| `--name` | `Shutterlink` | Name shown on the camera when pairing |
-| `--guid-file` | `~/.shutterlink_guid` | Where the client GUID is stored |
-| `--download-dir` | `.` | Where the downloaded photo goes |
-| `--dump` | | Write a hex dump of every PTP/IP packet to this file |
-| `--index` | `0` | Which photo to download, newest first |
-| `--pair-timeout` | `60` | Seconds to wait for pairing to be confirmed |
-| `-h`, `--help` | | Show usage |
+| Android | Gallery, album `Shutterlink` | `Download/Shutterlink/` |
+| iPhone | Photos | Photos, together with its JPEG. If that fails: the Files app, in Shutterlink's folder |
 
-| Exit code | Meaning |
-|---|---|
-| 0 | Success (or `--help`) |
-| 64 | Invalid arguments or `--index` out of range |
-| 69 | Camera unreachable or disconnected |
-| 75 | Camera busy (another client is connected) |
-| 77 | Pairing required: the camera doesn't know this GUID |
+Photos from a QR Session only go to your Sessions server, not to the phone
+or to your Auto Upload destination.
 
-## How it works
+## Good to know
 
-The camera speaks PTP/IP: the USB Picture Transfer Protocol framed over TCP
-port 15740. Everything protocol-related lives in `lib/ptpip/` and has no
-Flutter dependency.
-
-- **Two sockets.** A command socket carries requests, data and responses; an
-  event socket carries camera events. The command handshake returns a
-  connection number that the event handshake must echo.
-- **Pairing by GUID.** The app generates a GUID once and always sends it with
-  the name "Shutterlink". The camera remembers the pair after you confirm it;
-  an unknown GUID is answered with `InitFail`, which the app turns into pairing
-  instructions.
-- **Canon EOS mode.** After `OpenSession` the client sends `SetRemoteMode`
-  (0x9114) and `SetEventMode` (0x9115), then polls `GetEvent` (0x9116).
-- **Listing and thumbnails** use standard `GetObjectHandles`, `GetObjectInfo`
-  and `GetThumb`.
-- **Downloads** use `GetPartialObject` in 1 MiB chunks, which is also what makes
-  resuming possible. libgphoto2 notes that the EOS R rejects larger blocks.
-- **Deleting** uses standard `DeleteObject` (0x100B), once per file, and only
-  when the camera lists it in `DeviceInfo`. A protected file or a locked card
-  is refused with `Object_WriteProtected`, `Store_Read_Only` or
-  `Access_Denied`, reported, not retried. Not yet tried on a real EOS R.
-- **Never `CloseSession`.** libgphoto2 flags the EOS R as failing later
-  operations after it, so the client restores remote mode and closes the
-  sockets instead.
-
-```mermaid
-sequenceDiagram
-    participant App
-    participant Camera
-    App->>Camera: TCP connect :15740 (command socket)
-    App->>Camera: InitCommandRequest (GUID, name)
-    Camera-->>App: InitCommandAck (connection number)
-    App->>Camera: TCP connect :15740 (event socket)
-    App->>Camera: InitEventRequest (connection number)
-    Camera-->>App: InitEventAck
-    App->>Camera: OpenSession, GetDeviceInfo
-    App->>Camera: SetRemoteMode, SetEventMode
-    loop every second
-        App->>Camera: GetEvent
-    end
-    App->>Camera: GetStorageIDs, GetObjectHandles, GetObjectInfo
-    App->>Camera: GetThumb (per visible tile)
-    loop 1 MiB at a time
-        App->>Camera: GetPartialObject(handle, offset)
-        Camera-->>App: Data
-    end
-```
-
-Over USB the same PTP operations travel in USB containers instead of PTP/IP
-packets: through the bulk endpoints on Android (`lib/usb/`), and as whole
-transactions through ImageCaptureCore on iOS.
-
-### Adding a camera model
-
-Vendor behaviour lives in a camera profile: Canon's is in `lib/ptp/canon/`.
-A new maker or model is one profile file plus one entry in
-`lib/ptp/profile_registry.dart`. A camera no profile matches still works
-through the generic PTP profile. The Android USB filter
-(`android/app/src/main/res/xml/usb_device_filter.xml`) matches the PTP
-still-image class only, so any PTP camera offers to open Shutterlink and a
-new maker's camera needs no edit there. It deliberately lists no vendor IDs,
-which would also match that maker's printers and scanners.
-
-## Project structure
-
-```
-bin/probe.dart          Command-line protocol probe
-lib/
-  ptp/                  Transport-independent PTP: session, client, camera profiles
-  ptp/canon/            Canon EOS profile
-  ptpip/                PTP/IP transport in pure Dart (packets, sockets)
-  usb/                  PTP over USB, and the Android and iOS USB bridges
-  data/                 Settings, pairing identity, network binding, SSDP discovery,
-                        download history, photo saving
-  feature/
-    connect/            Camera setup instructions and connection state
-    gallery/            Thumbnail grid, day sections, range selection, thumbnail cache
-    preview/            Full-screen preview
-    download/           Download planning, progress, resume
-    history/            Downloaded-photo marks
-    sessions/           Sessions, clock sync, attribution, QR code, upload status
-    settings/           Download format, camera address, upload and
-                        Sessions setup
-android/app/src/main/kotlin/ch/micheljung/shutterlink/
-                        Wi-Fi network binding, multicast lock, CR3 saving via MediaStore
-ios/Runner/AppDelegate.swift
-                        CR3 saving to Photos as RAW
-test/
-  ptpip/fake_camera.dart  In-process emulated EOS camera (TCP server)
-  screenshots/            Renders the README screenshots
-  e2e/                    Sessions end to end: fake camera → app → local server
-server/                 Self-hostable Sessions gallery server (Dart, shelf)
-tool/                   Wordlist generator
-docs/fdroid/            Copy of the F-Droid build recipe
-fastlane/metadata/      F-Droid store listing
-```
-
-## Testing
-
-```bash
-fvm flutter test               # all tests
-fvm flutter test --coverage    # lcov report in coverage/lcov.info
-(cd server && fvm dart test)   # Sessions server
-```
-
-The PTP/IP layer is tested against `test/ptpip/fake_camera.dart`, a real TCP
-server that emulates the camera: pairing and `InitFail`, listing, chunked
-downloads, packets split across TCP segments, and dropped connections. CI
-requires at least 90% line coverage for `lib/ptpip/`.
-
-The SFTP tests start a local OpenSSH `sshd` and are skipped by default. CI runs
-them with `--tags "sftp || sftp-root" --run-skipped`; `lib/upload/` must reach
-90% line coverage across both runs (`tool/check_coverage.sh`).
-
-To regenerate the screenshots in `docs/screenshots/` (dark theme; add
-`--dart-define=SCREENSHOTS_LIGHT=true --dart-define=SCREENSHOTS_DIR=<dir>` to
-review the light theme elsewhere):
-
-```bash
-fvm flutter test --tags screenshots --run-skipped
-```
-
-The brand assets in `assets/brand/` are rendered from the logo in
-`lib/brand/`. After changing it, regenerate them and the platform icons and
-splash screens:
-
-```bash
-fvm flutter test --tags brand-assets --run-skipped
-fvm dart run flutter_launcher_icons
-fvm dart run flutter_native_splash:create
-```
-
-`flutter_launcher_icons` also rewrites `ios/Runner.xcodeproj/project.pbxproj`;
-discard that change.
-
-## Sessions
-
-Sessions need a server URL and an upload token. Without both, the app reads
-no credentials and starts no uploads; removing the token in Settings stops
-Sessions uploads and keeps the server URL.
-
-You start a Session for each person you photograph. The app
-shows a QR code for `<server>/s/<code>` and a readable Session Code such as
-`apple-banana-cherry-delta`; both work offline. Photos are assigned to the
-Session that was active when they were taken, by the camera's capture time
-corrected for the camera's clock offset. Photos taken while no Session was
-active are never uploaded. The app downloads each Session's JPEGs (or the
-embedded preview of RAW-only shots) into a persistent queue and uploads them
-to your server over any network with internet access, mobile data included. The person opens the link
-to view and download their photos for 30 days.
-
-### Setup
-
-1. Run the server in [`server/`](server/README.md) behind a TLS reverse proxy
-   and give it an upload token.
-2. In the app, open Settings → Sessions, tap **Connect Sessions**, and enter
-   the server URL (`https://`; `http://` only for `localhost`) and the upload
-   token. The app checks the token with the server before saving it.
-3. Connect the camera and pick **QR Session**. The mode starts a Session, or
-   asks whether to resume the last one, and shows its QR code and Session
-   Code. Tap the code to show it large. **Stop Session**, **Start new
-   Session** and **Resume** are on the same screen. Leaving the mode closes
-   the Session window. If the app is killed or the camera is lost with a
-   window open, QR Session comes back with that Session on the next connect,
-   unless more than 30 minutes have passed. Past Sessions are listed under **Past Sessions** in
-   the mode and under Settings → Sessions.
-4. In QR Session the app reads the camera clock and corrects for an offset;
-   the camera's own clock is never changed. If the camera does not report its
-   time, tap **Sync clock** and take a photo. For a camera that is not
-   connected yet, tap **Clock mark** in the Sessions list, take a photo, and
-   confirm it on the next connect.
-
-Photos are collected only in QR Session, and they go only to the Sessions
-server: nothing is saved to the phone or sent to the upload destination. On
-Android the mode keeps working with the screen off, with a QR Session
-notification whose **Stop** goes back to the mode picker.
-
-### v1 limitations
-
-- **One global clock offset, applied retroactively.** If the camera clock
-  changes between the shoot and the next connect (manual change, DST switch on
-  the camera, battery reset), earlier photos are attributed with the new
-  offset. Connect, or do a sync shot, before changing the camera clock.
+- Photos only. Videos are not shown.
 - While the phone is connected to the camera's Wi-Fi, uploads need another
-  network with internet access, such as mobile data.
-- New photos are found within about 2 seconds: the app checks the newest
-  folder on the card every 2 seconds, and at once when the camera reports a
-  change, which the EOS R does for each shot. A RAW shot without a JPEG is
-  held about 3 seconds in case its JPEG follows.
-- Sessions whose server copy expired cannot be resumed; a new Session is
-  offered instead.
-- An open Session only takes photos up to 2 seconds past the phone's current
-  time. With a wrong offset, a photo whose corrected time lies in the future is
-  held back, and once that time passes it goes to whichever Session is open
-  then. The offset is refreshed on every connect.
-
-## Where files are saved
-
-| | JPEG | CR3 |
-|---|---|---|
-| Android | Gallery, album `Shutterlink` (`Pictures/Shutterlink`) | `Download/Shutterlink/` |
-| iOS | Photos | Photos, as the RAW resource of the photo (paired with its JPEG when both are downloaded). If that fails: the app's Documents folder, visible in the Files app |
-
-## Limitations and roadmap
-
-- USB on iOS is experimental and has not been verified on hardware.
-- Photos only; videos are hidden.
-- No Canon CCAPI support.
+  connection to the internet, such as mobile data. QR Sessions use it
+  automatically; for Auto Upload, allow mobile data in its settings.
+- Photos reach a QR Session within a few seconds of the shot.
+- If you change the camera's clock (or it resets), connect once or tap
+  **Sync clock** before shooting the next Session, so photos aren't matched
+  to the wrong person.
 - No remote shooting or live view.
 
 ## Contributing
 
-Issues and pull requests are welcome, especially results from real cameras.
-A packet dump from the probe (`--dump`) helps a lot when something fails.
-Before opening a pull request, run:
-
-```bash
-fvm dart format .
-fvm flutter analyze
-fvm flutter test
-```
+Issues and pull requests are welcome, especially reports from real cameras.
+To build, test or add support for another camera, see
+[docs/development.md](docs/development.md).
 
 ## Acknowledgements
 

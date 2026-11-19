@@ -1,7 +1,8 @@
 # Releasing
 
-Shutterlink is distributed through [F-Droid](https://f-droid.org), a store
-for free and open-source Android apps.
+Shutterlink is distributed as a signed APK on
+[GitHub Releases](https://github.com/micheljung/shutterlink/releases). An
+[F-Droid](https://f-droid.org) build recipe is kept ready for a submission.
 
 ## How F-Droid works
 
@@ -19,7 +20,7 @@ for free and open-source Android apps.
 - The store listing (title, descriptions, changelogs, screenshots) is read
   from [`fastlane/metadata/android/en-US/`](fastlane/metadata/android/en-US).
 
-## Release APKs on Nexus
+## Release APKs on GitHub and Nexus
 
 Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml).
 To build an existing tag, run the workflow manually ("Run workflow") with the
@@ -28,7 +29,11 @@ tag, for example `v1.1.0`.
 It checks that the tag matches the `pubspec.yaml` version, builds the APK,
 signs it with the release key and uploads it to
 `https://repo.micheljung.ch/repository/shutterlink-release/shutterlink-<version>.apk`,
-for example `shutterlink-1.1.0+2.apk`.
+for example `shutterlink-1.1.0+2.apk`. It then creates the GitHub release
+for the tag, titled `Shutterlink <version name>`, with the APK attached and
+`fastlane/metadata/android/en-US/changelogs/<version code>.txt` as its notes
+(generated notes if that file is missing). If the release already exists,
+the APK on it is replaced.
 
 Pushing to any branch builds and signs a preview APK the same way and uploads
 it to
@@ -73,10 +78,11 @@ nobody can pull it: GitHub → the repository's Packages →
 
 ## Submission
 
-Submitted for 1.1.0 in
-[fdroiddata!57043](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/57043).
-Answer the reviewers' questions there. After the merge, the app usually shows
-up in F-Droid within a few days.
+The 1.1.0 submission,
+[fdroiddata!57043](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/57043),
+was closed without being merged, so the app is not on F-Droid. A new
+submission opens a merge request in fdroiddata with the recipe. After the
+merge, the app usually shows up in F-Droid within a few days.
 
 ## Every later release
 
@@ -93,14 +99,16 @@ up in F-Droid within a few days.
    git push origin v1.2.0
    ```
 
-F-Droid's update bot finds the new tag, reads the version from
-`pubspec.yaml` and adds a build to the recipe. Building, signing and
-publishing take a few days. Nothing else to do.
+The tag runs the release workflow, which publishes the signed APK on GitHub
+Releases and Nexus. Once the app is on F-Droid, F-Droid's update bot also
+finds the new tag, reads the version from `pubspec.yaml` and adds a build to
+the recipe.
 
 ## Signing
 
-F-Droid signs with its own key. Switching to our own key later is possible,
-but every existing F-Droid user has to uninstall and reinstall the app once.
+GitHub and Nexus APKs are signed with our release key, F-Droid builds with
+F-Droid's own key. Android refuses to update one with the other, so moving
+between the two means uninstalling and reinstalling the app once.
 
 ## Troubleshooting
 
