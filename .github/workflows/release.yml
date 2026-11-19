@@ -19,6 +19,8 @@ env:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -68,3 +70,19 @@ jobs:
           curl --fail-with-body -u "${{ vars.NEXUS_USERNAME }}:${{ secrets.NEXUS_PASSWORD }}" \
             --upload-file "$RUNNER_TEMP/$APK_NAME" \
             "$NEXUS_REPOSITORY/$APK_NAME"
+      - name: Publish GitHub release
+        if: env.RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n -E 's/^version: (.+)$/\1/p' pubspec.yaml)
+          changelog="fastlane/metadata/android/en-US/changelogs/${version#*+}.txt"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$RUNNER_TEMP/$APK_NAME" --clobber
+          elif [ -f "$changelog" ]; then
+            gh release create "$TAG" "$RUNNER_TEMP/$APK_NAME" --verify-tag \
+              --title "Shutterlink ${version%+*}" --notes-file "$changelog"
+          else
+            gh release create "$TAG" "$RUNNER_TEMP/$APK_NAME" --verify-tag \
+              --title "Shutterlink ${version%+*}" --generate-notes
+          fi

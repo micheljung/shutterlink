@@ -11,6 +11,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,10 +21,16 @@ import 'package:shutterlink/data/camera_host_resolver.dart';
 import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
+import 'package:shutterlink/feature/auto_upload/auto_upload_cubit.dart';
+import 'package:shutterlink/feature/auto_upload/auto_upload_screen.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
+import 'package:shutterlink/feature/mode/mode_back_button.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
+import 'package:shutterlink/feature/mode/operating_mode.dart';
+import 'package:shutterlink/feature/sessions/clock_sync_banner.dart';
+import 'package:shutterlink/feature/sessions/session_qr_sheet.dart';
 import 'package:shutterlink/feature/settings/settings_cards.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
@@ -192,6 +199,71 @@ void main() {
     await _settleWithoutFocus(tester);
     await _capture(tester, 'sessions_setup_token');
   }, variant: _platform);
+
+  testWidgets('QR Session', (tester) async {
+    final client = _ScreenshotCameraClient()..cameraLag = Duration.zero;
+    await _pumpApp(tester, client, configured: true);
+    await _enterMode(tester, OperatingMode.qrSession);
+    await _pumpUntilFound(tester, find.byType(SessionQrImage));
+    await _pumpUntilFound(tester, find.text(ClockSyncBanner.inSyncHint));
+    await _capture(tester, 'qr_session');
+    await _leaveMode(tester);
+  }, variant: _platform);
+
+  testWidgets('Auto Upload', (tester) async {
+    final client = _ScreenshotCameraClient();
+    await _pumpApp(tester, client, configured: true, startUploadQueue: true);
+    await _enterMode(tester, OperatingMode.autoUpload);
+    await _pumpUntilFound(tester, find.text(AutoUploadScreen.skipBacklogLabel));
+    await tester.tap(find.text(AutoUploadScreen.skipBacklogLabel));
+    await tester.pump();
+    // Real ingestion stages files with real IO, which the test zone doesn't
+    // run, so the screen gets the state a few new shots would leave.
+    final cubit = tester
+        .element(find.byType(AutoUploadScreen))
+        .read<AutoUploadCubit>();
+    final shots = [
+      for (final object in client.objects)
+        if (object.kind == CameraObjectKind.jpeg) RecentShot(object, client),
+    ].take(_newShotCount).toList();
+    cubit.emit(
+      cubit.state.copyWith(
+        detected: shots.length,
+        uploaded: shots.length - 1,
+        pending: 1,
+        recent: shots,
+      ),
+    );
+    await tester.pump();
+    await _precacheImages(tester);
+    await _capture(tester, 'auto_upload');
+    await _leaveMode(tester);
+  }, variant: _platform);
+}
+
+const _newShotCount = 3;
+
+const _modePollInterval = Duration(milliseconds: 5);
+const _maxModePolls = 4000;
+
+Future<void> _enterMode(WidgetTester tester, OperatingMode mode) async {
+  await tester.tap(find.text(ConnectScreen.connectLabel));
+  await _pumpUntilFound(tester, find.text(mode.label));
+  await tester.tap(find.text(mode.label));
+}
+
+Future<void> _leaveMode(WidgetTester tester) async {
+  await tester.tap(find.byTooltip(ModeBackButton.tooltip));
+  await _pumpUntilFound(tester, find.text(ModePickerScreen.title));
+}
+
+Future<void> _pumpUntilFound(WidgetTester tester, Finder finder) async {
+  for (var i = 0; i < _maxModePolls && finder.evaluate().isEmpty; i++) {
+    await tester.runAsync(() => Future<void>.delayed(_modePollInterval));
+    await tester.pump();
+  }
+  expect(finder, findsWidgets);
+  await tester.pump(_settleDuration);
 }
 
 const _sessionsServerUrl = 'https://photos.example.com';
@@ -268,6 +340,7 @@ Future<void> _pumpApp(
   FakeCameraClient client, {
   Iterable<String> downloaded = const [],
   bool configured = false,
+  bool startUploadQueue = false,
 }) async {
   tester.view
     ..physicalSize = _logicalSize * _pixelRatio
@@ -319,6 +392,10 @@ Future<void> _pumpApp(
         preset: ProviderPreset.nextcloud,
       ),
     );
+  }
+  if (startUploadQueue) {
+    await tester.runAsync(upload.uploadQueue.start);
+    addTearDown(() => tester.runAsync(upload.uploadQueue.close));
   }
   await tester.pumpWidget(
     RepaintBoundary(
