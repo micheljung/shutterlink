@@ -63,7 +63,7 @@ class SettingsRepository {
 
   Future<void> setOnboardingSeen() => _prefs.setBool(onboardingSeenKey, true);
 
-  /// When QR Session last ran with an open window, while it is running; a
+  /// When Live Share last ran with an open window, while it is running; a
   /// window found open at startup was cut off then, not stopped.
   DateTime? get qrSessionAliveAt {
     final millis = _prefs.getInt(qrSessionAliveAtKey);

@@ -111,7 +111,7 @@ void main() {
     await pumpEventQueue();
   }
 
-  test('entering opens a new Session, runs the service as QR Session and '
+  test('entering opens a new Session, runs the service as Live Share and '
       'holds the Wi-Fi', () async {
     cubit = build();
 
