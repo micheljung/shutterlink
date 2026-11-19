@@ -16,6 +16,7 @@ import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/connect/connect_state.dart';
 import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
+import 'package:shutterlink/feature/intervalometer/intervalometer_cubit.dart';
 import 'package:shutterlink/feature/onboarding/setup_steps.dart';
 import 'package:shutterlink/feature/sessions/active_session_indicator.dart';
 import 'package:shutterlink/feature/sessions/session.dart';
@@ -74,6 +75,7 @@ void main() {
       MultiBlocProvider(
         providers: [
           BlocProvider.value(value: connect),
+          BlocProvider(create: (_) => intervalometerCubitFor(dependencies)),
           BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
           BlocProvider(
             create: (_) => DownloadCubit(
@@ -138,6 +140,7 @@ void main() {
         MultiBlocProvider(
           providers: [
             BlocProvider.value(value: connect),
+            BlocProvider(create: (_) => intervalometerCubitFor(dependencies)),
             BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
             BlocProvider(
               create: (_) => DownloadCubit(
@@ -227,6 +230,7 @@ void main() {
       MultiBlocProvider(
         providers: [
           BlocProvider.value(value: connect),
+          BlocProvider(create: (_) => intervalometerCubitFor(dependencies)),
           BlocProvider(create: (_) => SettingsCubit(dependencies.settings)),
           BlocProvider(
             create: (_) => DownloadCubit(
@@ -294,10 +298,13 @@ void main() {
           status: downloadPaused ? DownloadStatus.paused : DownloadStatus.idle,
         ),
       );
+      final intervalometer = await idleIntervalometerCubit();
+      addTearDown(intervalometer.close);
       await tester.pumpWidget(
         MultiBlocProvider(
           providers: [
             BlocProvider<ConnectCubit>.value(value: connect),
+            BlocProvider<IntervalometerCubit>.value(value: intervalometer),
             BlocProvider<SettingsCubit>.value(value: settings),
             BlocProvider<SessionsCubit>.value(value: sessions),
             BlocProvider<DownloadCubit>.value(value: download),

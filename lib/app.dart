@@ -8,7 +8,9 @@ import 'data/camera_host_resolver.dart';
 import 'data/destination_repository.dart';
 import 'data/download_history.dart';
 import 'data/identity_repository.dart';
+import 'data/intervalometer_repository.dart';
 import 'data/live_service.dart';
+import 'data/live_service_leases.dart';
 import 'data/network_binder.dart';
 import 'data/photo_saver.dart';
 import 'data/settings_repository.dart';
@@ -20,6 +22,8 @@ import 'feature/connect/connect_state.dart';
 import 'feature/download/download_cubit.dart';
 import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/history/download_history_cubit.dart';
+import 'feature/intervalometer/intervalometer_cubit.dart';
+import 'feature/intervalometer/intervalometer_screen.dart';
 import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
 import 'feature/live_share/live_share_cubit.dart';
@@ -34,6 +38,7 @@ import 'feature/settings/settings_cubit.dart';
 import 'feature/settings/upload_settings_cubit.dart';
 import 'feature/settings/upload_setup_screen.dart';
 import 'feature/upload/upload_status_cubit.dart';
+import 'remote/remote_bluetooth.dart';
 import 'upload/upload_queue.dart';
 import 'usb/usb_camera_platform.dart';
 
@@ -55,6 +60,8 @@ class AppDependencies {
     required this.connectionTester,
     required this.sessions,
     required this.claimsUsbVendor,
+    required this.intervalometer,
+    required this.remoteBluetooth,
     this.usb = const NoUsbCameraPlatform(),
     this.phoneCamera = const PhoneCamera(),
   });
@@ -83,6 +90,11 @@ class AppDependencies {
 
   /// Shoots for the demo camera.
   final PhoneCamera phoneCamera;
+
+  final IntervalometerRepository intervalometer;
+
+  /// Finds and fires cameras over their Bluetooth remote.
+  final RemoteBluetooth remoteBluetooth;
 }
 
 class ShutterlinkApp extends StatelessWidget {
@@ -143,7 +155,7 @@ class ShutterlinkApp extends StatelessWidget {
           create: (context) => AutoUploadCubit(
             connect: context.read<ConnectCubit>(),
             modes: context.read<ModeCubit>(),
-            service: dependencies.liveService,
+            service: LiveServiceLeases.of(dependencies.liveService).lease(),
             queue: dependencies.uploadQueue,
             format: () => dependencies.settings.format,
             ingestorFactory: (client, baseline) => LiveIngestor(
@@ -161,7 +173,7 @@ class ShutterlinkApp extends StatelessWidget {
           create: (context) => LiveShareCubit(
             connect: context.read<ConnectCubit>(),
             modes: context.read<ModeCubit>(),
-            service: dependencies.liveService,
+            service: LiveServiceLeases.of(dependencies.liveService).lease(),
             sessions: dependencies.sessions,
             clock: dependencies.sessions.clock,
           ),
@@ -173,6 +185,13 @@ class ShutterlinkApp extends StatelessWidget {
           ),
         ),
         BlocProvider(create: (_) => SessionsUploadCubit(dependencies.sessions)),
+        BlocProvider(
+          create: (_) => IntervalometerCubit(
+            repository: dependencies.intervalometer,
+            bluetooth: dependencies.remoteBluetooth,
+            service: LiveServiceLeases.of(dependencies.liveService).lease(),
+          ),
+        ),
       ],
       child: _SessionsUploads(
         child: MaterialApp(
@@ -285,6 +304,7 @@ class _HomeState extends State<_Home> {
   static const _survivesDrop = {
     UploadSetupScreen.routeName,
     SessionsSetupScreen.routeName,
+    IntervalometerScreen.routeName,
   };
 
   static bool _dropped(ConnectState previous, ConnectState current) =>

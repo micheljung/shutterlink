@@ -26,6 +26,8 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Shutterlink fires your camera over Bluetooth for time-lapses and long exposures.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Shutterlink controls your camera over the USB cable to download photos, and opens the phone's camera to shoot for its demo camera.</string>
 	<key>NSLocalNetworkUsageDescription</key>

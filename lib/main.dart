@@ -13,6 +13,7 @@ import 'data/camera_host_resolver.dart';
 import 'data/destination_repository.dart';
 import 'data/download_history.dart';
 import 'data/identity_repository.dart';
+import 'data/intervalometer_repository.dart';
 import 'data/live_service.dart';
 import 'data/network_binder.dart';
 import 'data/network_status_feed.dart';
@@ -28,6 +29,7 @@ import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/live/ingest_coordinator.dart';
 import 'feature/sessions/sessions_dependencies.dart';
 import 'ptp/profile_registry.dart';
+import 'remote/remote_bluetooth.dart';
 import 'upload/backend_factory.dart';
 import 'upload/media_saver.dart';
 import 'upload/network_policy.dart';
@@ -136,6 +138,10 @@ Future<void> main() async {
         uploadQueue: uploadQueue,
         ingestCoordinator: ingestCoordinator,
         liveService: PlatformLiveService(),
+        intervalometer: IntervalometerRepository(prefs),
+        remoteBluetooth: BleRemoteBluetooth(
+          remoteName: IdentityRepository.friendlyName,
+        ),
         connectionTester: (destination, secrets) =>
             testDestination(destination, secrets, connector: tcpConnector),
       ),

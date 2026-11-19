@@ -102,6 +102,39 @@ account.
 
 <br clear="right">
 
+### Intervalometer over Bluetooth
+
+<img src="docs/screenshots/intervalometer_running.png" width="200" align="right" alt="A running time-lapse: a dial with 15 of 300 shots, the open exposure counting down, and Pause and Stop">
+
+Time-lapses, star trails and long exposures, with the phone as the camera's
+Bluetooth remote. No Wi-Fi connection and no Canon remote needed, and the
+camera's battery lasts far longer than over Wi-Fi.
+
+- **Start from a preset.** Clouds, Sunset, City at night, Stars, Day to
+  night, Star trails or a single long exposure, then adjust anything.
+- **See the rhythm.** Exposure, gap and interval are drawn to scale, and
+  the planner shows how long the shoot takes, when it ends and how long
+  the clip will be at 24, 25, 30 or 60 fps.
+- **Exposures of any length.** On BULB, Shutterlink opens and closes each
+  exposure exactly when planned, without the 30-second limit.
+- **Day to night.** Ramp BULB exposures smoothly in stops over the run.
+- **Video clips** of a set length every interval, too.
+- **A start delay**, so you can step away from the tripod.
+- **Keeps its pace.** Shots are timed from the start, so they never drift.
+  If the camera drops out, the phone buzzes, reconnects by itself, and the
+  run carries on; missed shots are counted, not bunched up.
+- **Pocket the phone.** On Android the run goes on with the screen off,
+  with progress and Stop in the notification.
+- **Try it without a camera** with the demo camera.
+
+Pair the camera once: on the camera, open **Bluetooth function → Remote →
+Pairing**, pick it in Shutterlink and confirm on the camera. Set the drive
+mode to **Self-timer/Remote**. Works with Canon cameras that take the BR-E1
+remote, such as the EOS R, R5, R6, R7, R8, R10, R50, RP, M50, 90D and
+6D Mark II. See [docs/bluetooth-remote.md](docs/bluetooth-remote.md).
+
+<br clear="right">
+
 ### And also
 
 - **Try it without a camera.** **Try without a camera** on the start screen
@@ -205,7 +238,7 @@ or to your Auto Upload destination.
 - If you change the camera's clock (or it resets), connect once or tap
   **Sync clock** before shooting the next Session, so photos aren't matched
   to the wrong person.
-- No remote shooting or live view.
+- No live view. Remote shooting is Bluetooth only, for the intervalometer.
 
 ## Contributing
 
