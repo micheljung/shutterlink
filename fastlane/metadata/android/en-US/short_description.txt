@@ -1,1 +1,1 @@
-Download photos from a Canon EOS R over its Wi-Fi. No cloud, no Canon app.
+Copy photos from your camera over Wi-Fi or USB. Back up to your own server.

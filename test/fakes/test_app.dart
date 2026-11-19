@@ -25,6 +25,7 @@ import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/live/ingest_coordinator.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
+import 'package:shutterlink/feature/sessions/session_code.dart';
 import 'package:shutterlink/feature/sessions/sessions_dependencies.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
@@ -114,9 +115,11 @@ SessionsDependencies testSessionsDependencies(
   IngestCoordinator coordinator, {
   SessionsCredentials? credentials,
   http.Client Function()? newClient,
+  SessionCodeGenerator? codes,
 }) => SessionsDependencies(
   repository: SessionRepository(
     File(p.join(directory.path, SessionRepository.fileName)),
+    codes: codes,
   ),
   seen: SessionSeenStore(
     File(p.join(directory.path, SessionSeenStore.fileName)),
