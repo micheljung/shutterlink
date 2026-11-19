@@ -194,9 +194,14 @@ class UploadSetupCubit extends Cubit<UploadSetupState> {
     ),
   );
 
-  /// Returns null when the server accepted the connection.
-  Future<StorageException?> test() =>
-      _settings.test(state.destination, state.secrets);
+  /// Returns null when the server accepted the connection. A server that
+  /// only redirects http to https gets its https address entered.
+  Future<StorageException?> test() async {
+    final error = await _settings.test(state.destination, state.secrets);
+    if (error is! HttpsUpgradeException) return error;
+    updateInput(state.input.copyWith(server: error.secure.toString()));
+    return _settings.test(state.destination, state.secrets);
+  }
 
   /// Whether saving sends pending photos somewhere else.
   bool get replaces => _settings.replaces(state.destination);

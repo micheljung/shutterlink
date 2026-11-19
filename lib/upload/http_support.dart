@@ -18,6 +18,8 @@ class HttpResult {
   final String body;
 
   bool get ok => status >= 200 && status < 300;
+
+  String? get location => headers.value(HttpHeaders.locationHeader);
 }
 
 /// Sends one request and reads the whole response. Transport failures become
@@ -92,10 +94,20 @@ StorageException networkException(SocketException e, String host) {
   return StorageException('Connection to $host failed: $reason');
 }
 
-/// [what] names the resource, e.g. "The base folder".
-StorageException statusException(int status, String what, {String? detail}) {
+/// [what] names the resource, e.g. "The base folder". Redirects are never
+/// followed, so a [location] is shown for the user to enter instead.
+StorageException statusException(
+  int status,
+  String what, {
+  String? detail,
+  String? location,
+}) {
   final suffix = detail == null || detail.isEmpty ? '' : ' ($detail)';
   return switch (status) {
+    >= 300 && < 400 when location != null => StorageException(
+      'The server redirects to $location. Use that address instead.',
+      retryable: false,
+    ),
     401 => AuthenticationException('Wrong username or password$suffix.'),
     403 when detail == _signatureMismatch => StorageException(
       'Access denied$suffix. Check the secret key, region and endpoint.',

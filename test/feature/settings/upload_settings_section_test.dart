@@ -325,6 +325,34 @@ void main() {
     expect(field('Folder'), findsNothing);
   });
 
+  testWidgets('enters the https address an Immich server redirects to', (
+    tester,
+  ) async {
+    await repository.save(
+      const Destination(
+        type: DestinationType.immich,
+        endpoint: 'http://photos.example.com',
+      ),
+      const DestinationSecrets(password: 'api-key'),
+      preset: ProviderPreset.immich,
+    );
+    await pump(tester);
+    await openEdit(tester);
+    answers.add(HttpsUpgradeException(Uri.parse('https://photos.example.com')));
+
+    await tap(tester, 'Test connection');
+
+    expect(find.text('Connection works.'), findsOneWidget);
+    expect(tested.map((t) => t.$1.endpoint), [
+      'http://photos.example.com',
+      'https://photos.example.com',
+    ]);
+    expect(
+      tester.widget<TextField>(field('Server URL')).controller?.text,
+      'https://photos.example.com',
+    );
+  });
+
   testWidgets('shows the connection check result', (tester) async {
     await pump(tester);
     await openGuide(tester, 'Custom');

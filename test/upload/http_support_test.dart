@@ -37,6 +37,21 @@ void main() {
     expect(statusException(404, 'x'), isNot(isA<AuthenticationException>()));
   });
 
+  test('statusException names where a redirect points', () {
+    final redirect = statusException(
+      308,
+      'x',
+      location: 'https://dav.example/',
+    );
+    expect(
+      redirect.message,
+      'The server redirects to https://dav.example/. '
+      'Use that address instead.',
+    );
+    expect(redirect.retryable, isFalse);
+    expect(statusException(308, 'x').message, contains('308'));
+  });
+
   test('networkException distinguishes DNS failures', () {
     expect(
       networkException(
