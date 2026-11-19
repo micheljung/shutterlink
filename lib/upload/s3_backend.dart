@@ -97,6 +97,7 @@ class S3Backend implements StorageBackend {
     result.status,
     what,
     detail: _errorCode.firstMatch(result.body)?.group(1),
+    location: result.location,
   );
 
   @override

@@ -76,7 +76,9 @@ class WebDavBackend implements StorageBackend {
       body: utf8.encode(_propfindBody),
     );
     if (result.status == 404) return null;
-    if (!result.ok) throw statusException(result.status, what);
+    if (!result.ok) {
+      throw statusException(result.status, what, location: result.location);
+    }
     final match = _contentLength.firstMatch(result.body);
     return match == null ? -1 : int.parse(match.group(1)!);
   }
@@ -132,7 +134,11 @@ class WebDavBackend implements StorageBackend {
       onProgress: onProgress,
     );
     if (!put.ok) {
-      throw statusException(put.status, 'Folder ${target.directory}');
+      throw statusException(
+        put.status,
+        'Folder ${target.directory}',
+        location: put.location,
+      );
     }
 
     final move = await _send(
@@ -149,7 +155,9 @@ class WebDavBackend implements StorageBackend {
       await _deleteQuietly(tempUrl);
       return _occupied(occupied);
     }
-    if (!move.ok) throw statusException(move.status, '$target');
+    if (!move.ok) {
+      throw statusException(move.status, '$target', location: move.location);
+    }
 
     final committed = await _stat(targetUrl, '$target');
     if (committed != request.size) {
@@ -180,7 +188,11 @@ class WebDavBackend implements StorageBackend {
       if (result.status != 201 &&
           result.status != 405 &&
           await _stat(uri, 'Folder $path') != -1) {
-        throw statusException(result.status, 'Folder $path');
+        throw statusException(
+          result.status,
+          'Folder $path',
+          location: result.location,
+        );
       }
       _knownDirectories.add(path);
     }

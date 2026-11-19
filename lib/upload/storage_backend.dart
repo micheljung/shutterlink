@@ -118,6 +118,18 @@ class UntrustedCertificateException extends StorageException {
   final String fingerprint;
 }
 
+/// The server redirects its plain http address to [secure], the same
+/// address over https.
+class HttpsUpgradeException extends StorageException {
+  HttpsUpgradeException(this.secure)
+    : super(
+        'The server redirects to $secure. Use that address instead.',
+        retryable: false,
+      );
+
+  final Uri secure;
+}
+
 /// The SSH host key does not match the stored pin, or none is stored yet.
 class UnknownHostKeyException extends StorageException {
   const UnknownHostKeyException(this.keyType, this.fingerprint)

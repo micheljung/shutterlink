@@ -90,7 +90,14 @@ class ImmichBackend implements StorageBackend {
 
   @override
   Future<void> testConnection() async {
-    final ping = await _send('GET', _url(const ['server', 'ping']));
+    final pingUrl = _url(const ['server', 'ping']);
+    final ping = await _send('GET', pingUrl);
+    final location = ping.location;
+    if (location != null &&
+        pingUrl.isScheme('http') &&
+        pingUrl.resolve(location) == pingUrl.replace(scheme: 'https')) {
+      throw HttpsUpgradeException(endpoint.replace(scheme: 'https'));
+    }
     if (ping.status == HttpStatus.notFound ||
         (ping.ok && _string(ping.body, 'res') != _pong)) {
       throw StorageException(
@@ -103,6 +110,7 @@ class ImmichBackend implements StorageBackend {
         ping.status,
         'The Immich server',
         detail: _message(ping.body),
+        location: location,
       );
     }
     await _isUploaded(_deviceId, _emptySha1);
@@ -208,6 +216,7 @@ class ImmichBackend implements StorageBackend {
       result.status,
       'The Immich API',
       detail: _message(result.body),
+      location: result.location,
     ),
   };
 

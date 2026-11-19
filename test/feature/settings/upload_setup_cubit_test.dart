@@ -6,6 +6,7 @@ import 'package:shutterlink/feature/settings/upload_settings_cubit.dart';
 import 'package:shutterlink/feature/settings/upload_setup_cubit.dart';
 import 'package:shutterlink/upload/destination.dart';
 import 'package:shutterlink/upload/provider_preset.dart';
+import 'package:shutterlink/upload/storage_backend.dart';
 
 void main() {
   const fingerprint = 'AA:BB:CC';
@@ -82,6 +83,29 @@ void main() {
     cubit.setUseKey(false);
     expect(cubit.state.secrets.privateKey, isEmpty);
     expect(cubit.state.secrets.password, 'pw');
+  });
+
+  test('an Immich address that redirects to https is upgraded', () async {
+    final tested = <String>[];
+    final upgrading = UploadSettingsCubit(
+      DestinationRepository(await SharedPreferences.getInstance()),
+      tester: (destination, _) async {
+        tested.add(destination.endpoint);
+        final endpoint = Uri.parse(destination.endpoint);
+        if (endpoint.isScheme('http')) {
+          throw HttpsUpgradeException(endpoint.replace(scheme: 'https'));
+        }
+      },
+    );
+    addTearDown(upgrading.close);
+    final immich = UploadSetupCubit(upgrading)
+      ..choosePreset(ProviderPreset.immich)
+      ..updateInput(const PresetInput(server: 'http://photos.example.com'));
+    addTearDown(immich.close);
+
+    expect(await immich.test(), isNull);
+    expect(tested, ['http://photos.example.com', 'https://photos.example.com']);
+    expect(immich.state.input.server, 'https://photos.example.com');
   });
 
   test('Immich needs only the address and has no folder', () {

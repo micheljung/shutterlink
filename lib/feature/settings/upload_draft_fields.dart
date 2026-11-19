@@ -277,7 +277,7 @@ class _UploadServerFieldsState extends State<UploadServerFields> {
       label: preset == ProviderPreset.custom ? 'Bucket' : 'Bucket name',
       onChanged: (value) => _update((input) => input.copyWith(bucket: value)),
     );
-    return Column(
+    final fields = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ...switch (preset) {
@@ -364,6 +364,11 @@ class _UploadServerFieldsState extends State<UploadServerFields> {
         if (preset != ProviderPreset.custom && state.serverComplete)
           InfoBox('Endpoint: ${state.destination.endpoint}'),
       ],
+    );
+    return BlocListener<UploadSetupCubit, UploadSetupState>(
+      listenWhen: (_, next) => next.input.server != _server.text,
+      listener: (_, next) => _server.text = next.input.server,
+      child: fields,
     );
   }
 }

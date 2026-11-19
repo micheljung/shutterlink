@@ -147,6 +147,45 @@ void main() {
       );
     });
 
+    test('an http address redirected to https asks for the upgrade', () async {
+      server.intercept = (request) => Response(
+        308,
+        headers: {
+          'location':
+              'https://photos.example:${server.port}/immich/api/server/ping',
+        },
+      );
+      await expectLater(
+        backend(path: '/immich/api').testConnection(),
+        throwsA(
+          isA<HttpsUpgradeException>().having(
+            (e) => e.secure,
+            'secure',
+            Uri.parse('https://photos.example:${server.port}/immich'),
+          ),
+        ),
+      );
+      expect(server.requests, ['GET /immich/api/server/ping']);
+    });
+
+    test('a redirect to another server is reported, not followed', () async {
+      server.intercept = (_) =>
+          Response(302, headers: {'location': 'https://login.example/'});
+      await expectLater(
+        backend().testConnection(),
+        throwsA(
+          isA<StorageException>()
+              .having((e) => e, 'type', isNot(isA<HttpsUpgradeException>()))
+              .having(
+                (e) => e.message,
+                'message',
+                contains('https://login.example/'),
+              ),
+        ),
+      );
+      expect(server.requests, ['GET /api/server/ping']);
+    });
+
     test('reports server errors as retryable', () async {
       server.intercept = (_) => Response(503);
       await expectLater(
