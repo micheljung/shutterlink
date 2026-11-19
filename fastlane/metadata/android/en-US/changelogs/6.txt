@@ -1,1 +1,4 @@
 * QR Session is now called Live Share
+* Live Share: copy or open the guest link right on the screen
+* Live Share: guests can delete photos or the whole gallery
+* Immich: switches to https when the server redirects there
