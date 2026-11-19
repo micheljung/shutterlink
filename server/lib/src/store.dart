@@ -631,9 +631,13 @@ class SessionStore {
       });
     }
     await for (final entity in _tmpDir.list()) {
-      final modified = (await entity.stat()).modified;
-      if (now.difference(modified) >= cleanupInterval) {
+      final stat = await entity.stat();
+      if (stat.type == FileSystemEntityType.notFound) continue;
+      if (now.difference(stat.modified) < cleanupInterval) continue;
+      try {
         await entity.delete(recursive: true);
+      } on PathNotFoundException {
+        // A PUT finishing concurrently renamed or removed its tmp file.
       }
     }
   }
