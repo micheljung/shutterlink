@@ -53,6 +53,50 @@ void main() {
     expect(settings.sessionsServerUrl, isNull);
   });
 
+  group('migrateLegacyKeys', () {
+    final aliveAt = DateTime.utc(2026, 11, 19, 10);
+
+    test('moves the Live Share alive time to the new key', () async {
+      SharedPreferences.setMockInitialValues({
+        SettingsRepository.legacyLiveShareAliveAtKey:
+            aliveAt.millisecondsSinceEpoch,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final settings = SettingsRepository(prefs);
+
+      await settings.migrateLegacyKeys();
+
+      expect(settings.liveShareAliveAt, aliveAt);
+      expect(
+        prefs.containsKey(SettingsRepository.legacyLiveShareAliveAtKey),
+        isFalse,
+      );
+    });
+
+    test('keeps a value already under the new key', () async {
+      SharedPreferences.setMockInitialValues({
+        SettingsRepository.legacyLiveShareAliveAtKey: 1,
+        SettingsRepository.liveShareAliveAtKey: aliveAt.millisecondsSinceEpoch,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final settings = SettingsRepository(prefs);
+
+      await settings.migrateLegacyKeys();
+
+      expect(settings.liveShareAliveAt, aliveAt);
+      expect(
+        prefs.containsKey(SettingsRepository.legacyLiveShareAliveAtKey),
+        isFalse,
+      );
+    });
+
+    test('does nothing without the old key', () async {
+      await settings.migrateLegacyKeys();
+
+      expect(settings.liveShareAliveAt, isNull);
+    });
+  });
+
   group('CameraHostResolver', () {
     test('prefers the override', () async {
       await settings.setHostOverride('10.0.0.9');
