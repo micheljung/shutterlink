@@ -88,6 +88,8 @@ account.
 - **Live.** New photos appear in the gallery while the guest watches.
 - **Easy to keep.** Guests swipe and zoom through full-screen photos and
   download single photos or all of them at once.
+- **Guests stay in control.** Guests can delete single photos or their
+  whole gallery.
 - **One gallery per person.** Each Session has its own link and a readable
   code such as `apple-banana-cherry-delta`. Photos taken while no Session is
   running are never shared.

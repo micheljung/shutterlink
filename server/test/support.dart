@@ -75,6 +75,15 @@ Request putRequest(
 
 Request getRequest(String path) => Request('GET', origin.resolve(path));
 
+const Map<String, String> sameOrigin = {'sec-fetch-site': 'same-origin'};
+const Map<String, String> formPost = {
+  ...sameOrigin,
+  'content-type': 'application/x-www-form-urlencoded',
+};
+
+Request postRequest(String path, [Map<String, String> headers = sameOrigin]) =>
+    Request('POST', origin.resolve(path), headers: headers);
+
 Future<List<int>> bodyBytes(Response response) async {
   final builder = BytesBuilder(copy: false);
   await for (final chunk in response.read()) {
@@ -132,6 +141,11 @@ class TestApp {
       call(putRequest(code, keyOf(bytes), bytes));
 
   Future<Response> get(String path) => call(getRequest(path));
+
+  Future<Response> post(
+    String path, [
+    Map<String, String> headers = sameOrigin,
+  ]) => call(postRequest(path, headers));
 
   Future<void> awaitPreviews() => app.previews.idle;
 

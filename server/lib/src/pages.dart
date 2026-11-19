@@ -25,6 +25,9 @@ const List<String> _months = [
 const int _eagerImages = 8;
 const String _pendingText = 'Preparing preview…';
 const String _failedText = 'No preview. Tap to download';
+const String _trashIcon =
+    '<svg aria-hidden="true" focusable="false" viewBox="0 0 32 32">'
+    '<path d="M13 7h6v2h5v2H8V9h5Zm-3 5h12l-1 13H11Z"/></svg>';
 
 String staticUrl(String file) => '/static/$file?v=${webAssets[file]!.version}';
 
@@ -104,7 +107,12 @@ String _tile(String base, StoredPhoto photo, int index) {
             ' data-pswp-width="${preview.width}"'
             ' data-pswp-height="${preview.height}"'
       : '';
-  return '<li><a href="$href" download="$key.jpg"$viewer>$content</a></li>';
+  final delete = _attribute.convert('$base/p/$key/delete');
+  return '<li><a href="$href" download="$key.jpg"$viewer>$content</a>'
+      '<form class="delete" method="post" action="$delete">'
+      '<button type="submit" title="Delete photo" '
+      'aria-label="Delete photo ${index + 1}">$_trashIcon</button>'
+      '</form></li>';
 }
 
 /// [generationId] is `<bootId>-<g>` for the generation in [snapshot].
@@ -144,6 +152,7 @@ List<int> galleryPage(
 <h1>Your photos</h1>
 <p class="expiry">Available until ${formatExpiry(snapshot.expiresAt)}</p>
 <p><a class="button" href="${_attribute.convert('$base/all.zip')}" download>Download all (<span data-count>${snapshot.photos.length}</span>)</a></p>
+<form class="delete-gallery" method="post" action="${_attribute.convert('$base/delete')}"><button type="submit">Delete gallery</button></form>
 <ul class="photos" data-live="${_attribute.convert('$base/photos.json')}" data-events="${_attribute.convert('$base/events')}" data-generation="${_attribute.convert(generationId)}">
 $photos</ul>
 $tipSection''',

@@ -137,6 +137,14 @@ links.
   also checks every 10 s in case a proxy buffers the stream, and if the
   stream can't be opened it polls every 5 s instead. Streams are capped at 64 per Session and
   512 in total; over the cap, guests get the polling fallback.
+- **Deleting.** Anyone with the link can delete a single photo, from its
+  tile or the viewer, or the whole gallery. Deletion is permanent and
+  affects everyone with the link; the page asks for confirmation first
+  (without JavaScript it doesn't). Other open tabs update live. The app
+  needs no change: a deleted photo is never stored again when the app
+  re-uploads it, and uploads to a deleted gallery are treated like uploads
+  to an expired one. Deleting a photo while someone downloads "Download
+  all" can cut that zip short.
 
 ## Reverse proxy
 
@@ -155,6 +163,7 @@ server {
     location /s {
         limit_req zone=gallery burst=60 nodelay;
         proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $http_host;
     }
 
     location ~ ^/s/[^/]+/events$ {
@@ -176,6 +185,9 @@ Keep `client_max_body_size` at or above the 50 MiB photo limit; otherwise
 the proxy rejects large photos with a bare 413, which the app shows as a
 server configuration problem instead of dropping the photo.
 
+- `proxy_set_header Host $http_host` lets the server check that delete requests
+  come from the gallery itself in browsers that don't send
+  `Sec-Fetch-Site`.
 - The `events` location keeps live updates from being buffered. Caddy needs
   no extra configuration: it flushes `text/event-stream` responses
   immediately.
@@ -208,13 +220,20 @@ server configuration problem instead of dropping the photo.
   event-stream responses, so live updates reveal nothing about other
   Sessions.
 - Uploads require `Authorization: Bearer <token>`, compared in constant time.
+- Deleting (`POST /s/<code>/p/<sha256>/delete`, `POST /s/<code>/delete`)
+  needs only the code, like viewing. Cross-site requests get `403`: a
+  `Sec-Fetch-Site` other than `same-origin`, or without it an `Origin` that
+  doesn't match `Host`. Unknown codes and photos get the same answer as a
+  real deletion (`204`, or `303` back to the gallery for a plain form).
 
 ## Retention
 
 A Session expires `--retention-days` after its first upload; the gallery
 shows the date. A cleanup job runs at startup and then hourly. It deletes
 expired Sessions and leaves a tombstone for 60 days, so late uploads to an
-expired Session get `410 Gone` and the app stops retrying them.
+expired Session get `410 Gone` and the app stops retrying them. A gallery
+deleted by a guest leaves the same tombstone. A photo deleted by a guest
+leaves a small marker inside its Session, which goes with the Session.
 
 ## Limits
 
@@ -234,11 +253,11 @@ body.
 
 | Status | Body | Meaning |
 |---|---|---|
-| 201 / 200 | `{"expiresAt": "<UTC ISO-8601>"}` | Stored / already stored |
+| 201 / 200 | `{"expiresAt": "<UTC ISO-8601>"}` | Stored / already stored, or deleted by a guest and not stored again |
 | 401 | `{"error": "unauthorized"}` | Missing or wrong token |
 | 400 | `{"error": "sha_mismatch" \| "bad_code" \| "bad_key"}` | Rejected photo |
 | 413 | `{"error": "too_large" \| "session_full"}` | Over a limit |
-| 410 | `{"error": "expired"}` | The Session was already deleted |
+| 410 | `{"error": "expired"}` | The Session expired or a guest deleted it |
 
 `GET /api/auth` checks the token without uploading: `204` when it is right,
 `401 {"error": "unauthorized"}` when it is missing or wrong. The app uses it
@@ -250,7 +269,9 @@ to check the token during setup.
 
 Going back to an older image or release is safe. Older servers ignore the
 `previews/` directory in each Session and delete it with the Session, and
-browsers' cached previews expire with the Session.
+browsers' cached previews expire with the Session. They also ignore the
+`deleted/` markers, so a photo a guest deleted is stored again if the app
+re-uploads it after the rollback.
 
 ## Development
 

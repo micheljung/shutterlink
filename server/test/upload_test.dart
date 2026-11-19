@@ -111,6 +111,35 @@ void main() {
     expect(await bodyJson(response), {'error': 'expired'});
   });
 
+  test('a photo deleted by a guest is accepted again but stays gone', () async {
+    final kept = photoBytes(1);
+    final deleted = photoBytes(2);
+    await server.upload(codeA, kept);
+    await server.upload(codeA, deleted);
+    await server.post('/s/$codeA/p/${keyOf(deleted)}/delete');
+
+    server.now.now = t0.add(const Duration(days: 1));
+    final response = await server.upload(codeA, deleted);
+    expect(response.statusCode, 200);
+    expect(await bodyJson(response), {
+      'expiresAt': t0.add(defaultRetention).toIso8601String(),
+    });
+    final json = await bodyJson(await server.get('/s/$codeA/photos.json'));
+    expect((json['photos']! as List).map((p) => (p as Map)['key']), [
+      keyOf(kept),
+    ]);
+  });
+
+  test('410 expired after a guest deleted the Session', () async {
+    expect((await server.upload(codeA, photoBytes(1))).statusCode, 201);
+    expect((await server.post('/s/$codeA/delete')).statusCode, 204);
+    for (final bytes in [photoBytes(1), photoBytes(2)]) {
+      final response = await server.upload(codeA, bytes);
+      expect(response.statusCode, 410);
+      expect(await bodyJson(response), {'error': 'expired'});
+    }
+  });
+
   test('concurrent PUTs to one code respect maxSessionBytes', () async {
     final responses = await Future.wait([
       for (var i = 0; i < 6; i++) server.upload(codeA, photoBytes(i, 2000)),

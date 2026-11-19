@@ -192,6 +192,71 @@ void main() {
       await reader.cancel();
     });
 
+    test('rings once when a guest deletes a photo', () async {
+      final deleted = photoBytes(1);
+      await uploadQuietly(codeA, photoBytes(2));
+      await uploadQuietly(codeA, deleted);
+      final reader = await listen(codeA);
+      await reader.read(_opening);
+      final before = currentGeneration(codeA);
+
+      await server.post('/s/$codeA/p/${keyOf(deleted)}/delete');
+      expect(currentGeneration(codeA), greaterThan(before));
+      final expected = '$_opening${_event(bootId(), currentGeneration(codeA))}';
+      expect(await reader.read(expected), expected);
+      expect(await etagOf(codeA), '"${bootId()}-${currentGeneration(codeA)}"');
+      await reader.cancel();
+    });
+
+    test('a Session emptied by deletes looks like an unknown code', () async {
+      final bytes = photoBytes(1);
+      await uploadQuietly(codeA, bytes);
+      final before = (await etagOf(codeA)).replaceAll('"', '');
+
+      await server.post('/s/$codeA/p/${keyOf(bytes)}/delete');
+      expect(server.app.store.generationOf(name(codeA)), isNull);
+
+      final emptied = await listen(codeA, since: before);
+      final unknown = await listen(unknownCode, since: before);
+      tick();
+      final expected = '$_opening$_keepAlive';
+      expect(await emptied.read(expected), expected);
+      expect(await unknown.read(expected), expected);
+      await emptied.cancel();
+      await unknown.cancel();
+
+      for (final ifNoneMatch in [null, '"$before"']) {
+        Request json(String code) => Request(
+          'GET',
+          origin.resolve('/s/$code/photos.json'),
+          headers: {'if-none-match': ?ifNoneMatch},
+        );
+        final a = await server.call(json(codeA));
+        final b = await server.call(json(unknownCode));
+        expect(a.statusCode, b.statusCode);
+        expect(a.headers, b.headers);
+        expect(await bodyText(a), await bodyText(b));
+      }
+    });
+
+    test('a deleted Session rings once, then turns into an unknown-code '
+        'stream', () async {
+      await uploadQuietly(codeA, photoBytes(1));
+      final reader = await listen(codeA);
+      await reader.read(_opening);
+      final generation = currentGeneration(codeA);
+
+      await server.post('/s/$codeA/delete');
+      expect(server.app.store.generationOf(name(codeA)), isNull);
+      server.app.doorbell.ring(name(codeA), generation + 1);
+      tick();
+      final expected =
+          '$_opening${_event(bootId(), generation + 1)}$_keepAlive';
+      expect(await reader.read(expected), expected);
+      expect(reader.done, isFalse);
+      await reader.cancel();
+    });
+
     test('rings for a preview made by the queue', () async {
       final reader = await listen(codeA);
       await server.upload(codeA, jpegBytes(1));

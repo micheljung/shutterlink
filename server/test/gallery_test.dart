@@ -290,6 +290,176 @@ void main() {
       }
     });
 
+    test('a deleted photo is gone from every view', () async {
+      final kept = jpegBytes(1);
+      final deleted = jpegBytes(2);
+      await server.upload(codeA, kept);
+      await server.upload(codeA, deleted);
+      await server.awaitPreviews();
+      final key = keyOf(deleted);
+      final page = await bodyText(await server.get('/s/$codeA'));
+      final urls = [
+        for (final kind in ['p', 't', 'v']) '/s/$codeA/$kind/$key.jpg',
+      ];
+      for (final url in urls) {
+        expect(page, contains('"$url"'));
+        final before = await server.get(url);
+        expect(before.headers['content-type'], 'image/jpeg', reason: url);
+        await bodyBytes(before);
+      }
+
+      final response = await server.post('/s/$codeA/p/$key/delete');
+      expect(response.statusCode, 204);
+      expect(await bodyBytes(response), isEmpty);
+
+      for (final url in urls) {
+        final after = await server.get(url);
+        expect(after.headers['content-type'], startsWith('text/html'));
+        expect(await bodyBytes(after), onTheirWayPage, reason: url);
+      }
+      final json = await bodyJson(await server.get('/s/$codeA/photos.json'));
+      expect(json['count'], 1);
+      expect((json['photos']! as List).map((p) => (p as Map)['key']), [
+        keyOf(kept),
+      ]);
+      final zip = await server.get('/s/$codeA/all.zip');
+      final archive = ZipDecoder().decodeBytes(await bodyBytes(zip));
+      expect(archive.files.map((f) => f.name), ['${keyOf(kept)}.jpg']);
+      final after = await bodyText(await server.get('/s/$codeA'));
+      expect(after, isNot(contains(key)));
+    });
+
+    test('a deleted Session looks like an unknown code', () async {
+      final bytes = jpegBytes(1);
+      await server.upload(codeA, bytes);
+      await server.awaitPreviews();
+      final sessionDir = _sessionDir(server, codeA);
+
+      final response = await server.post('/s/$codeA/delete');
+      expect(response.statusCode, 204);
+      expect(await sessionDir.exists(), isFalse);
+      expect(
+        await File(
+          p.join(
+            server.dataDir.path,
+            'tombstones',
+            server.app.store.dirName(codeA),
+          ),
+        ).exists(),
+        isTrue,
+      );
+
+      for (final path in [
+        '',
+        '/p/${keyOf(bytes)}.jpg',
+        '/t/${keyOf(bytes)}.jpg',
+        '/all.zip',
+      ]) {
+        expect(
+          await bodyBytes(await server.get('/s/$codeA$path')),
+          onTheirWayPage,
+          reason: path,
+        );
+      }
+      for (final path in ['/photos.json', '/events']) {
+        final deleted = await server.get('/s/$codeA$path');
+        final unknown = await server.get('/s/$unknownCode$path');
+        expect(deleted.statusCode, unknown.statusCode, reason: path);
+        expect(deleted.headers, unknown.headers, reason: path);
+        if (path == '/events') {
+          expect(await deleted.read().first, await unknown.read().first);
+        } else {
+          expect(await bodyText(deleted), await bodyText(unknown));
+        }
+      }
+    });
+
+    test('deleting unknown codes and photos answers like success', () async {
+      final bytes = photoBytes(1);
+      await server.upload(codeA, bytes);
+      final key = keyOf(bytes);
+      final otherKey = keyOf(photoBytes(2));
+      for (final path in [
+        '/s/$unknownCode/p/$key/delete',
+        '/s/$codeA/p/$otherKey/delete',
+        '/s/$codeA/p/not-a-key/delete',
+        '/s/not-a-code/p/$key/delete',
+        '/s/$unknownCode/delete',
+        '/s/not-a-code/delete',
+      ]) {
+        final response = await server.post(path);
+        expect(response.statusCode, 204, reason: path);
+        expect(await bodyBytes(response), isEmpty, reason: path);
+      }
+      for (final path in [
+        '/s/$unknownCode/p/$key/delete',
+        '/s/$codeA/p/$otherKey/delete',
+        '/s/$unknownCode/delete',
+      ]) {
+        final response = await server.post(path, formPost);
+        expect(response.statusCode, 303, reason: path);
+        expect(
+          response.headers['location'],
+          path.startsWith('/s/$codeA') ? '/s/$codeA' : '/s/$unknownCode',
+        );
+      }
+      expect(await server.app.store.photo(codeA, key), isNotNull);
+      expect(
+        await Directory(p.join(server.dataDir.path, 'tombstones'))
+            .list()
+            .isEmpty,
+        isTrue,
+      );
+    });
+
+    test('the delete forms work without JS', () async {
+      final kept = photoBytes(1);
+      final deleted = photoBytes(2);
+      await server.upload(codeA, kept);
+      await server.upload(codeA, deleted);
+
+      final photo = await server.post(
+        '/s/Apple-Banana-Cherry-Delta/p/${keyOf(deleted)}/delete',
+        formPost,
+      );
+      expect(photo.statusCode, 303);
+      expect(photo.headers['location'], '/s/$codeA');
+      expect(await server.app.store.photo(codeA, keyOf(deleted)), isNull);
+
+      final session = await server.post('/s/$codeA/delete', formPost);
+      expect(session.statusCode, 303);
+      expect(session.headers['location'], '/s/$codeA');
+      expect(await bodyBytes(await server.get('/s/$codeA')), onTheirWayPage);
+    });
+
+    test('the page has a delete form per tile and one for all', () async {
+      final bytes = jpegBytes(1);
+      await server.upload(codeA, bytes);
+      await server.awaitPreviews();
+      final page = await bodyText(await server.get('/s/$codeA'));
+      final base = '/s/$codeA';
+      final key = keyOf(bytes);
+      expect(
+        page,
+        matches(
+          RegExp(
+            '<li><a href="$base/p/$key.jpg"[^>]*>.*?</a>'
+            '<form class="delete" method="post" action="$base/p/$key/delete">'
+            '<button type="submit" title="Delete photo" '
+            'aria-label="Delete photo 1"><svg aria-hidden="true"[^<]*<path[^>]*>'
+            '</svg></button></form></li>',
+          ),
+        ),
+      );
+      expect(
+        page,
+        contains(
+          '<form class="delete-gallery" method="post" action="$base/delete">'
+          '<button type="submit">Delete gallery</button></form>',
+        ),
+      );
+    });
+
     test('previews are cached until the Session expires', () async {
       final bytes = jpegBytes(1);
       await server.upload(codeA, bytes);
