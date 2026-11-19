@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shutterlink: photos from your camera to your phone and your own server</title>
+<meta name="description" content="Open-source app that copies photos off your camera over Wi-Fi or USB, backs them up to your own server as you shoot, and lets guests get their pictures in a web gallery.">
+<style>
+:root { color-scheme: light dark; --fg: #1d2330; --bg: #fff; --muted: #566074; --accent: #1565c0; --card: #f3f5f9; }
+@media (prefers-color-scheme: dark) { :root { --fg: #e8ebf2; --bg: #12151c; --muted: #9aa4b8; --accent: #7db4ff; --card: #1c212c; } }
+* { box-sizing: border-box; }
+body { margin: 0; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--fg); background: var(--bg); }
+main, header, footer { max-width: 62rem; margin: 0 auto; padding: 0 1.25rem; }
+header { padding-top: 3rem; padding-bottom: 1rem; }
+h1 { font-size: 2.4rem; margin: 0 0 .5rem; }
+h2 { margin-top: 3rem; }
+a { color: var(--accent); }
+.lead { font-size: 1.2rem; color: var(--muted); max-width: 40rem; }
+.button { display: inline-block; padding: .7rem 1.2rem; border-radius: .5rem; background: var(--accent); color: var(--bg); text-decoration: none; font-weight: 600; margin: .25rem .5rem .25rem 0; }
+.button.secondary { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+.reel { width: 100%; max-width: 22rem; height: auto; border-radius: 1rem; display: block; margin: 2rem 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; }
+.card { background: var(--card); border-radius: .75rem; padding: 1rem 1.25rem; }
+.card h3 { margin-top: 0; }
+.shots { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: .5rem; }
+.shots img { height: 28rem; width: auto; border-radius: .75rem; flex: none; }
+table { border-collapse: collapse; width: 100%; }
+td, th { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid var(--card); vertical-align: top; }
+footer { margin-top: 4rem; padding-bottom: 3rem; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Shutterlink</h1>
+  <p class="lead">Get the photos off your camera and onto your phone, back them up to your own server as you shoot, and hand the people you photograph their pictures before they walk away.</p>
+  <p>
+    <a class="button" href="https://github.com/micheljung/shutterlink/releases/latest">Download for Android</a>
+    <a class="button secondary" href="https://github.com/micheljung/shutterlink">Source code</a>
+  </p>
+  <!-- media files are produced by the launch-assets branch and copied in by pages.yml -->
+  <video class="reel" autoplay loop muted playsinline poster="screenshots/connect.png">
+    <source src="media/demo.webm" type="video/webm">
+    <source src="media/demo.mp4" type="video/mp4">
+    <img src="media/demo.gif" alt="Short walkthrough of Shutterlink: connecting to a camera, browsing its photos and starting Live Share">
+  </video>
+</header>
+
+<main>
+  <h2>What it does</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Browse &amp; Download</h3>
+      <p>See everything on the memory card, select a range or a whole day, and save the shots to your phone. RAW and JPEG, exactly as the camera wrote them. Interrupted? Resume where it stopped.</p>
+    </div>
+    <div class="card">
+      <h3>Auto Upload</h3>
+      <p>Every new shot goes straight to your own storage while you keep shooting: Nextcloud, WebDAV, S3-compatible storage, SFTP or Immich. It keeps going in the background.</p>
+    </div>
+    <div class="card">
+      <h3>Live Share</h3>
+      <p>Let the person you photograph scan a QR code. Their photos appear in their own web gallery seconds after you take them. No app and no account for them.</p>
+    </div>
+  </div>
+
+  <h2>Screenshots</h2>
+  <div class="shots">
+    <img src="screenshots/connect.png" alt="Start screen with a Connect button and the setup guide" loading="lazy">
+    <img src="screenshots/modes.png" alt="Mode picker with Browse and Download, Auto Upload and Live Share" loading="lazy">
+    <img src="screenshots/gallery.png" alt="Photos on the camera's card grouped by day" loading="lazy">
+    <img src="screenshots/live_share.png" alt="Live Share with a QR code and a Session Code" loading="lazy">
+    <img src="screenshots/guest_gallery.png" alt="The guest's web gallery with a Download all button" loading="lazy">
+  </div>
+
+  <h2>Private by design</h2>
+  <p>No account, no cloud you don't own, no ads, no analytics, no crash reporting. Your photos go only where you point them. Open source under the MIT license. Read the <a href="privacy/">privacy policy</a>.</p>
+
+  <h2>Supported cameras</h2>
+  <table>
+    <tr><th>Camera</th><th>Status</th></tr>
+    <tr><td>Canon EOS R</td><td>Works on Android, over Wi-Fi and USB</td></tr>
+    <tr><td>Other Canon EOS cameras with Wi-Fi "Remote control (EOS Utility)"</td><td>Not tried yet; likely to work</td></tr>
+    <tr><td>Other cameras with PTP / "PC connection" USB mode</td><td>Basic support: JPEG only</td></tr>
+  </table>
+  <p>The iPhone app builds but has not been tried with a real camera yet. Reports from other cameras are very welcome: <a href="https://github.com/micheljung/shutterlink/issues">open an issue</a>.</p>
+
+  <h2>Get it</h2>
+  <ul>
+    <li><a href="https://github.com/micheljung/shutterlink/releases/latest">GitHub Releases</a>: signed APK. Obtainium can follow the repository for updates.</li>
+    <li>Google Play and F-Droid: planned. Builds from different stores are signed with different keys, so switching between them means uninstalling once.</li>
+    <li><a href="https://github.com/micheljung/shutterlink#set-up-live-share">Self-host the Sessions server</a> for Live Share: a small Docker image, <code>ghcr.io/micheljung/shutterlink-server</code>.</li>
+  </ul>
+</main>
+
+<footer>
+  <p>Shutterlink is made by Michel Jung. <a href="privacy/">Privacy policy</a> &middot; <a href="mailto:shutterlink@micheljung.ch">shutterlink@micheljung.ch</a> &middot; <a href="https://github.com/micheljung/shutterlink/blob/main/LICENSE">MIT license</a></p>
+  <p>Shutterlink is not affiliated with or endorsed by Canon Inc. Canon and EOS are trademarks of Canon Inc.</p>
+</footer>
+</body>
+</html>
