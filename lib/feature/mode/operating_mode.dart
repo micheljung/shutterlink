@@ -12,7 +12,7 @@ enum OperatingMode {
     'Upload new shots to your destination while you shoot.',
     Icons.cloud_upload_outlined,
   ),
-  qrSession(
+  liveShare(
     'Live Share',
     'Share new shots with guests through a QR code.',
     Icons.qr_code_2,

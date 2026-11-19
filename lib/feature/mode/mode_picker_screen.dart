@@ -37,7 +37,7 @@ class ModePickerScreen extends StatelessWidget {
           await navigator.push(UploadSetupScreen.route(uploads));
           if (uploads.state.destination == null) return;
         }
-      case OperatingMode.qrSession:
+      case OperatingMode.liveShare:
         final settings = context.read<SettingsCubit>();
         if (!settings.state.sessionsConfigured) {
           await navigator.push(SessionsSetupScreen.route());
@@ -221,7 +221,7 @@ class _ModeCard extends StatelessWidget {
         colors.secondaryContainer,
         colors.onSecondaryContainer,
       ),
-      OperatingMode.qrSession => (
+      OperatingMode.liveShare => (
         colors.tertiaryContainer,
         colors.onTertiaryContainer,
       ),

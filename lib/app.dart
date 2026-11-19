@@ -22,10 +22,10 @@ import 'feature/gallery/thumbnail_cache.dart';
 import 'feature/history/download_history_cubit.dart';
 import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
+import 'feature/live_share/live_share_cubit.dart';
 import 'feature/mode/mode_cubit.dart';
 import 'feature/mode/mode_host.dart';
 import 'feature/onboarding/onboarding_screen.dart';
-import 'feature/qr_session/qr_session_cubit.dart';
 import 'feature/sessions/sessions_cubit.dart';
 import 'feature/sessions/sessions_dependencies.dart';
 import 'feature/sessions/sessions_upload_cubit.dart';
@@ -158,7 +158,7 @@ class ShutterlinkApp extends StatelessWidget {
         ),
         BlocProvider(
           lazy: false,
-          create: (context) => QrSessionCubit(
+          create: (context) => LiveShareCubit(
             connect: context.read<ConnectCubit>(),
             modes: context.read<ModeCubit>(),
             service: dependencies.liveService,

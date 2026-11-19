@@ -18,8 +18,8 @@ import '../sessions/session.dart';
 import '../sessions/session_collector.dart';
 import '../sessions/sessions_dependencies.dart';
 
-class QrSessionState extends Equatable {
-  const QrSessionState({
+class LiveShareState extends Equatable {
+  const LiveShareState({
     this.active = false,
     this.resumable,
     this.client,
@@ -63,14 +63,14 @@ class QrSessionState extends Equatable {
 /// open Session window go to the Sessions server only, in the background
 /// too. Leaving the mode closes the window. The connection itself belongs
 /// to [ConnectCubit].
-class QrSessionCubit extends Cubit<QrSessionState> {
-  QrSessionCubit({
+class LiveShareCubit extends Cubit<LiveShareState> {
+  LiveShareCubit({
     required this._connect,
     required this._modes,
     required this._service,
     required this._sessions,
     this._clock = const Clock(),
-  }) : super(const QrSessionState()) {
+  }) : super(const LiveShareState()) {
     _cleanup = _closeLeftoverWindow();
     _modeSubscription = _modes.stream.listen(_onMode);
     _connectSubscription = _connect.stream.listen(_onConnection);
@@ -166,7 +166,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   Future<void> _closeLeftoverWindow() async {
     try {
       final active = await _repository.active();
-      final aliveAt = _settings.qrSessionAliveAt;
+      final aliveAt = _settings.liveShareAliveAt;
       if (active != null) {
         if (aliveAt != null) {
           _interruptedId = active.id;
@@ -174,7 +174,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
         }
         await _repository.stop();
       }
-      if (aliveAt != null) await _settings.setQrSessionAliveAt(null);
+      if (aliveAt != null) await _settings.setLiveShareAliveAt(null);
     } on Exception {
       // Leaving the mode stops it again.
     }
@@ -192,18 +192,18 @@ class QrSessionCubit extends Cubit<QrSessionState> {
       _interruptedAt = null;
       return;
     }
-    if (connection is ConnectConnected) _modes.select(OperatingMode.qrSession);
+    if (connection is ConnectConnected) _modes.select(OperatingMode.liveShare);
   }
 
   DateTime _now() => _clock.now().toUtc();
 
   void _onMode(OperatingMode? mode) {
     if (isClosed) return;
-    if (mode == OperatingMode.qrSession && !_active) {
+    if (mode == OperatingMode.liveShare && !_active) {
       unawaited(_enter());
-    } else if (mode != OperatingMode.qrSession && _active) {
+    } else if (mode != OperatingMode.liveShare && _active) {
       _leaving = _leave(connectionLost: _modes.leftForConnectionLoss);
-    } else if (mode != null && mode != OperatingMode.qrSession) {
+    } else if (mode != null && mode != OperatingMode.liveShare) {
       _interruptedId = null;
       _interruptedAt = null;
     }
@@ -217,7 +217,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
   Future<void> _enter() async {
     _active = true;
     final session = ++_session;
-    _emit(const QrSessionState(active: true));
+    _emit(const LiveShareState(active: true));
     await _cleanup;
     await _leaving;
     if (!_isCurrent(session)) return;
@@ -266,7 +266,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
       final open = await _repository.active() != null;
       if (!_active) return;
       if (!open && state.autoResumed) _emit(_copy(autoResumed: false));
-      await _settings.setQrSessionAliveAt(open ? _now() : null);
+      await _settings.setLiveShareAliveAt(open ? _now() : null);
     }),
   );
 
@@ -308,7 +308,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     unawaited(_windowChanges?.cancel());
     _windowChanges = null;
     final detaching = _detach();
-    _emit(const QrSessionState());
+    _emit(const LiveShareState());
     unawaited(_connect.setHoldNetwork(false));
     if (connectionLost) {
       final active = await _activeSession();
@@ -318,7 +318,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
       _interruptedId = null;
       _interruptedAt = null;
     }
-    await _guardRepository(() => _settings.setQrSessionAliveAt(null));
+    await _guardRepository(() => _settings.setLiveShareAliveAt(null));
     await _guard(_repository.stop);
     await _guard(_service.stop);
     await detaching;
@@ -436,13 +436,13 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     }
   }
 
-  QrSessionState _copy({
+  LiveShareState _copy({
     Session? Function()? resumable,
     CameraClient? Function()? client,
     ClockSyncCubit? Function()? clockSync,
     bool? notificationsDenied,
     bool? autoResumed,
-  }) => QrSessionState(
+  }) => LiveShareState(
     active: state.active,
     resumable: resumable == null ? state.resumable : resumable(),
     client: client == null ? state.client : client(),
@@ -451,7 +451,7 @@ class QrSessionCubit extends Cubit<QrSessionState> {
     autoResumed: autoResumed ?? state.autoResumed,
   );
 
-  void _emit(QrSessionState next) {
+  void _emit(LiveShareState next) {
     if (!isClosed) emit(next);
   }
 

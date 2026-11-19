@@ -23,7 +23,7 @@ class SettingsRepository {
   static const hostOverrideKey = 'camera_host_override';
   static const sessionsServerUrlKey = 'sessions_server_url';
   static const onboardingSeenKey = 'onboarding_seen';
-  static const qrSessionAliveAtKey = 'qr_session_alive_at';
+  static const liveShareAliveAtKey = 'qr_session_alive_at';
   static const defaultFormat = DownloadFormat.jpeg;
 
   final SharedPreferences _prefs;
@@ -65,20 +65,20 @@ class SettingsRepository {
 
   /// When Live Share last ran with an open window, while it is running; a
   /// window found open at startup was cut off then, not stopped.
-  DateTime? get qrSessionAliveAt {
-    final millis = _prefs.getInt(qrSessionAliveAtKey);
+  DateTime? get liveShareAliveAt {
+    final millis = _prefs.getInt(liveShareAliveAtKey);
     return millis == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
   }
 
-  Future<void> setQrSessionAliveAt(DateTime? aliveAt) async {
+  Future<void> setLiveShareAliveAt(DateTime? aliveAt) async {
     if (aliveAt == null) {
-      if (_prefs.containsKey(qrSessionAliveAtKey)) {
-        await _prefs.remove(qrSessionAliveAtKey);
+      if (_prefs.containsKey(liveShareAliveAtKey)) {
+        await _prefs.remove(liveShareAliveAtKey);
       }
       return;
     }
-    await _prefs.setInt(qrSessionAliveAtKey, aliveAt.millisecondsSinceEpoch);
+    await _prefs.setInt(liveShareAliveAtKey, aliveAt.millisecondsSinceEpoch);
   }
 }

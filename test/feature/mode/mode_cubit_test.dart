@@ -12,8 +12,8 @@ void main() {
     act: (cubit) => cubit
       ..select(OperatingMode.browse)
       ..leave()
-      ..select(OperatingMode.qrSession),
-    expect: () => [OperatingMode.browse, null, OperatingMode.qrSession],
+      ..select(OperatingMode.liveShare),
+    expect: () => [OperatingMode.browse, null, OperatingMode.liveShare],
   );
 
   group('connection loss', () {
@@ -24,7 +24,7 @@ void main() {
 
     test('a lost camera ends the mode, and says so', () {
       modes
-        ..select(OperatingMode.qrSession)
+        ..select(OperatingMode.liveShare)
         ..connectionLost();
 
       expect(modes.state, isNull);
@@ -35,7 +35,7 @@ void main() {
       'a mode the user left stays left by the user when the camera goes',
       () {
         modes
-          ..select(OperatingMode.qrSession)
+          ..select(OperatingMode.liveShare)
           ..leave()
           ..connectionLost();
 
@@ -45,7 +45,7 @@ void main() {
 
     test('picking a mode clears a connection loss', () {
       modes
-        ..select(OperatingMode.qrSession)
+        ..select(OperatingMode.liveShare)
         ..connectionLost()
         ..select(OperatingMode.browse);
 

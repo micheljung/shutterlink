@@ -16,12 +16,12 @@ import '../sessions/sessions_state.dart';
 import '../settings/settings_cubit.dart';
 import '../spacing.dart';
 import '../upload/upload_status_indicator.dart';
-import 'qr_session_cubit.dart';
+import 'live_share_cubit.dart';
 
 /// Live Share: guests scan the code, and every shot taken while the
 /// window is open goes to their gallery on the Sessions server.
-class QrSessionScreen extends StatelessWidget {
-  const QrSessionScreen({super.key});
+class LiveShareScreen extends StatelessWidget {
+  const LiveShareScreen({super.key});
 
   static const sessionsTooltip = 'Past Sessions';
   static const notificationsHint =
@@ -46,7 +46,7 @@ class QrSessionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<QrSessionCubit>().state;
+    final state = context.watch<LiveShareCubit>().state;
     final client = state.client;
     final clockSync = state.clockSync;
     final resumable = state.resumable;
@@ -54,7 +54,7 @@ class QrSessionScreen extends StatelessWidget {
       floatingActionButton: DemoShutterButton(client: client),
       appBar: AppBar(
         leading: const ModeBackButton(),
-        title: Text(OperatingMode.qrSession.label),
+        title: Text(OperatingMode.liveShare.label),
         actions: [
           const UploadStatusIndicator(),
           IconButton(
@@ -183,7 +183,7 @@ class _ResumePrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cubit = context.read<QrSessionCubit>();
+    final cubit = context.read<LiveShareCubit>();
     final theme = Theme.of(context);
     return _Panel(
       child: Column(
@@ -191,13 +191,13 @@ class _ResumePrompt extends StatelessWidget {
           _Badge(icon: Icons.history, color: theme.colorScheme.primary),
           const SizedBox(height: Spacing.large),
           Text(
-            QrSessionScreen.resumeQuestion(session.code),
+            LiveShareScreen.resumeQuestion(session.code),
             style: theme.textTheme.titleLarge,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: Spacing.small),
           Text(
-            QrSessionScreen.resumeHint,
+            LiveShareScreen.resumeHint,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -209,7 +209,7 @@ class _ResumePrompt extends StatelessWidget {
             child: FilledButton.icon(
               icon: const Icon(Icons.play_arrow),
               onPressed: cubit.resume,
-              label: const Text(QrSessionScreen.resumeLabel),
+              label: const Text(LiveShareScreen.resumeLabel),
             ),
           ),
           const SizedBox(height: Spacing.small),
@@ -217,7 +217,7 @@ class _ResumePrompt extends StatelessWidget {
             width: double.infinity,
             child: TextButton(
               onPressed: cubit.startNew,
-              child: const Text(QrSessionScreen.startLabel),
+              child: const Text(LiveShareScreen.startLabel),
             ),
           ),
         ],
@@ -284,7 +284,7 @@ class _OpenWindow extends StatelessWidget {
               ),
               const SizedBox(width: Spacing.small),
               Text(
-                QrSessionScreen.openTitle,
+                LiveShareScreen.openTitle,
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: online,
                   fontWeight: FontWeight.w700,
@@ -294,7 +294,7 @@ class _OpenWindow extends StatelessWidget {
           ),
           const SizedBox(height: Spacing.small),
           Text(
-            QrSessionScreen.openHint,
+            LiveShareScreen.openHint,
             style: theme.textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
@@ -333,7 +333,7 @@ class _OpenWindow extends StatelessWidget {
           ],
           const SizedBox(height: Spacing.medium),
           Text(
-            QrSessionScreen.openDetail,
+            LiveShareScreen.openDetail,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colors.onSurfaceVariant,
             ),
@@ -348,7 +348,7 @@ class _OpenWindow extends StatelessWidget {
                 side: BorderSide(color: colors.error.withValues(alpha: 0.5)),
               ),
               icon: const Icon(Icons.stop_circle_outlined),
-              label: const Text(QrSessionScreen.stopLabel),
+              label: const Text(LiveShareScreen.stopLabel),
               onPressed: context.read<SessionsCubit>().stop,
             ),
           ),
@@ -403,13 +403,13 @@ class _ClosedWindow extends StatelessWidget {
           _Badge(icon: Icons.qr_code_2, color: theme.colorScheme.primary),
           const SizedBox(height: Spacing.large),
           Text(
-            QrSessionScreen.closedText,
+            LiveShareScreen.closedText,
             style: theme.textTheme.titleLarge,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: Spacing.small),
           Text(
-            QrSessionScreen.closedHint,
+            LiveShareScreen.closedHint,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -421,7 +421,7 @@ class _ClosedWindow extends StatelessWidget {
             child: FilledButton.icon(
               icon: const Icon(Icons.qr_code),
               onPressed: sessions.start,
-              label: const Text(QrSessionScreen.startLabel),
+              label: const Text(LiveShareScreen.startLabel),
             ),
           ),
           if (resumable) ...[
@@ -431,7 +431,7 @@ class _ClosedWindow extends StatelessWidget {
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.play_arrow),
                 onPressed: () => sessions.reactivate(last),
-                label: Text('${QrSessionScreen.resumeLabel} ${last.code}'),
+                label: Text('${LiveShareScreen.resumeLabel} ${last.code}'),
               ),
             ),
           ],

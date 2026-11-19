@@ -8,9 +8,9 @@ import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_state.dart';
+import 'package:shutterlink/feature/live_share/live_share_cubit.dart';
 import 'package:shutterlink/feature/mode/mode_cubit.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
-import 'package:shutterlink/feature/qr_session/qr_session_cubit.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
 
 import '../../fakes/fake_camera_client.dart';
@@ -48,9 +48,9 @@ void main() {
   late List<Object> connections;
   late ConnectCubit connect;
   late ModeCubit modes;
-  late QrSessionCubit cubit;
+  late LiveShareCubit cubit;
 
-  QrSessionCubit build() => QrSessionCubit(
+  LiveShareCubit build() => LiveShareCubit(
     connect: connect,
     modes: modes,
     service: service,
@@ -60,7 +60,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    root = await Directory.systemTemp.createTemp('qr_session');
+    root = await Directory.systemTemp.createTemp('live_share');
     sessions = SpySessionsDependencies(
       SettingsRepository(prefs),
       root,
@@ -102,7 +102,7 @@ void main() {
   Future<bool> windowOpen() async => await sessions.repository.active() != null;
 
   Future<void> enter() async {
-    modes.select(OperatingMode.qrSession);
+    modes.select(OperatingMode.liveShare);
     await _until(() => cubit.state.client == first);
   }
 
@@ -120,7 +120,7 @@ void main() {
     expect(await windowOpen(), isTrue);
     expect(cubit.state.resumable, isNull);
     expect(service.calls.first, 'start');
-    expect(service.statuses.first.title, QrSessionCubit.title);
+    expect(service.statuses.first.title, LiveShareCubit.title);
     expect(binder.calls, contains('acquire connect hold'));
     expect(sessions.clockSyncs, 1);
     expect(sessions.collectors, 1);
@@ -136,7 +136,7 @@ void main() {
     );
 
     expect(service.calls.last, 'stop');
-    expect(cubit.state, const QrSessionState());
+    expect(cubit.state, const LiveShareState());
   });
 
   test(
@@ -326,7 +326,7 @@ void main() {
 
       modes
         ..leave()
-        ..select(OperatingMode.qrSession);
+        ..select(OperatingMode.liveShare);
 
       await _until(() => cubit.state.resumable?.id == open?.id);
       expect(await windowOpen(), isFalse);
@@ -338,12 +338,12 @@ void main() {
     test('a window cut off by a killed app is resumed once the camera is '
         'connected', () async {
       final cut = await sessions.repository.start();
-      await sessions.settings.setQrSessionAliveAt(DateTime.now());
+      await sessions.settings.setLiveShareAliveAt(DateTime.now());
 
       cubit = build();
 
       await _until(() => cubit.state.client == first);
-      expect(modes.state, OperatingMode.qrSession);
+      expect(modes.state, OperatingMode.liveShare);
       final active = await sessions.repository.active();
       expect(active?.id, cut.id);
       expect(active?.intervals, hasLength(2));
@@ -353,7 +353,7 @@ void main() {
 
     test('stopping the resumed Session drops the resumed notice', () async {
       await sessions.repository.start();
-      await sessions.settings.setQrSessionAliveAt(DateTime.now());
+      await sessions.settings.setLiveShareAliveAt(DateTime.now());
       cubit = build();
       await _until(() => cubit.state.autoResumed);
 
@@ -367,12 +367,12 @@ void main() {
       () async {
         final cut = await sessions.repository.start();
         await sessions.repository.markExpired(cut.code);
-        await sessions.settings.setQrSessionAliveAt(DateTime.now());
+        await sessions.settings.setLiveShareAliveAt(DateTime.now());
 
         cubit = build();
 
         await _until(() => cubit.state.client == first);
-        expect(modes.state, OperatingMode.qrSession);
+        expect(modes.state, OperatingMode.liveShare);
         expect(await windowOpen(), isFalse);
         expect(cubit.state.resumable, isNull);
         expect(cubit.state.autoResumed, isFalse);
@@ -381,9 +381,9 @@ void main() {
 
     test('a window cut off long ago is closed and not resumed', () async {
       await sessions.repository.start();
-      await sessions.settings.setQrSessionAliveAt(
+      await sessions.settings.setLiveShareAliveAt(
         DateTime.now().subtract(
-          QrSessionCubit.autoResumeWithin + const Duration(minutes: 1),
+          LiveShareCubit.autoResumeWithin + const Duration(minutes: 1),
         ),
       );
 
@@ -391,7 +391,7 @@ void main() {
 
       await _until(
         () async =>
-            !await windowOpen() && sessions.settings.qrSessionAliveAt == null,
+            !await windowOpen() && sessions.settings.liveShareAliveAt == null,
       );
       expect(modes.state, isNull);
     });
@@ -403,24 +403,24 @@ void main() {
         await sessions.repository.stop();
         cubit = build();
         await enter();
-        expect(sessions.settings.qrSessionAliveAt, isNull);
+        expect(sessions.settings.liveShareAliveAt, isNull);
 
         await cubit.resume();
 
-        await _until(() => sessions.settings.qrSessionAliveAt != null);
+        await _until(() => sessions.settings.liveShareAliveAt != null);
       },
     );
 
     test('a window the user stopped is not resumed after a kill', () async {
       cubit = build();
       await enter();
-      await _until(() async => sessions.settings.qrSessionAliveAt != null);
+      await _until(() async => sessions.settings.liveShareAliveAt != null);
       modes.leave();
       await _until(
         () async => !await windowOpen() && service.calls.last == 'stop',
       );
 
-      expect(sessions.settings.qrSessionAliveAt, isNull);
+      expect(sessions.settings.liveShareAliveAt, isNull);
     });
 
     test('a mode ended by a lost camera comes back with its Session on the '
@@ -438,7 +438,7 @@ void main() {
       await fire();
 
       await _until(() => cubit.state.client == second);
-      expect(modes.state, OperatingMode.qrSession);
+      expect(modes.state, OperatingMode.liveShare);
       expect((await sessions.repository.active())?.id, open?.id);
       expect(cubit.state.autoResumed, isTrue);
     });

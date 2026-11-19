@@ -110,9 +110,9 @@ void main() {
     await tester.tap(find.text(ConnectScreen.connectLabel));
     await pumpUntil(
       tester,
-      () => find.text(OperatingMode.qrSession.label).evaluate().isNotEmpty,
+      () => find.text(OperatingMode.liveShare.label).evaluate().isNotEmpty,
     );
-    await tester.tap(find.text(OperatingMode.qrSession.label));
+    await tester.tap(find.text(OperatingMode.liveShare.label));
     await pumpUntil(
       tester,
       () => find.textContaining('90 s behind').evaluate().isNotEmpty,
