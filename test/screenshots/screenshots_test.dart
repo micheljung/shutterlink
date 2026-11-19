@@ -203,10 +203,10 @@ void main() {
   testWidgets('Live Share', (tester) async {
     final client = _ScreenshotCameraClient()..cameraLag = Duration.zero;
     await _pumpApp(tester, client, configured: true);
-    await _enterMode(tester, OperatingMode.qrSession);
+    await _enterMode(tester, OperatingMode.liveShare);
     await _pumpUntilFound(tester, find.byType(SessionQrImage));
     await _pumpUntilFound(tester, find.text(ClockSyncBanner.inSyncHint));
-    await _capture(tester, 'qr_session');
+    await _capture(tester, 'live_share');
     await _leaveMode(tester);
   }, variant: _platform);
 

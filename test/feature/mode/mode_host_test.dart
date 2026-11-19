@@ -15,13 +15,13 @@ import 'package:shutterlink/feature/download/download_cubit.dart';
 import 'package:shutterlink/feature/download/download_state.dart';
 import 'package:shutterlink/feature/gallery/gallery_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
+import 'package:shutterlink/feature/live_share/live_share_screen.dart';
 import 'package:shutterlink/feature/mode/mode_back_button.dart';
 import 'package:shutterlink/feature/mode/mode_cubit.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/mode/reconnecting_overlay.dart';
 import 'package:shutterlink/feature/preview/preview_screen.dart';
-import 'package:shutterlink/feature/qr_session/qr_session_screen.dart';
 import 'package:shutterlink/feature/sessions/sessions_upload_cubit.dart';
 import 'package:shutterlink/feature/settings/sessions_setup_screen.dart';
 import 'package:shutterlink/feature/settings/settings_cubit.dart';
@@ -261,7 +261,7 @@ void main() {
         'stays on the picker', (tester) async {
       await pumpPicker(tester);
 
-      await pick(tester, OperatingMode.qrSession);
+      await pick(tester, OperatingMode.liveShare);
       expect(find.byType(SessionsSetupScreen), findsOneWidget);
       await back(tester);
 
@@ -277,7 +277,7 @@ void main() {
       await pumpApp(tester);
       await tester.tap(connectScreenButton);
       await tester.pumpAndSettle();
-      await pick(tester, OperatingMode.qrSession);
+      await pick(tester, OperatingMode.liveShare);
       await tester.enterText(
         find.byType(TextField).first,
         'https://photos.example.com',
@@ -298,7 +298,7 @@ void main() {
       tester,
     ) async {
       await pumpPicker(tester);
-      await pick(tester, OperatingMode.qrSession);
+      await pick(tester, OperatingMode.liveShare);
 
       final settings = home(tester).read<SettingsCubit>();
       await tester.runAsync(() async {
@@ -309,11 +309,11 @@ void main() {
       tester.state<NavigatorState>(find.byType(Navigator).first).pop();
       await pumpUntil(
         tester,
-        () => find.text(QrSessionScreen.stopLabel).evaluate().isNotEmpty,
+        () => find.text(LiveShareScreen.stopLabel).evaluate().isNotEmpty,
       );
 
-      expect(find.byType(QrSessionScreen), findsOneWidget);
-      expect(find.text(OperatingMode.qrSession.label), findsOneWidget);
+      expect(find.byType(LiveShareScreen), findsOneWidget);
+      expect(find.text(OperatingMode.liveShare.label), findsOneWidget);
       await tester.tap(find.byTooltip(ModeBackButton.tooltip));
       await pumpUntil(
         tester,
@@ -360,7 +360,7 @@ void main() {
 
     expect(sessions.collectors, 0);
     expect(sessions.clockSyncs, 0);
-    expect(find.byTooltip(QrSessionScreen.sessionsTooltip), findsNothing);
+    expect(find.byTooltip(LiveShareScreen.sessionsTooltip), findsNothing);
   });
 
   group('the upload indicator', () {

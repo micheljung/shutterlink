@@ -10,7 +10,7 @@ import '../connect/connect_state.dart';
 import '../download/download_cubit.dart';
 import '../download/download_state.dart';
 import '../gallery/gallery_screen.dart';
-import '../qr_session/qr_session_screen.dart';
+import '../live_share/live_share_screen.dart';
 import 'attached_client.dart';
 import 'mode_cubit.dart';
 import 'mode_picker_screen.dart';
@@ -138,7 +138,7 @@ class _ModeHostState extends State<ModeHost> {
           client: client,
         ),
         OperatingMode.autoUpload => const AutoUploadScreen(),
-        OperatingMode.qrSession => const QrSessionScreen(),
+        OperatingMode.liveShare => const LiveShareScreen(),
       };
 }
 

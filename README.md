@@ -78,7 +78,7 @@ with no cable and no sorting afterwards.
 
 ### Live Share: everyone gets their photos
 
-<img src="docs/screenshots/qr_session.png" width="200" align="right" alt="Live Share with a QR code and a Session Code for the person being photographed">
+<img src="docs/screenshots/live_share.png" width="200" align="right" alt="Live Share with a QR code and a Session Code for the person being photographed">
 
 Shooting portraits at an event, a party or on the street? Start Live Share,
 let the person scan the code, and every photo you take of them shows up in

@@ -380,14 +380,14 @@ void main() {
   });
 
   test("another mode's stop request is left to that mode", () async {
-    modes.select(OperatingMode.qrSession);
+    modes.select(OperatingMode.liveShare);
     await pumpEventQueue();
 
     service.stopController.add(null);
     await pumpEventQueue();
 
     expect(service.calls, isEmpty);
-    expect(modes.state, OperatingMode.qrSession);
+    expect(modes.state, OperatingMode.liveShare);
   });
 
   test('runs without notifications and says so', () async {
