@@ -148,8 +148,14 @@ void main() {
       find.text(sessionPageUrl(_serverUrl, open.code).toString()),
       findsOneWidget,
     );
+    expect(find.byType(SessionUrlField), findsOneWidget);
+    expect(find.byType(SessionOpenButton), findsOneWidget);
     expect(find.text(open.code), findsOneWidget);
     expect(find.text(QrSessionScreen.openTitle), findsOneWidget);
+
+    await tester.tap(find.byType(PrettyQrView));
+    await tester.pumpAndSettle();
+    expect(find.byType(SessionQrSheet), findsNothing);
 
     await tester.ensureVisible(find.text(QrSessionScreen.stopLabel));
     await tester.pumpAndSettle();

@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../brand/brand_theme.dart';
@@ -32,9 +31,6 @@ class QrSessionScreen extends StatelessWidget {
   static const openTitle = 'Session open';
   static const openHint = 'Guests scan this code to see your photos.';
   static const openDetail = 'Every photo you take now goes to their gallery.';
-  static const enlargeTooltip = 'Show large';
-  static const copyTooltip = 'Copy link';
-  static const copiedText = 'Link copied.';
   static const closedText = 'No Session open';
   static const closedHint =
       'Start a Session to show guests a QR code. Only photos taken while a '
@@ -323,8 +319,17 @@ class _OpenWindow extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           if (serverUrl != null) ...[
-            const SizedBox(height: Spacing.extraSmall),
-            _Link(url: sessionPageUrl(serverUrl, session.code).toString()),
+            const SizedBox(height: Spacing.medium),
+            SessionUrlField(
+              url: sessionPageUrl(serverUrl, session.code).toString(),
+            ),
+            const SizedBox(height: Spacing.medium),
+            SizedBox(
+              width: double.infinity,
+              child: SessionOpenButton(
+                url: sessionPageUrl(serverUrl, session.code),
+              ),
+            ),
           ],
           const SizedBox(height: Spacing.medium),
           Text(
@@ -353,7 +358,7 @@ class _OpenWindow extends StatelessWidget {
   }
 }
 
-/// The QR code on white, which scanners need; a tap shows it large.
+/// The QR code on white, which scanners need.
 class _QrTile extends StatelessWidget {
   const _QrTile({
     required this.serverUrl,
@@ -369,60 +374,16 @@ class _QrTile extends StatelessWidget {
   static const _radius = 20.0;
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-    message: QrSessionScreen.enlargeTooltip,
-    child: Material(
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(_radius),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () =>
-            SessionQrSheet.show(context, serverUrl: serverUrl, code: code),
-        child: Padding(
-          padding: const EdgeInsets.all(padding),
-          child: SessionQrImage(serverUrl: serverUrl, code: code, size: size),
-        ),
-      ),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(padding),
+      child: SessionQrImage(serverUrl: serverUrl, code: code, size: size),
     ),
   );
-}
-
-class _Link extends StatelessWidget {
-  const _Link({required this.url});
-
-  final String url;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Flexible(
-          child: SelectableText(
-            url,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-        IconButton(
-          tooltip: QrSessionScreen.copyTooltip,
-          visualDensity: VisualDensity.compact,
-          iconSize: Spacing.large + Spacing.tiny,
-          icon: const Icon(Icons.copy),
-          onPressed: () async {
-            await Clipboard.setData(ClipboardData(text: url));
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text(QrSessionScreen.copiedText)),
-            );
-          },
-        ),
-      ],
-    );
-  }
 }
 
 class _ClosedWindow extends StatelessWidget {

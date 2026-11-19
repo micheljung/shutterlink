@@ -68,8 +68,6 @@ class SessionQrCode extends StatelessWidget {
   });
 
   static const defaultSize = 240.0;
-  static const openLabel = 'Open in browser';
-  static const openFailedText = 'No browser could open the link.';
 
   final String serverUrl;
   final String code;
@@ -101,11 +99,7 @@ class SessionQrCode extends StatelessWidget {
           child: SessionUrlField(url: url.toString()),
         ),
         const SizedBox(height: Spacing.medium),
-        FilledButton.tonalIcon(
-          icon: const Icon(Icons.open_in_browser),
-          label: const Text(openLabel),
-          onPressed: () => _open(context, url),
-        ),
+        SessionOpenButton(url: url),
       ],
     );
   }
@@ -136,18 +130,33 @@ class SessionQrImage extends StatelessWidget {
   );
 }
 
-Future<void> _open(BuildContext context, Uri url) async {
-  final messenger = ScaffoldMessenger.of(context);
-  bool opened;
-  try {
-    opened = await launchUrl(url, mode: LaunchMode.externalApplication);
-  } on PlatformException {
-    opened = false;
-  }
-  if (!opened) {
-    messenger.showSnackBar(
-      const SnackBar(content: Text(SessionQrCode.openFailedText)),
-    );
+/// Opens a Session's page in the browser.
+class SessionOpenButton extends StatelessWidget {
+  const SessionOpenButton({super.key, required this.url});
+
+  static const label = 'Open in browser';
+  static const failedText = 'No browser could open the link.';
+
+  final Uri url;
+
+  @override
+  Widget build(BuildContext context) => FilledButton.tonalIcon(
+    icon: const Icon(Icons.open_in_browser),
+    label: const Text(label),
+    onPressed: () => _open(context),
+  );
+
+  Future<void> _open(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    bool opened;
+    try {
+      opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    } on PlatformException {
+      opened = false;
+    }
+    if (!opened) {
+      messenger.showSnackBar(const SnackBar(content: Text(failedText)));
+    }
   }
 }
 

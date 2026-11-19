@@ -145,7 +145,7 @@ void main() {
         find.byWidgetPredicate((widget) => widget is ButtonStyleButton),
         findsOneWidget,
       );
-      await tester.tap(find.text(SessionQrCode.openLabel));
+      await tester.tap(find.text(SessionOpenButton.label));
       await tester.pump();
 
       expect(launcher.launched, [
@@ -159,10 +159,10 @@ void main() {
       addTearDown(() => UrlLauncherPlatform.instance = previous);
       await pumpCode(tester);
 
-      await tester.tap(find.text(SessionQrCode.openLabel));
+      await tester.tap(find.text(SessionOpenButton.label));
       await tester.pump();
 
-      expect(find.text(SessionQrCode.openFailedText), findsOneWidget);
+      expect(find.text(SessionOpenButton.failedText), findsOneWidget);
     });
   });
 }
