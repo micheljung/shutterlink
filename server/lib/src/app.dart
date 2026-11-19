@@ -39,6 +39,10 @@ const String _noCache = 'no-cache';
 const String _immutable = 'public, max-age=31536000, immutable';
 const String _lastEventIdHeader = 'last-event-id';
 const String _bufferOutputKey = 'shelf.io.buffer_output';
+const String _secFetchSiteHeader = 'sec-fetch-site';
+const String _originHeader = 'origin';
+const String _sameOrigin = 'same-origin';
+const String _formType = 'application/x-www-form-urlencoded';
 final List<int> _emptyPhotos = utf8.encode(
   jsonEncode({'count': 0, 'photos': <Object>[]}),
 );
@@ -135,6 +139,8 @@ class ShutterlinkApp {
     ..get('/s', _redirect)
     ..get('/s/<code>', _gallery)
     ..get('/s/<code>/p/<file>', _photo)
+    ..post('/s/<code>/p/<key>/delete', _deletePhoto)
+    ..post('/s/<code>/delete', _deleteSession)
     ..get(
       '/s/<code>/t/<file>',
       (Request request, String code, String file) =>
@@ -281,6 +287,54 @@ class ShutterlinkApp {
     if (!file.endsWith(_photoSuffix)) return null;
     final key = file.substring(0, file.length - _photoSuffix.length);
     return isValidKey(key) ? key : null;
+  }
+
+  /// `Origin` is the fallback for browsers without `Sec-Fetch-Site`. It is
+  /// not checked otherwise, because a reverse proxy may rewrite `Host`.
+  static bool _isSameOrigin(Request request) {
+    final site = request.headers[_secFetchSiteHeader];
+    if (site != null) return site == _sameOrigin;
+    final origin = request.headers[_originHeader];
+    if (origin == null) return true;
+    return Uri.tryParse(origin)?.authority ==
+        request.headers[HttpHeaders.hostHeader];
+  }
+
+  /// The same answer for every code and key, so deleting cannot be used to
+  /// probe for Sessions.
+  static Response _deleted(Request request, String? code) {
+    final contentType = request.headers[HttpHeaders.contentTypeHeader];
+    if (contentType == null || !contentType.startsWith(_formType)) {
+      return Response(HttpStatus.noContent);
+    }
+    return Response(
+      HttpStatus.seeOther,
+      headers: {
+        HttpHeaders.locationHeader: code == null
+            ? '/'
+            : '/s/${Uri.encodeComponent(code)}',
+      },
+    );
+  }
+
+  Future<Response> _deletePhoto(
+    Request request,
+    String code,
+    String key,
+  ) async {
+    if (!_isSameOrigin(request)) return Response(HttpStatus.forbidden);
+    final normalized = normalizeCode(code);
+    if (normalized != null && isValidKey(key)) {
+      await store.deletePhoto(normalized, key);
+    }
+    return _deleted(request, normalized);
+  }
+
+  Future<Response> _deleteSession(Request request, String code) async {
+    if (!_isSameOrigin(request)) return Response(HttpStatus.forbidden);
+    final normalized = normalizeCode(code);
+    if (normalized != null) await store.deleteSession(normalized);
+    return _deleted(request, normalized);
   }
 
   bool _isLive(DateTime expiresAt) => store.clock.now().isBefore(expiresAt);

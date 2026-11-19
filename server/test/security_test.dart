@@ -155,6 +155,14 @@ void main() {
           _noStore,
         ),
         (await server.call(Request('POST', origin.resolve('/'))), _noStore),
+        (await server.post('/s/$unknownCode/delete'), _noStore),
+        (await server.post('/s/$unknownCode/delete', formPost), _noStore),
+        (
+          await server.post('/s/$codeA/p/$key/delete', {
+            'sec-fetch-site': 'cross-site',
+          }),
+          _noStore,
+        ),
         (await server.get('/s/$codeA/events'), _noStore),
         (
           await server.call(
@@ -219,6 +227,89 @@ void main() {
           expect(content, isNot(contains(codeA)));
         }
       }
+    });
+  });
+
+  group('delete requests', () {
+    setUp(() async => server = await TestApp.open());
+
+    Future<bool> photoExists(List<int> bytes) async =>
+        await server.app.store.photo(codeA, keyOf(bytes)) != null;
+
+    test('only same-origin requests delete', () async {
+      final bytes = photoBytes(1);
+      await server.upload(codeA, bytes);
+      final key = keyOf(bytes);
+      for (final headers in <Map<String, String>>[
+        {'sec-fetch-site': 'cross-site'},
+        {'sec-fetch-site': 'same-site'},
+        {'sec-fetch-site': 'none'},
+        {...formPost, 'sec-fetch-site': 'cross-site'},
+        {'origin': 'https://evil.example', 'host': 'photos.example.com'},
+        {'origin': 'null', 'host': 'photos.example.com'},
+        {'origin': 'https://photos.example.com'},
+      ]) {
+        for (final path in [
+          '/s/$codeA/p/$key/delete',
+          '/s/$codeA/delete',
+          '/s/$unknownCode/delete',
+        ]) {
+          final response = await server.post(path, headers);
+          expect(response.statusCode, 403, reason: '$path $headers');
+          expect(await bodyBytes(response), isEmpty);
+        }
+      }
+      expect(await photoExists(bytes), isTrue);
+    });
+
+    test('same-origin and header-less requests delete', () async {
+      final photos = [for (var i = 0; i < 4; i++) photoBytes(i)];
+      for (final bytes in photos) {
+        await server.upload(codeA, bytes);
+      }
+      for (final (bytes, headers) in <(List<int>, Map<String, String>)>[
+        (photos[0], sameOrigin),
+        (photos[1], const {}),
+        (
+          photos[2],
+          {
+            'origin': 'https://photos.example.com',
+            'host': 'photos.example.com',
+          },
+        ),
+        (
+          photos[3],
+          {
+            'sec-fetch-site': 'same-origin',
+            'origin': 'https://photos.example.com',
+            'host': '127.0.0.1:8080',
+          },
+        ),
+      ]) {
+        final response = await server.post(
+          '/s/$codeA/p/${keyOf(bytes)}/delete',
+          headers,
+        );
+        expect(response.statusCode, 204, reason: '$headers');
+        expect(await photoExists(bytes), isFalse, reason: '$headers');
+      }
+    });
+
+    test('GET and HEAD never delete', () async {
+      final bytes = photoBytes(1);
+      await server.upload(codeA, bytes);
+      for (final method in ['GET', 'HEAD']) {
+        for (final path in [
+          '/s/$codeA/p/${keyOf(bytes)}/delete',
+          '/s/$codeA/delete',
+        ]) {
+          final response = await server.call(
+            Request(method, origin.resolve(path), headers: sameOrigin),
+          );
+          expect(await bodyBytes(response), onTheirWayPage, reason: path);
+        }
+      }
+      expect(await photoExists(bytes), isTrue);
     });
   });
 

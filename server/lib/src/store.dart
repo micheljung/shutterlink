@@ -231,6 +231,10 @@ class SessionStore {
   File _createdFile(String name) =>
       File(p.join(_sessionDir(name).path, 'created'));
   File _tombstone(String name) => File(p.join(_root.path, 'tombstones', name));
+  Directory _deletedDir(String name) =>
+      Directory(p.join(_sessionDir(name).path, 'deleted'));
+  File _photoTombstone(String name, String key) =>
+      File(p.join(_deletedDir(name).path, key));
   Directory get _tmpDir => Directory(p.join(_root.path, 'tmp'));
 
   /// A fresh path in `tmp/`, which the cleanup sweeps if it is left behind.
@@ -292,7 +296,7 @@ class SessionStore {
       return const PutResult.failed(PutError.expired);
     }
     final target = photoFile(name, key);
-    if (await target.exists()) {
+    if (await target.exists() || await _photoTombstone(name, key).exists()) {
       final created = await _readCreated(name) ?? await _writeCreated(name);
       return PutResult.stored(
         created: false,
@@ -427,6 +431,14 @@ class SessionStore {
     return _readCreated(name);
   }
 
+  /// Like [_previewTarget], but also null once the photo was deleted, so a
+  /// late job never brings its previews back.
+  Future<DateTime?> _photoPreviewTarget(String name, String key) async {
+    final created = await _previewTarget(name);
+    if (created == null || !await photoFile(name, key).exists()) return null;
+    return created;
+  }
+
   Future<void> _deleteAttempts(String name, String key) async {
     await for (final entity in _previewsDir(name).list()) {
       final base = p.basename(entity.path);
@@ -470,7 +482,7 @@ class SessionStore {
   /// from a clean shutdown. False if the Session is gone.
   Future<bool> writeAttempt(String name, String key) {
     return _mutex.run(name, () async {
-      if (await _previewTarget(name) == null) return false;
+      if (await _photoPreviewTarget(name, key) == null) return false;
       await _previewsDir(name).create();
       await _attemptFile(name, key).create();
       return true;
@@ -485,7 +497,7 @@ class SessionStore {
   }
 
   /// Moves finished renditions into place. Writes nothing, and deletes the
-  /// tmp files, if the Session is gone.
+  /// tmp files, if the Session or the photo is gone.
   Future<bool> commitPreview(
     String name,
     String key,
@@ -496,7 +508,7 @@ class SessionStore {
   ) {
     return _mutex.run(name, () async {
       try {
-        final created = await _previewTarget(name);
+        final created = await _photoPreviewTarget(name, key);
         if (created == null) return false;
         await _previewsDir(name).create();
         await thumbnail.rename(
@@ -519,7 +531,7 @@ class SessionStore {
 
   Future<bool> markFailed(String name, String key) {
     return _mutex.run(name, () async {
-      final created = await _previewTarget(name);
+      final created = await _photoPreviewTarget(name, key);
       if (created == null) return false;
       await _previewsDir(name).create();
       await File(p.join(_previewsDir(name).path, '$key$_failedSuffix'))
@@ -535,7 +547,7 @@ class SessionStore {
     return _mutex.run(name, () async {
       if (!isValidKey(key) || await _tombstone(name).exists()) return null;
       final created = await _readCreated(name);
-      if (created == null) return null;
+      if (created == null || !await photoFile(name, key).exists()) return null;
       final file = _previewPath(name, key, kind);
       final stat = await file.stat();
       if (stat.type != FileSystemEntityType.file) return null;
@@ -552,6 +564,45 @@ class SessionStore {
       final stat = await file.stat();
       if (stat.type != FileSystemEntityType.file) return null;
       return StoredPhoto(key, file, stat.size, stat.modified);
+    });
+  }
+
+  /// Deletes the photo and its previews for good: a later upload of the
+  /// same photo is accepted but not stored. Does nothing for an unknown
+  /// Session or photo.
+  Future<void> deletePhoto(String code, String key) {
+    final name = dirName(code);
+    return _mutex.run(name, () async {
+      if (!isValidKey(key) || await _tombstone(name).exists()) return;
+      final created = await _readCreated(name);
+      final original = photoFile(name, key);
+      if (created == null || !await original.exists()) return;
+      await _deletedDir(name).create();
+      await _photoTombstone(name, key).create();
+      final previews = _previewsDir(name);
+      if (await previews.exists()) {
+        await for (final entity in previews.list()) {
+          if (p.basename(entity.path).startsWith('$key.')) {
+            await entity.delete();
+          }
+        }
+      }
+      await original.delete();
+      _bump(name, created);
+      if ((await _listPhotos(name)).isEmpty) _generation.remove(name);
+    });
+  }
+
+  /// Deletes the Session like an expiry, even while a zip is being built.
+  /// Does nothing for an unknown Session.
+  Future<void> deleteSession(String code) {
+    final name = dirName(code);
+    return _mutex.run(name, () async {
+      if (await _tombstone(name).exists()) return;
+      if (!await _sessionDir(name).exists()) return;
+      final created = await _readCreated(name);
+      if (created != null) _bump(name, created);
+      await _removeSession(name, clock.now().toUtc());
     });
   }
 
@@ -580,22 +631,31 @@ class SessionStore {
       });
     }
     await for (final entity in _tmpDir.list()) {
-      if (entity is! File) continue;
       final modified = (await entity.stat()).modified;
       if (now.difference(modified) >= cleanupInterval) {
-        await entity.delete();
+        await entity.delete(recursive: true);
       }
     }
   }
 
   Future<void> _purgeSession(String name, DateTime now) async {
     if (zipLocks.isLocked(name)) return;
+    if (!await _sessionDir(name).exists()) return;
     final created =
         await _readCreated(name) ??
         (await _sessionDir(name).stat()).modified.toUtc();
     if (now.isBefore(created.add(retention))) return;
+    await _removeSession(name, now);
+  }
+
+  /// Moves the Session into a fresh directory in `tmp/` first, so it
+  /// disappears at once and a crash mid-delete leaves only what the tmp
+  /// sweep removes. The fresh directory keeps the sweep away meanwhile.
+  Future<void> _removeSession(String name, DateTime now) async {
     await _tombstone(name).writeAsString(now.toIso8601String(), flush: true);
-    await _sessionDir(name).delete(recursive: true);
+    final holder = await Directory(newTmpFile().path).create();
+    await _sessionDir(name).rename(p.join(holder.path, name));
+    await holder.delete(recursive: true);
     _generation.remove(name);
     try {
       onPurged?.call(name);

@@ -645,6 +645,36 @@ void main() {
       expect(await view.exists(), isFalse);
     });
 
+    test('a photo deleted during generation gets no previews', () async {
+      final store = await openStore();
+      final release = Completer<void>();
+      final queue = queueFor(store, holdWorkers: release.future);
+      await put(store, codeA, small);
+      await put(store, codeA, baseline);
+      final name = store.dirName(codeA);
+      final key = keyOf(small);
+      await store.deletePhoto(codeA, key);
+      release.complete();
+      await queue.idle;
+
+      final thumbnail = store.newTmpFile()..writeAsBytesSync(small);
+      final view = store.newTmpFile()..writeAsBytesSync(small);
+      expect(
+        await store.commitPreview(name, key, thumbnail, view, 1, 1),
+        isFalse,
+      );
+      expect(await store.markFailed(name, key), isFalse);
+      expect(await store.writeAttempt(name, key), isFalse);
+
+      final names = await Directory(
+        p.join(sessionDir(store, codeA).path, 'previews'),
+      ).list().map((e) => p.basename(e.path)).toList();
+      expect(names.where((n) => n.startsWith(key)), isEmpty);
+      expect(names, contains(startsWith(keyOf(baseline))));
+      expect(await thumbnail.exists(), isFalse);
+      expect(await view.exists(), isFalse);
+    });
+
     test('close stops a held scan and queued jobs', () async {
       await put(await openStore(), codeA, small);
       final store = await openStore();

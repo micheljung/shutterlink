@@ -5,20 +5,27 @@ const FALLBACK_POLL_MS = 5000;
 const OPEN_TIMEOUT_MS = 10000;
 const MAX_ERRORS = 3;
 const DOWNLOAD_BUTTON_ORDER = 8;
+const DELETE_BUTTON_ORDER = 7;
 const PENDING_TEXT = 'Preparing preview…';
 const FAILED_TEXT = 'No preview. Tap to download';
 const DOWNLOAD_ICON =
   '<path d="M20.5 14.3 17.1 18V10h-2.2v7.9l-3.4-3.6L10 16l6 6.1 6-6.1ZM23 23H9v2h14Z" id="pswp__icn-download"/>';
+const DELETE_PHOTO_TEXT = 'Delete this photo for everyone with the link?';
+const DELETE_FAILED_TEXT = "Couldn't delete. Please try again.";
 
 const grid = document.querySelector('ul.photos[data-live]');
 if (grid) start(grid);
 
 function start(grid) {
   const counter = document.querySelector('[data-count]');
+  const galleryForm = document.querySelector('form.delete-gallery');
+  const deleteTemplate = grid.querySelector('form.delete').cloneNode(true);
+  const trashPath = deleteTemplate.querySelector('path').getAttribute('d');
+  const deletedHere = new Set();
   const base = new URL('.', new URL(grid.dataset.live, location.href)).pathname;
   const anchors = new Map();
   for (const a of grid.querySelectorAll('li > a[download]')) {
-    anchors.set(a.getAttribute('download').replace(/\.jpg$/, ''), a);
+    anchors.set(keyOf(a), a);
   }
 
   const lightbox = new PhotoSwipeLightbox({
@@ -40,6 +47,24 @@ function start(grid) {
           button.href = original.href;
           button.download = original.getAttribute('download');
         });
+      },
+    });
+    lightbox.pswp.ui.registerElement({
+      name: 'delete',
+      title: 'Delete photo',
+      order: DELETE_BUTTON_ORDER,
+      isButton: true,
+      html: {
+        isCustomSVG: true,
+        inner: `<path d="${trashPath}" id="pswp__icn-delete"/>`,
+        outlineID: 'pswp__icn-delete',
+      },
+      onClick: async (event, button, pswp) => {
+        const key = keyOf(pswp.currSlide.data.element);
+        if (!confirm(DELETE_PHOTO_TEXT)) return;
+        if (!(await post(`${base}p/${key}/delete`))) return;
+        pswp.close();
+        deletedLocally(key);
       },
     });
   });
@@ -77,6 +102,7 @@ function start(grid) {
       const data = await response.json();
       if (!tag && data.photos.length === 0) {
         stop();
+        if (anchors.size > 0) location.reload();
         return;
       }
       if (tag) etag = tag;
@@ -93,7 +119,6 @@ function start(grid) {
   }
 
   function apply(data) {
-    if (counter) counter.textContent = String(data.count);
     if (lightbox.pswp) {
       buffered = data;
       return;
@@ -101,8 +126,69 @@ function start(grid) {
     render(data);
   }
 
+  function keyOf(a) {
+    return a.getAttribute('download').replace(/\.jpg$/, '');
+  }
+
+  async function post(url) {
+    const response = await fetch(url, { method: 'POST' }).catch(() => null);
+    if (response?.ok) return true;
+    alert(DELETE_FAILED_TEXT);
+    return false;
+  }
+
+  function removeTile(key) {
+    const a = anchors.get(key);
+    if (!a) return;
+    a.parentElement.remove();
+    anchors.delete(key);
+  }
+
+  function updateCount() {
+    if (counter) counter.textContent = String(anchors.size);
+    if (anchors.size === 0) location.reload();
+  }
+
+  function deletedLocally(key) {
+    deletedHere.add(key);
+    removeTile(key);
+    updateCount();
+  }
+
+  function deleteForm(key, index) {
+    const form = deleteTemplate.cloneNode(true);
+    form.action = `${base}p/${key}/delete`;
+    form.querySelector('button').setAttribute('aria-label', `Delete photo ${index + 1}`);
+    return form;
+  }
+
+  grid.addEventListener('submit', async (event) => {
+    const form = event.target.closest('form.delete');
+    if (!form) return;
+    event.preventDefault();
+    const key = keyOf(form.parentElement.querySelector('a[download]'));
+    if (!confirm(DELETE_PHOTO_TEXT)) return;
+    if (await post(form.action)) deletedLocally(key);
+  });
+
+  if (galleryForm) {
+    galleryForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const text =
+        `Delete all ${anchors.size} photos for everyone with the link? ` +
+        "This can't be undone.";
+      if (!confirm(text)) return;
+      if (await post(galleryForm.action)) location.reload();
+    });
+  }
+
   function render(data) {
-    data.photos.forEach((photo, index) => {
+    const photos = data.photos.filter((photo) => !deletedHere.has(photo.key));
+    const current = new Set(photos.map((photo) => photo.key));
+    for (const key of [...anchors.keys()]) {
+      if (!current.has(key)) removeTile(key);
+    }
+    photos.forEach((photo, index) => {
       const existing = anchors.get(photo.key);
       if (existing) {
         if (stateOf(existing) !== photo.state) fill(existing, photo, index);
@@ -113,10 +199,11 @@ function start(grid) {
       a.download = `${photo.key}.jpg`;
       fill(a, photo, index);
       const li = document.createElement('li');
-      li.append(a);
+      li.append(a, deleteForm(photo.key, index));
       grid.append(li);
       anchors.set(photo.key, a);
     });
+    updateCount();
   }
 
   function stateOf(a) {
