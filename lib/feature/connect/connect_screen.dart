@@ -6,6 +6,7 @@ import '../../data/identity_repository.dart';
 import '../../data/ssdp_discovery.dart';
 import '../download/download_cubit.dart';
 import '../download/download_state.dart';
+import '../intervalometer/intervalometer_entry_card.dart';
 import '../onboarding/setup_steps.dart';
 import '../sessions/active_session_indicator.dart';
 import '../settings/settings_screen.dart';
@@ -174,6 +175,8 @@ class _Intro extends StatelessWidget {
         if (state is ConnectPairingRequired) const _PairingCard(),
         if (state is ConnectFailed) _ErrorCard(message: state.message),
         const _PausedDownloadNotice(),
+        if (state is! ConnectConnecting && state is! ConnectChooseCamera)
+          const IntervalometerEntryCard(),
         if (usbExperimental)
           const ListTile(
             contentPadding: EdgeInsets.zero,

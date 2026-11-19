@@ -12,6 +12,7 @@ import 'package:shutterlink/data/camera_host_resolver.dart';
 import 'package:shutterlink/data/destination_repository.dart';
 import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/identity_repository.dart';
+import 'package:shutterlink/data/intervalometer_repository.dart';
 import 'package:shutterlink/data/live_service.dart';
 import 'package:shutterlink/data/network_binder.dart';
 import 'package:shutterlink/data/session_repository.dart';
@@ -23,9 +24,12 @@ import 'package:shutterlink/data/upload_transport.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
+import 'package:shutterlink/feature/intervalometer/intervalometer_cubit.dart';
 import 'package:shutterlink/feature/live/ingest_coordinator.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
 import 'package:shutterlink/feature/sessions/sessions_dependencies.dart';
+import 'package:shutterlink/remote/demo_remote.dart';
+import 'package:shutterlink/remote/remote_bluetooth.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/destination.dart';
 import 'package:shutterlink/upload/media_saver.dart';
@@ -151,6 +155,7 @@ Future<AppDependencies> testDependencies(
   UsbCameraPlatform usb = const NoUsbCameraPlatform(),
   UsbVendorClaim claimsUsbVendor = _claimsNone,
   ThumbnailCache? thumbnailCache,
+  RemoteBluetooth remoteBluetooth = const DemoRemoteBluetooth(),
 }) async {
   SharedPreferences.setMockInitialValues({
     SettingsRepository.onboardingSeenKey: true,
@@ -191,5 +196,24 @@ Future<AppDependencies> testDependencies(
     connectionTester: noConnectionTest,
     sessions: sessions(settings, historyDirectory, upload.ingestCoordinator),
     usb: usb,
+    intervalometer: IntervalometerRepository(preferences),
+    remoteBluetooth: remoteBluetooth,
   );
 }
+
+IntervalometerCubit intervalometerCubitFor(AppDependencies dependencies) =>
+    IntervalometerCubit(
+      repository: dependencies.intervalometer,
+      bluetooth: dependencies.remoteBluetooth,
+      service: dependencies.liveService,
+    );
+
+/// An intervalometer with nothing paired, for screens tested on their own.
+Future<IntervalometerCubit> idleIntervalometerCubit() async =>
+    IntervalometerCubit(
+      repository: IntervalometerRepository(
+        await SharedPreferences.getInstance(),
+      ),
+      bluetooth: const DemoRemoteBluetooth(),
+      service: PlatformLiveService(isAndroid: false, isIOS: false),
+    );

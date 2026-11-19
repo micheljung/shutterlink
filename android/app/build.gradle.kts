@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "ch.micheljung.shutterlink"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_reactive_ble compiles against 37, above Flutter's default.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

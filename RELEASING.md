@@ -84,6 +84,26 @@ was closed without being merged, so the app is not on F-Droid. A new
 submission opens a merge request in fdroiddata with the recipe. After the
 merge, the app usually shows up in F-Droid within a few days.
 
+Since the intervalometer, `flutter_reactive_ble` compiles its protobuf
+messages with a `protoc` binary that Gradle downloads from Maven Central.
+F-Droid does not run downloaded binaries, so every build entry from that
+release on uses Debian's `protoc` instead:
+
+```yaml
+    sudo:
+      - apt-get update
+      - apt-get install -y protobuf-compiler
+    prebuild:
+      - sed -i -e '/signingConfig = /d' android/app/build.gradle.kts
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+      - sed -i -e "s|artifact = 'com.google.protobuf:protoc:.*'|path = '/usr/bin/protoc'|" .pub-cache/hosted/pub.dev/reactive_ble_mobile-*/android/build.gradle
+```
+
+Code from an older `protoc` runs on the newer `protobuf-javalite` the plugin
+ships with.
+
 ## Every later release
 
 1. Bump `version:` in `pubspec.yaml`, for example `1.1.0+2` → `1.2.0+3`. The

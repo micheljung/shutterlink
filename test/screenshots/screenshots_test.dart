@@ -20,12 +20,18 @@ import 'package:shutterlink/brand/brand_theme.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
 import 'package:shutterlink/data/download_history.dart';
 import 'package:shutterlink/data/identity_repository.dart';
+import 'package:shutterlink/data/intervalometer_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/auto_upload/auto_upload_cubit.dart';
 import 'package:shutterlink/feature/auto_upload/auto_upload_screen.dart';
 import 'package:shutterlink/feature/connect/connect_screen.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_cache.dart';
 import 'package:shutterlink/feature/gallery/thumbnail_tile.dart';
+import 'package:shutterlink/feature/intervalometer/camera_pairing_sheet.dart';
+import 'package:shutterlink/feature/intervalometer/interval_presets.dart';
+import 'package:shutterlink/feature/intervalometer/intervalometer_cubit.dart';
+import 'package:shutterlink/feature/intervalometer/intervalometer_entry_card.dart';
+import 'package:shutterlink/feature/intervalometer/intervalometer_screen.dart';
 import 'package:shutterlink/feature/mode/mode_back_button.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
@@ -34,6 +40,7 @@ import 'package:shutterlink/feature/sessions/session_qr_sheet.dart';
 import 'package:shutterlink/feature/settings/settings_cards.dart';
 import 'package:shutterlink/feature/settings/settings_screen.dart';
 import 'package:shutterlink/ptpip/camera_client.dart';
+import 'package:shutterlink/remote/demo_remote.dart';
 import 'package:shutterlink/upload/backend_factory.dart';
 import 'package:shutterlink/upload/network_policy.dart';
 import 'package:shutterlink/upload/provider_preset.dart';
@@ -198,6 +205,45 @@ void main() {
     );
     await _settleWithoutFocus(tester);
     await _capture(tester, 'sessions_setup_token');
+  }, variant: _platform);
+
+  testWidgets('intervalometer pairing', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _openIntervalometer(tester);
+    await tester.tap(find.text(IntervalometerScreen.pairLabel));
+    for (var frame = 0; frame < _sheetFrames; frame++) {
+      await tester.pump(_sheetFrame);
+    }
+    expect(find.text(CameraPairingSheet.cameraSteps.first), findsOneWidget);
+    await _capture(tester, 'intervalometer_pairing');
+    await tester.pumpAndSettle();
+  }, variant: _platform);
+
+  testWidgets('intervalometer', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _openIntervalometer(tester);
+    await _pairDemo(tester);
+    _intervalometer(tester).applyPreset(IntervalPreset.dayToNight);
+    await tester.pumpAndSettle();
+    await _capture(tester, 'intervalometer');
+  }, variant: _platform);
+
+  testWidgets('intervalometer running', (tester) async {
+    await _pumpApp(tester, _ScreenshotCameraClient());
+    await _openIntervalometer(tester);
+    await _pairDemo(tester);
+    _intervalometer(tester).applyPreset(IntervalPreset.stars);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(IntervalometerScreen.startLabel));
+    for (var second = 0; second < _runSeconds; second++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    await tester.pump(_flashFade);
+    await _capture(tester, 'intervalometer_running');
+    await tester.tap(find.text('Stop'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stop').last);
+    await tester.pump(_settleDuration);
   }, variant: _platform);
 
   testWidgets('Live Share', (tester) async {
@@ -426,6 +472,8 @@ Future<void> _pumpApp(
             upload.ingestCoordinator,
             credentials: FakeSessionsCredentials(configured ? 'token' : null),
           ),
+          intervalometer: IntervalometerRepository(prefs),
+          remoteBluetooth: const DemoRemoteBluetooth(),
         ),
       ),
     ),
@@ -444,6 +492,30 @@ Future<void> _precacheImages(WidgetTester tester) async {
       await precacheImage((element.widget as Image).image, element);
     }
   });
+  await tester.pumpAndSettle();
+}
+
+/// Mid-exposure of the 15th shot of the Stars preset.
+const _runSeconds = 14 * 22 + 10;
+const _flashFade = Duration(milliseconds: 500);
+const _sheetFrames = 10;
+const _sheetFrame = Duration(milliseconds: 100);
+
+IntervalometerCubit _intervalometer(WidgetTester tester) => tester
+    .element(find.byType(IntervalometerScreen))
+    .read<IntervalometerCubit>();
+
+Future<void> _openIntervalometer(WidgetTester tester) async {
+  await tester.tap(find.byType(IntervalometerEntryCard));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _pairDemo(WidgetTester tester) async {
+  await tester.tap(find.text(IntervalometerScreen.pairLabel));
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.text(CameraPairingSheet.demoLabel));
+  await tester.pump();
+  await tester.tap(find.text(CameraPairingSheet.demoLabel));
   await tester.pumpAndSettle();
 }
 
