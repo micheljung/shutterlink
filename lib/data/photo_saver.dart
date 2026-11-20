@@ -117,8 +117,8 @@ class PlatformPhotoSaver implements PhotoSaver {
   }
 
   Future<void> _ensureGalleryAccess({required bool toAlbum}) async {
-    if (!await Gal.hasAccess(toAlbum: toAlbum)) {
-      await Gal.requestAccess(toAlbum: toAlbum);
+    if (!await Gal.hasPermission(toAlbum: toAlbum)) {
+      await Gal.requestPermission(toAlbum: toAlbum);
     }
   }
 

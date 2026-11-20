@@ -17,7 +17,7 @@ void main() {
   late Directory documents;
   late List<MethodCall> galCalls;
   late List<MethodCall> rawCalls;
-  late bool galHasAccess;
+  late bool galHasPermission;
   late Future<Object?> Function(MethodCall call) rawHandler;
 
   Future<File> tempFile(String name) async {
@@ -37,13 +37,13 @@ void main() {
     documents = await Directory('${root.path}/documents').create();
     galCalls = [];
     rawCalls = [];
-    galHasAccess = true;
+    galHasPermission = true;
     rawHandler = (_) async => null;
     messenger.setMockMethodCallHandler(galChannel, (call) async {
       galCalls.add(call);
       return switch (call.method) {
-        'hasAccess' => galHasAccess,
-        'requestAccess' => true,
+        'hasPermission' => galHasPermission,
+        'requestPermission' => true,
         _ => null,
       };
     });
@@ -74,12 +74,15 @@ void main() {
   });
 
   test('Android RAW requests storage access, then saves natively', () async {
-    galHasAccess = false;
+    galHasPermission = false;
     final raw = await tempFile('IMG_0001.CR3');
 
     await saver(SaverPlatform.android).save(raw: raw);
 
-    expect(galCalls.map((call) => call.method), ['hasAccess', 'requestAccess']);
+    expect(galCalls.map((call) => call.method), [
+      'hasPermission',
+      'requestPermission',
+    ]);
     expect(rawCalls.single.method, PlatformPhotoSaver.saveRawMethod);
     expect(rawCalls.single.arguments, {'raw': raw.path});
     expect(raw.existsSync(), isFalse);
