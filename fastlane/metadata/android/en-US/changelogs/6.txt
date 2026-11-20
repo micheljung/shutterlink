@@ -1,1 +1,5 @@
+* Bluetooth intervalometer: fires Canon cameras as a BR-E1 remote, no Wi-Fi needed, with presets, BULB ramping and video clips
 * QR Session is now called Live Share
+* Guests can delete photos or the whole gallery
+* Copy and open the guest link right on the Live Share screen
+* Immich switches to https when the server redirects there
