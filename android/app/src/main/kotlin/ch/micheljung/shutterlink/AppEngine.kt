@@ -2,8 +2,11 @@ package ch.micheljung.shutterlink
 
 import android.app.Activity
 import android.content.Context
+import android.util.Log
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
+import io.reactivex.exceptions.UndeliverableException
+import io.reactivex.plugins.RxJavaPlugins
 
 /**
  * The single Flutter engine, kept beyond the Activity while Live runs. Its
@@ -27,6 +30,7 @@ object AppEngine {
     fun obtain(context: Context): FlutterEngine {
         FlutterEngineCache.getInstance().get(ENGINE_ID)?.let { return it }
         val appContext = context.applicationContext
+        ignoreLateBluetoothErrors()
         val engine = FlutterEngine(appContext)
         val messenger = engine.dartExecutor.binaryMessenger
         networkBinder = NetworkBinder(appContext).also { it.register(messenger) }
@@ -35,8 +39,22 @@ object AppEngine {
         liveService = LiveService(appContext).also { it.register(messenger) }
         usbBridge = UsbBridge(appContext).also { it.register(messenger) }
         LinkOpener(appContext).register(messenger)
+        BondBridge(appContext).register(messenger)
         FlutterEngineCache.getInstance().put(ENGINE_ID, engine)
         return engine
+    }
+
+    /**
+     * The Bluetooth plugin's RxJava reports an error that arrives after its
+     * caller stopped listening, e.g. a write failing because the link just
+     * dropped, as undeliverable, and RxJava's default is to crash the app.
+     * The caller already moved on; log it instead.
+     */
+    private fun ignoreLateBluetoothErrors() {
+        RxJavaPlugins.setErrorHandler { error ->
+            val cause = if (error is UndeliverableException) error.cause ?: error else error
+            Log.w("AppEngine", "Late Bluetooth error, ignored", cause)
+        }
     }
 
     fun attach(activity: Activity) {

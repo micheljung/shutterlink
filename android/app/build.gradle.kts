@@ -48,5 +48,7 @@ flutter {
 }
 
 dependencies {
+    // The Bluetooth plugin's RxJava, for its global error handler.
+    implementation("io.reactivex.rxjava2:rxjava:2.2.21")
     testImplementation("junit:junit:4.13.2")
 }

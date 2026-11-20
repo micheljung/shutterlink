@@ -109,10 +109,24 @@ class _IntervalometerRunViewState extends State<IntervalometerRunView>
                   children: [
                     if (!connected && run.active)
                       _Banner(
-                        icon: Icons.bluetooth_searching,
-                        text:
-                            'Camera out of reach. Reconnecting; shots due meanwhile '
-                            'are missed, and the run keeps its pace.',
+                        icon: switch (state.link) {
+                          RemoteLink.pairing => Icons.bluetooth_connected,
+                          RemoteLink.refused => Icons.bluetooth_disabled,
+                          _ => Icons.bluetooth_searching,
+                        },
+                        text: switch (state.link) {
+                          RemoteLink.pairing =>
+                            '${IntervalometerText.pairingText} Shots due '
+                                'meanwhile are missed.',
+                          RemoteLink.refused =>
+                            '${IntervalometerText.refusedTitle}. Stop the run '
+                                'and pair again; shots due meanwhile are '
+                                'missed.',
+                          _ =>
+                            'Camera out of reach. Reconnecting; shots due '
+                                'meanwhile are missed, and the run keeps its '
+                                'pace.',
+                        },
                       ),
                     if (run.closeFailed)
                       const _Banner(
@@ -331,7 +345,7 @@ class _Stats extends StatelessWidget {
     final ends = run.endsAt(now);
     return Row(
       children: [
-        _Stat(label: 'Taken', value: '${run.taken}'),
+        _Stat(label: 'Sent', value: '${run.taken}'),
         _Stat(label: 'Missed', value: '${run.missed}', warn: run.missed > 0),
         _Stat(
           label: 'Running',

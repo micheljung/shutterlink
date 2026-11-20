@@ -53,6 +53,41 @@ void main() {
     expect(bluetooth.remote.events, ['connect', 'disconnect']);
   });
 
+  test('pairing lets the saved camera go until the sheet closes', () async {
+    await repository.setCamera(camera);
+    final cubit = cubitOf();
+    await cubit.opened();
+    await cubit.suspendForPairing();
+    expect(bluetooth.remote.events, ['connect', 'disconnect']);
+    expect(cubit.state.link, RemoteLink.disconnected);
+    expect(cubit.state.camera, camera);
+
+    // Nothing brings it back while the sheet is open.
+    await cubit.reconnect();
+    expect(bluetooth.remote.events, ['connect', 'disconnect']);
+
+    await cubit.resumeAfterPairing();
+    expect(bluetooth.remote.events, ['connect', 'disconnect', 'connect']);
+    expect(cubit.state.link, RemoteLink.connected);
+  });
+
+  test('a run keeps its camera while the pairing sheet is open', () {
+    fakeAsync((async) {
+      final cubit = cubitOf();
+      cubit.paired(camera, bluetooth.remote);
+      cubit.setPlan(const IntervalPlan(interval: Duration(seconds: 5)));
+      async.flushMicrotasks();
+      cubit.start();
+      async.elapse(Duration.zero);
+      cubit.suspendForPairing();
+      async.flushMicrotasks();
+      expect(bluetooth.remote.events, isNot(contains('disconnect')));
+      expect(cubit.state.link, RemoteLink.connected);
+      cubit.stop();
+      async.elapse(const Duration(seconds: 1));
+    });
+  });
+
   test('without Bluetooth access the camera stays disconnected', () async {
     await repository.setCamera(camera);
     bluetooth.granted = false;

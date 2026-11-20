@@ -4,8 +4,8 @@ The intervalometer fires the camera as its Bluetooth remote, the role
 Canon's BR-E1 plays. It needs no Wi-Fi connection, so the camera's Wi-Fi
 stays off and its battery lasts for hours of shooting.
 
-None of this is verified on hardware yet. Where a real camera disagrees,
-note it here.
+The protocol below is verified on an EOS R (see the findings section).
+Where a real camera disagrees, note it here.
 
 ## Protocol
 
@@ -46,17 +46,63 @@ On BULB a click opens the exposure and the next click closes it. Holding
 - Movies need Shooting menu → Remote control: Enable.
 - One remote slot per camera; re-pairing replaces it.
 
+## EOS R findings (HCI snoop, Pixel 8, GrapheneOS on Android 17)
+
+- The camera takes the name write (`0x17`) over an unencrypted link, but
+  buttons (`0x19`) only once the link is encrypted. Android's bond needs
+  the user to confirm a pairing request, sometimes only as a notification.
+  Clicks sent before that are lost. So `CanonBleRemote` makes sure the phone
+  is bonded first, through `BondBridge` (Android's `createBond`, waiting up
+  to 60 s for the user), shown as `RemoteLink.pairing`. It then writes the
+  name, then the idle button byte `0x0C` as a probe, and only then reports
+  connected.
+- The camera acknowledges every click, whatever the drive mode, but fires
+  only in Self-timer/Remote. The remote service sends no notifications, so
+  Shutterlink cannot tell whether a shot was taken. The run counts clicks
+  as "Sent".
+- A camera paired earlier sometimes stops accepting the phone: after a
+  drop during a run, or the next day. The phone sends a connect request;
+  the camera never answers it, and the connection fails with `0x3E` (GATT
+  133) within about 100–250 ms, on every attempt, until it is paired again.
+  Android connects from a new resolvable private address each time, which
+  the camera may not resolve with the IRK the phone sent. Apps cannot pick
+  the address, and Android has no setting for it. It is not every reconnect:
+  right after pairing, a reconnect within a second worked. When it starts
+  failing (camera sleep, power cycle, time) is not known yet.
+- Shutterlink reports such a camera as `RemoteLink.refused` after 3 attempts
+  in a row that fail within 2 s of starting. A camera that is off or out of
+  reach lets each attempt run to the 10 s connection timeout instead, though
+  that has not been checked on hardware.
+- Pairing again needs no power cycle and no pairing sheet: delete the
+  connection information on the camera and start pairing there. The app's
+  retries (every 30 s once refused) reach the camera, Android notices its
+  keys no longer work and asks to pair again, as a notification when the
+  app did not ask itself. Confirmed within 30 s (Bluetooth's pairing
+  timeout), the app connects. Unconfirmed, Android reports the old, broken
+  bond as bonded again, so the next attempt asks again.
+- Clicks during a link drop could crash the app: rxandroidble reports the
+  write's late failure as an `UndeliverableException`, fatal by RxJava's
+  default. `AppEngine` installs an RxJava error handler that logs it.
+- `ACTION_BOND_STATE_CHANGED` comes from the Bluetooth process's own uid. A
+  receiver registered `RECEIVER_NOT_EXPORTED` never gets it, so `BondBridge`
+  registers it exported (the action is protected), and the remote also polls
+  the bond state every second while it waits.
+- `adb logcat | grep -E 'CanonBle|PairingSheet|\[Intervalometer\]'` shows
+  each connect step.
+- While the pairing sheet is open, the saved camera's reconnects are
+  suspended. Otherwise they connected to the camera as soon as it entered
+  pairing mode: it was never found by the scan, and hung until its battery
+  was pulled.
+
 ## Unverified
 
-- Whether the `00050000` characteristics require an encrypted link. Android
-  bonds on demand; other implementations bond explicitly.
 - Whether a bulb exposure stays open when the link drops. Shutterlink sends
   the closing click once the camera is back, which would start a new
   exposure if the camera had closed it itself.
 - Whether `0x0C` wakes a camera that went to sleep between shots. It is
   sent 5 s before each shot when the interval is 2 minutes or longer.
-- Whether a paired camera keeps advertising; Shutterlink reconnects by
-  address.
+- Whether reconnecting works from a phone with a fixed address (iOS, or
+  other Android builds).
 
 ## Sources
 

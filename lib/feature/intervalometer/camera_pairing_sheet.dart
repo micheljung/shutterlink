@@ -20,6 +20,9 @@ class CameraPairingSheet extends StatefulWidget {
   static const demoLabel = 'Try without a camera';
   static const confirmTitle = 'Press OK on the camera';
   static const doneLabel = 'Done';
+  static const confirmOnPhoneText =
+      'Allow the pairing request on this phone within 30 seconds. If no '
+      'dialog appears, look in the notifications.';
   static const retryLabel = 'Try again';
   static const locationOffText =
       'Switch on Location to find the camera. This Android version needs it '
@@ -65,16 +68,29 @@ class _CameraPairingSheetState extends State<CameraPairingSheet> {
   /// Handed to the cubit; kept connected after the sheet closes.
   bool _kept = false;
 
+  late final IntervalometerCubit _cubit = context.read<IntervalometerCubit>();
+
   @override
   void initState() {
     super.initState();
-    unawaited(_requestAccess());
+    unawaited(_start());
+  }
+
+  Future<void> _start() async {
+    // The saved camera's reconnects would grab the camera while it waits to
+    // pair, and it would never show up here.
+    await _cubit.suspendForPairing();
+    await _requestAccess();
   }
 
   @override
   void dispose() {
     unawaited(_scan?.cancel());
-    if (!_kept) unawaited(_remote?.disconnect());
+    debugPrint('[PairingSheet] closed (kept $_kept)');
+    if (!_kept) {
+      unawaited(_remote?.disconnect());
+      unawaited(_cubit.resumeAfterPairing());
+    }
     super.dispose();
   }
 
@@ -105,7 +121,11 @@ class _CameraPairingSheetState extends State<CameraPairingSheet> {
     if (_step == _Step.connecting || _step == _Step.confirm) return;
     unawaited(_scan?.cancel());
     _scan = null;
+    // A remote from an earlier pick would keep reconnecting and grab the
+    // camera while it waits to pair.
+    unawaited(_remote?.disconnect());
     final remote = bluetooth.remoteFor(camera);
+    debugPrint('[PairingSheet] picked ${camera.id}');
     setState(() {
       _step = _Step.connecting;
       _camera = camera;
@@ -114,7 +134,10 @@ class _CameraPairingSheetState extends State<CameraPairingSheet> {
     });
     try {
       await remote.connect();
-    } on RemoteException {
+    } on RemoteException catch (e) {
+      debugPrint('[PairingSheet] connect failed: ${e.message}');
+      // A refused remote keeps retrying until told to stop.
+      unawaited(remote.disconnect());
       if (!mounted) return;
       setState(() => _failed = true);
       _search(bluetooth);
@@ -125,6 +148,7 @@ class _CameraPairingSheetState extends State<CameraPairingSheet> {
       await _finish();
       return;
     }
+    debugPrint('[PairingSheet] connected, waiting for Done');
     setState(() => _step = _Step.confirm);
   }
 
@@ -177,8 +201,13 @@ class _CameraPairingSheetState extends State<CameraPairingSheet> {
               ...switch (_step) {
                 _Step.confirm => _confirm(context),
                 _Step.connecting => [
-                  _Progress(
-                    text: 'Connecting to ${_camera?.name ?? 'camera'}…',
+                  StreamBuilder<RemoteLink>(
+                    stream: _remote?.links,
+                    builder: (context, link) => _Progress(
+                      text: link.data == RemoteLink.pairing
+                          ? CameraPairingSheet.confirmOnPhoneText
+                          : 'Connecting to ${_camera?.name ?? 'camera'}…',
+                    ),
                   ),
                 ],
                 _ => [

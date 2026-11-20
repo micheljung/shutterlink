@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'bond_bridge.dart';
 import 'canon_ble_protocol.dart';
 import 'canon_ble_remote.dart';
 import 'shutter_remote.dart';
@@ -35,10 +36,17 @@ abstract interface class RemoteBluetooth {
 }
 
 class BleRemoteBluetooth implements RemoteBluetooth {
-  BleRemoteBluetooth({FlutterReactiveBle? ble, required this.remoteName})
-    : _ble = ble ?? FlutterReactiveBle();
+  BleRemoteBluetooth({
+    FlutterReactiveBle? ble,
+    BondBridge? bonds,
+    required this.remoteName,
+  }) : _ble = ble ?? FlutterReactiveBle(),
+       _bonds =
+           bonds ??
+           (Platform.isAndroid ? AndroidBondBridge() : const NoBondBridge());
 
   final FlutterReactiveBle _ble;
+  final BondBridge _bonds;
   final String remoteName;
 
   @override
@@ -111,5 +119,5 @@ class BleRemoteBluetooth implements RemoteBluetooth {
 
   @override
   ShutterRemote remoteFor(RemoteCamera camera) =>
-      CanonBleRemote(_ble, camera, remoteName: remoteName);
+      CanonBleRemote(_ble, camera, remoteName: remoteName, bonds: _bonds);
 }

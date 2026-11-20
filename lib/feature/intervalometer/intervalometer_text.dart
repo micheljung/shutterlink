@@ -1,3 +1,4 @@
+import '../../remote/shutter_remote.dart';
 import 'interval_plan.dart';
 import 'interval_run.dart';
 
@@ -7,6 +8,23 @@ abstract final class IntervalometerText {
   static const title = 'Intervalometer';
   static const startingNotification = 'Starting…';
   static const until = 'Until stopped';
+
+  static const pairingText =
+      'Android asks whether to pair with the camera. Allow it within 30 '
+      'seconds, in the dialog or in the notification if no dialog appears.';
+  static const refusedTitle = 'The camera no longer accepts this phone';
+  static const refusedText =
+      'The camera no longer knows this phone. Shutterlink keeps looking, so '
+      'pairing again on the camera is enough:';
+  static const refusedSteps = [
+    'On the camera, delete the connection information (MENU → Wireless '
+        'settings → Bluetooth function).',
+    'Start pairing on the camera.',
+    'Confirm the pairing request on the phone within 30 seconds. It can '
+        'take half a minute to appear; Pair again below finds the camera '
+        'at once.',
+  ];
+  static const pairAgainLabel = 'Pair again';
 
   /// "45 s", "2.5 s", "12 min 30 s", "1 h 5 min".
   static String duration(Duration duration) {
@@ -75,12 +93,18 @@ abstract final class IntervalometerText {
 
   static String notification(
     RunSnapshot run, {
-    required bool connected,
+    required RemoteLink link,
     required DateTime now,
   }) {
+    final connected = link == RemoteLink.connected;
     final parts = <String>[
       'Shot ${progress(run)}',
-      if (!connected) 'Camera out of reach, reconnecting',
+      if (link == RemoteLink.pairing)
+        'Confirm the pairing request'
+      else if (link == RemoteLink.refused)
+        'Camera refuses this phone, pair again'
+      else if (!connected)
+        'Camera out of reach, reconnecting',
       if (run.phase == RunPhase.paused) 'Paused',
       if (run.missed > 0) '${run.missed} missed',
     ];

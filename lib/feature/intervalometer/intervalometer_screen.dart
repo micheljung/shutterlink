@@ -24,6 +24,7 @@ class IntervalometerScreen extends StatefulWidget {
   static const routeName = 'intervalometer';
   static const startLabel = 'Start';
   static const pairLabel = 'Pair a camera';
+  static const backgroundLabel = 'Keep shooting in background';
 
   static Route<void> route() => MaterialPageRoute(
     settings: const RouteSettings(name: routeName),
@@ -54,6 +55,47 @@ class _IntervalometerScreenState extends State<IntervalometerScreen> {
     final showsRun = context.select<IntervalometerCubit, bool>(
       (cubit) => cubit.state.run != null,
     );
+    final running = context.select<IntervalometerCubit, bool>(
+      (cubit) => cubit.state.running,
+    );
+    return PopScope(
+      canPop: !running,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_leaveRun());
+      },
+      child: _scaffold(showsRun),
+    );
+  }
+
+  /// Back during a run asks whether to stop it or leave it shooting, so
+  /// neither happens by accident.
+  Future<void> _leaveRun() async {
+    final choice = await showDialog<_LeaveChoice>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(IntervalometerRunView.stopTitle),
+        content: const Text(
+          'Stop now, or keep shooting in the background. The run shows on '
+          'the start screen until it ends.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(_LeaveChoice.background),
+            child: const Text(IntervalometerScreen.backgroundLabel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(_LeaveChoice.stop),
+            child: const Text(IntervalometerRunView.stopLabel),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == _LeaveChoice.stop) await _cubit.stop();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Widget _scaffold(bool showsRun) {
     return Scaffold(
       appBar: AppBar(
         title: const Text(IntervalometerText.title),
@@ -71,6 +113,8 @@ class _IntervalometerScreenState extends State<IntervalometerScreen> {
     );
   }
 }
+
+enum _LeaveChoice { stop, background }
 
 class _SetupView extends StatelessWidget {
   const _SetupView({super.key});
@@ -160,6 +204,8 @@ class LinkDot extends StatelessWidget {
   static String label(RemoteLink link) => switch (link) {
     RemoteLink.connected => 'Camera connected',
     RemoteLink.connecting => 'Connecting to the camera',
+    RemoteLink.pairing => 'Waiting for the pairing to be confirmed',
+    RemoteLink.refused => 'The camera refuses this phone',
     RemoteLink.disconnected => 'Camera not connected',
   };
 
@@ -168,7 +214,8 @@ class LinkDot extends StatelessWidget {
     final theme = Theme.of(context);
     final color = switch (link) {
       RemoteLink.connected => BrandColors.online(theme.brightness),
-      RemoteLink.connecting => BrandColors.accent,
+      RemoteLink.connecting || RemoteLink.pairing => BrandColors.accent,
+      RemoteLink.refused => theme.colorScheme.error,
       RemoteLink.disconnected => theme.colorScheme.outline,
     };
     return Tooltip(
@@ -214,6 +261,14 @@ class _CameraCard extends StatelessWidget {
       ),
       (final camera?, RemoteLink.connected) => (camera.name, 'Ready to shoot'),
       (final camera?, RemoteLink.connecting) => (camera.name, 'Connecting…'),
+      (final camera?, RemoteLink.pairing) => (
+        camera.name,
+        IntervalometerText.pairingText,
+      ),
+      (final camera?, RemoteLink.refused) => (
+        camera.name,
+        IntervalometerText.refusedTitle,
+      ),
       (final camera?, RemoteLink.disconnected) => (
         camera.name,
         state.bluetooth == BluetoothState.off
@@ -302,6 +357,15 @@ class _CameraCard extends StatelessWidget {
                 label: const Text(IntervalometerScreen.pairLabel),
                 onPressed: () => CameraPairingSheet.show(context),
               ),
+            ] else if (state.link == RemoteLink.refused && !state.demo) ...[
+              const SizedBox(height: Spacing.medium),
+              const _RefusedSteps(),
+              const SizedBox(height: Spacing.medium),
+              FilledButton.icon(
+                icon: const Icon(Icons.bluetooth),
+                label: const Text(IntervalometerText.pairAgainLabel),
+                onPressed: () => CameraPairingSheet.show(context),
+              ),
             ] else if (state.link == RemoteLink.disconnected) ...[
               const SizedBox(height: Spacing.medium),
               OutlinedButton.icon(
@@ -313,6 +377,31 @@ class _CameraCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// What to do on the camera so it accepts this phone again.
+class _RefusedSteps extends StatelessWidget {
+  const _RefusedSteps();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(IntervalometerText.refusedText, style: theme.textTheme.bodySmall),
+        const SizedBox(height: Spacing.small),
+        for (final (index, step) in IntervalometerText.refusedSteps.indexed)
+          Padding(
+            padding: const EdgeInsets.only(bottom: Spacing.tiny),
+            child: Text(
+              '${index + 1}. $step',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+      ],
     );
   }
 }

@@ -30,10 +30,18 @@ class FakeShutterRemote implements ShutterRemote {
     _links.add(link);
   }
 
+  /// The next connects fail with this, as a refusing camera's would.
+  RemoteException? connectError;
+
   @override
   Future<void> connect() async {
     if (link == RemoteLink.connected) return;
     events.add('connect');
+    final error = connectError;
+    if (error != null) {
+      setLink(RemoteLink.refused);
+      throw error;
+    }
     setLink(RemoteLink.connected);
   }
 

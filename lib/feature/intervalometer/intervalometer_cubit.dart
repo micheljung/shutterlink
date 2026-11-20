@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:clock/clock.dart' as clocks;
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -129,6 +130,10 @@ class IntervalometerCubit extends Cubit<IntervalometerState> {
   bool _screenOpen = false;
   bool _opening = false;
 
+  /// The pairing sheet is open: the saved camera stays let go, or its
+  /// reconnects would grab the camera while it waits to pair.
+  bool _pairing = false;
+
   /// Start was tapped and the run is being set up.
   bool _starting = false;
 
@@ -144,7 +149,11 @@ class IntervalometerCubit extends Cubit<IntervalometerState> {
   }
 
   Future<void> _reattach() async {
-    if (state.camera == null || state.demo || _remote != null || _opening) {
+    if (state.camera == null ||
+        state.demo ||
+        _remote != null ||
+        _opening ||
+        _pairing) {
       return;
     }
     _opening = true;
@@ -152,7 +161,11 @@ class IntervalometerCubit extends Cubit<IntervalometerState> {
       if (!await _requestAccess()) return;
       // The screen may have closed, or a pairing attached, meanwhile.
       final camera = state.camera;
-      if (!_screenOpen || camera == null || state.demo || _remote != null) {
+      if (!_screenOpen ||
+          camera == null ||
+          state.demo ||
+          _remote != null ||
+          _pairing) {
         return;
       }
       await _attach(_bluetooth.remoteFor(camera));
@@ -194,8 +207,28 @@ class IntervalometerCubit extends Cubit<IntervalometerState> {
     );
   }
 
+  /// Lets the saved camera go while the pairing sheet looks for cameras.
+  Future<void> suspendForPairing() async {
+    debugPrint(
+      '[Intervalometer] pairing sheet open (running ${state.running})',
+    );
+    if (state.running) return;
+    _pairing = true;
+    await _detach();
+  }
+
+  /// The pairing sheet closed without pairing: the saved camera is back.
+  Future<void> resumeAfterPairing() async {
+    debugPrint('[Intervalometer] pairing sheet closed without pairing');
+    if (!_pairing) return;
+    _pairing = false;
+    await _reattach();
+  }
+
   /// [remote] connected during pairing and is kept.
   Future<void> paired(RemoteCamera camera, ShutterRemote remote) async {
+    debugPrint('[Intervalometer] paired ${camera.id}');
+    _pairing = false;
     await _detach();
     final demo = camera == DemoRemoteBluetooth.camera;
     if (!demo) await _repository.setCamera(camera);
@@ -348,7 +381,7 @@ class IntervalometerCubit extends Cubit<IntervalometerState> {
           : LiveServiceState.reconnecting,
       text: IntervalometerText.notification(
         run,
-        connected: state.link == RemoteLink.connected,
+        link: state.link,
         now: _clock.now(),
       ),
     );

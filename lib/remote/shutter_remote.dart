@@ -2,7 +2,17 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 
-enum RemoteLink { disconnected, connecting, connected }
+enum RemoteLink {
+  disconnected,
+  connecting,
+
+  /// Waiting for the user to confirm Android's pairing request.
+  pairing,
+
+  /// The camera is there but refuses this phone; only pairing again helps.
+  refused,
+  connected,
+}
 
 /// A camera's shutter button, pressed from the phone.
 abstract interface class ShutterRemote {
