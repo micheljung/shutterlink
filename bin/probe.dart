@@ -8,14 +8,20 @@ import 'package:collection/collection.dart';
 import 'package:path/path.dart' as p;
 import 'package:shutterlink/data/cr3_preview.dart';
 import 'package:shutterlink/data/exif.dart';
+import 'package:shutterlink/probe/probe_args.dart';
+import 'package:shutterlink/probe/probe_measurements.dart';
+import 'package:shutterlink/probe/remote_probe.dart';
 import 'package:shutterlink/ptpip/ptpip.dart';
 import 'package:uuid/uuid.dart';
 
-const exitOk = 0;
-const exitUsage = 64;
-const exitUnavailable = 69;
-const exitCameraBusy = 75;
-const exitPairingRequired = 77;
+export 'package:shutterlink/probe/probe_args.dart'
+    show
+        exitCameraBusy,
+        exitCameraRefused,
+        exitOk,
+        exitPairingRequired,
+        exitUnavailable,
+        exitUsage;
 
 const _defaultName = 'Shutterlink';
 const _defaultGuidFileName = '.shutterlink_guid';
@@ -24,6 +30,10 @@ const _microsecondsPerSecond = 1000000;
 const _hexRadix = 16;
 const _hexDigitsPerByte = 2;
 const _packetTypeOffset = 4;
+
+/// The remote modes poll GetEvent themselves, so the profile's poller must
+/// not take their events.
+const _profilePollerIdle = Duration(days: 1);
 const pairingInstructions = '''
 The camera does not know this computer yet. Pair it once:
   1. On the camera open MENU > Wireless communication settings > Wi-Fi function.
@@ -36,7 +46,7 @@ The camera does not know this computer yet. Pair it once:
      "{name}", confirm it on the camera.
 ''';
 
-ArgParser _parser() => ArgParser()
+ArgParser probeArgParser() => ArgParser()
   ..addOption('host', help: 'Camera IP address (camera access point).')
   ..addOption('port', defaultsTo: '$ptpIpDefaultPort')
   ..addOption('name', defaultsTo: _defaultName, help: 'Name shown on camera.')
@@ -59,6 +69,96 @@ ArgParser _parser() => ArgParser()
     negatable: false,
     help: 'Print the device properties and camera clock, then exit.',
   )
+  ..addOption(
+    'liveview',
+    valueHelp: 'seconds',
+    help: 'Run Canon live view and report fps and frame timings.',
+  )
+  ..addOption(
+    'evf-output',
+    valueHelp: '2|3',
+    help: 'EVF output while live view runs: 2 = PC, 3 = camera screen and PC.',
+  )
+  ..addOption(
+    'save-frame',
+    valueHelp: 'path',
+    help: 'Write the last live-view JPEG here.',
+  )
+  ..addFlag(
+    'props',
+    negatable: false,
+    help:
+        'Print the core settings and every property in the initial '
+        'GetEvent dump, then print changes until Ctrl-C or --duration.',
+  )
+  ..addOption('duration', valueHelp: 'seconds', help: 'How long --props runs.')
+  ..addOption(
+    'poll-interval',
+    valueHelp: 'ms',
+    help:
+        'GetEvent interval for --liveview, --props, --release '
+        '(default ${ProfileOptions.defaultEventPollInterval.inMilliseconds}).',
+  )
+  ..addFlag(
+    'release',
+    negatable: false,
+    help:
+        'With live view on, press the shutter and time trigger -> events '
+        '-> new handle -> thumbnail.',
+  )
+  ..addOption(
+    'release-params',
+    valueHelp: 'half,full',
+    help:
+        'RemoteReleaseOn/Off p1 for half and full press '
+        '(default ${CanonRemoteRelease.halfPress},'
+        '${CanonRemoteRelease.fullPress}; unconfirmed).',
+  )
+  ..addOption(
+    'shots',
+    valueHelp: 'N',
+    help: 'Shots for --release (default $defaultShots).',
+  )
+  ..addOption(
+    'release-timeout',
+    valueHelp: 'seconds',
+    help:
+        'Wait this long for 0xc185 after a release '
+        '(default ${defaultReleaseTimeout.inSeconds}).',
+  )
+  ..addOption(
+    'set',
+    valueHelp: 'prop=value',
+    help:
+        'SetDevicePropValueEx, e.g. 0xd103=0x48, then time its echo at '
+        'GetEvent intervals of '
+        '${setPollIntervals.map((i) => i.inMilliseconds).join(', ')} ms '
+        'against the fps cost.',
+  )
+  ..addOption(
+    'trials',
+    valueHelp: 'N',
+    help: 'Sets per interval for --set (default $defaultSetTrials).',
+  )
+  ..addOption(
+    'zoom',
+    valueHelp: 'level',
+    help: 'Experimental: send Zoom (0x9158) with live view on.',
+  )
+  ..addOption(
+    'af',
+    valueHelp: 'x,y',
+    help:
+        'Experimental: focus at a point from 0 to 1 with SetLiveAfFrame '
+        '(0x915a), falling back to ZoomPosition + DoAf.',
+  )
+  ..addOption(
+    'af-space',
+    valueHelp: 'WxH',
+    help:
+        'Experimental: coordinate space for --af '
+        '(default ${defaultAfSpace.width}x${defaultAfSpace.height}).',
+  )
   ..addFlag('help', abbr: 'h', negatable: false);
 
 Future<void> main(List<String> args) async {
@@ -70,12 +170,15 @@ Future<int> runProbe(
   StringSink? output,
   int? watchPolls,
   Duration watchInterval = PtpIpCameraClient.defaultEventPollInterval,
+  Duration measureWindow = probeMeasureWindow,
 }) async {
   final out = output ?? stdout;
-  final parser = _parser();
+  final parser = probeArgParser();
   final ArgResults options;
+  final RemoteProbeOptions? remote;
   try {
     options = parser.parse(args);
+    remote = RemoteProbeOptions.fromArgs(options);
   } on FormatException catch (error) {
     out
       ..writeln(error.message)
@@ -116,7 +219,9 @@ Future<int> runProbe(
       watch: options.flag('watch-events'),
       watchPolls: watchPolls,
       watchInterval: watchInterval,
-      tap: dump == null ? null : (c, d, f) => _dumpPacket(dump, c, d, f),
+      remote: remote,
+      measureWindow: measureWindow,
+      dump: dump,
     );
   } on PairingRequiredException catch (error) {
     out
@@ -132,6 +237,12 @@ Future<int> runProbe(
   } on CameraDisconnectedException catch (error) {
     out.writeln('Camera unreachable or disconnected: ${error.cause}');
     return exitUnavailable;
+  } on PtpProtocolException catch (error) {
+    out.writeln('Camera sent something unexpected: $error');
+    return exitUnavailable;
+  } on PtpResponseException catch (error) {
+    out.writeln('Camera refused: ${describeRefusal(error)}');
+    return exitCameraRefused;
   } finally {
     await dump?.close();
   }
@@ -149,18 +260,33 @@ Future<int> _probe(
   required bool watch,
   required int? watchPolls,
   required Duration watchInterval,
-  required PacketTap? tap,
+  required RemoteProbeOptions? remote,
+  required Duration measureWindow,
+  required IOSink? dump,
 }) async {
   out.writeln('Connecting to $host:$port as "${identity.name}"...');
-  final events = watch ? _EventWatcher(out, watchPolls) : null;
+  final events = watch && remote == null
+      ? _EventWatcher(out, watchPolls)
+      : null;
+  final ledger = TransactionLedger();
+  Uint8List? initialDump;
   final client = await PtpIpCameraClient.connect(
     host: host,
     port: port,
     identity: identity,
     pairingTimeout: pairingTimeout,
-    packetTap: tap,
-    eventPollInterval: watchInterval,
-    onEventData: events?.onData,
+    packetTap: dump == null && remote == null
+        ? null
+        : (channel, direction, frame) {
+            if (dump != null) {
+              _dumpPacket(dump, channel, direction, frame);
+            }
+            ledger.onPacket(channel, frame);
+          },
+    eventPollInterval: remote == null ? watchInterval : _profilePollerIdle,
+    onEventData: remote == null
+        ? events?.onData
+        : (data) => initialDump ??= data,
   );
   try {
     final info = client.deviceInfo;
@@ -169,14 +295,22 @@ Future<int> _probe(
       ..writeln('Model:        ${info.model}')
       ..writeln('Version:      ${info.deviceVersion}')
       ..writeln('Serial:       ${info.serialNumber}')
-      ..writeln(
-        'Operations:   ${info.operationsSupported.map(_hex).join(' ')}',
-      );
+      ..writeln('Operations:   ${info.operationsSupported.map(hex).join(' ')}');
+    if (remote != null) {
+      return await RemoteProbe(
+        out,
+        client,
+        ledger,
+        remote,
+        initialDump: initialDump,
+        measureWindow: measureWindow,
+      ).run();
+    }
     if (clockOnly) {
       final properties = client.ptpDeviceInfo.devicePropertiesSupported;
       final cameraTime = await client.cameraTime();
       out
-        ..writeln('Properties:   ${properties.map(_hex).join(' ')}')
+        ..writeln('Properties:   ${properties.map(hex).join(' ')}')
         ..writeln('Camera time:  ${cameraTime?.toIso8601String() ?? 'none'}')
         ..writeln('Phone time:   ${DateTime.now().toIso8601String()}');
       return exitOk;
@@ -325,29 +459,30 @@ class _EventWatcher {
 }
 
 void _logRecords(StringSink out, String stamp, Uint8List data) {
-  final List<CanonEventRecord> records;
-  try {
-    records = canonEventRecords(data);
-  } on PtpProtocolException catch (error) {
-    out.writeln('$stamp malformed: ${error.message}\n${hexDump(data)}');
-    return;
-  }
+  final records = canonEventRecords(
+    data,
+    onMalformed: (offset, size) => out.writeln(
+      '$stamp malformed: Malformed Canon event at $offset: '
+      'size $size of ${data.length}\n'
+      '${hexDump(data)}',
+    ),
+  );
   for (final record in records) {
     final event = switch (parseCanonEvent(record)) {
       final CanonObjectAdded added =>
-        '>>> ObjectAdded handle ${_hex(added.handle)} '
-            'storage ${_hex(added.storageId)} format ${_hex(added.format)} '
-            'size ${added.size} parent ${_hex(added.parent)} >>> ',
+        '>>> ObjectAdded handle ${hex(added.handle)} '
+            'storage ${hex(added.storageId)} format ${hex(added.format)} '
+            'size ${added.size} parent ${hex(added.parent)} >>> ',
       CanonTransferRequested(:final handle) =>
-        '>>> TransferRequested handle ${_hex(handle)} >>> ',
+        '>>> TransferRequested handle ${hex(handle)} >>> ',
       CanonObjectRemoved(:final handle) =>
-        '>>> ObjectRemoved handle ${_hex(handle)} >>> ',
+        '>>> ObjectRemoved handle ${hex(handle)} >>> ',
       CanonStorageChanged() => '>>> StorageChanged >>> ',
-      CanonPropertyChanged() || null => '',
+      CanonPropertyChanged() || CanonAllowedValues() || null => '',
     };
     out
       ..writeln(
-        '$stamp ${event}record ${_hex(record.type)} size ${record.bytes.length}',
+        '$stamp ${event}record ${hex(record.type)} size ${record.bytes.length}',
       )
       ..write(
         hexDump(Uint8List.sublistView(record.bytes, canonEventHeaderSize)),
@@ -406,5 +541,3 @@ void _dumpPacket(
     )
     ..write(hexDump(frame));
 }
-
-String _hex(int value) => '0x${value.toRadixString(_hexRadix)}';

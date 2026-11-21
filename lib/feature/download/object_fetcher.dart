@@ -13,6 +13,7 @@ class ObjectFetcher {
     CameraObject object,
     File file, {
     CancelToken? cancelToken,
+    int? chunkSize,
     void Function(int received)? onResume,
     void Function(int received)? onReceived,
   }) async {
@@ -38,6 +39,7 @@ class ObjectFetcher {
           },
           offset: received,
           cancelToken: cancelToken,
+          chunkSize: chunkSize,
         );
       } finally {
         await sink.close();

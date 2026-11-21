@@ -7,6 +7,7 @@ import 'package:shutterlink/data/identity_repository.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connection_supervisor.dart';
+import 'package:shutterlink/ptpip/camera_client.dart';
 import 'package:shutterlink/usb/usb_camera_platform.dart';
 
 import '../../fakes/fake_camera_client.dart';
@@ -118,6 +119,25 @@ void main() {
 
     expect(client.closed, isFalse);
     expect(events.reconnecting, isEmpty);
+  });
+
+  test('a Canon over USB keeps the default schedule', () async {
+    final client = FakeCameraClient([old])
+      ..reconnectPolicy = const ReconnectPolicy(
+        first: Duration(seconds: 15),
+        repeat: Duration(seconds: 5),
+      );
+    await supervisor.supervise(client, UsbTarget(canon), bindingOwner: owner);
+
+    await unplug(client);
+    await fire();
+    await fire();
+
+    expect(timers.all.map((timer) => timer.delay), [
+      const Duration(seconds: 2),
+      const Duration(seconds: 4),
+      const Duration(seconds: 8),
+    ]);
   });
 
   // live_transfer_cubit_usb_test.dart:183

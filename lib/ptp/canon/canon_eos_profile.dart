@@ -5,13 +5,19 @@ import '../camera_client.dart';
 import '../camera_profile.dart';
 import '../dataset.dart';
 import '../ptp_constants.dart';
-import '../ptp_protocol_exception.dart';
 import '../ptp_session.dart';
 import 'canon_constants.dart';
 import 'canon_events.dart';
 
 const _canonVendorExtensionId = 0x0B;
 const _remoteModeExitTimeout = Duration(seconds: 1);
+
+/// The EOS R refuses connections for 12-15 s after one closes; later
+/// retries only wait for the next attempt to succeed.
+const _canonReconnectPolicy = ReconnectPolicy(
+  first: Duration(seconds: 15),
+  repeat: Duration(seconds: 5),
+);
 
 /// Per-model behaviour that differs between EOS bodies.
 class CanonEosQuirks {
@@ -76,18 +82,10 @@ class CanonEosProfile implements CameraProfile {
           .data;
       options.onEventData?.call(initialEvents);
       connection
-        .._noteClock(_parseEventsLeniently(initialEvents))
+        .._noteClock(parseCanonEvents(initialEvents))
         .._startPolling(options.eventPollInterval);
     }
     return connection;
-  }
-
-  static List<CanonEvent> _parseEventsLeniently(Uint8List data) {
-    try {
-      return parseCanonEvents(data);
-    } on PtpProtocolException {
-      return const [];
-    }
   }
 }
 
@@ -149,7 +147,7 @@ class _CanonEosConnection implements ProfileConnection {
           CanonTransferRequested(:final handle) => ObjectAdded(handle),
           CanonObjectRemoved(:final handle) => ObjectRemoved(handle),
           CanonStorageChanged() => const StorageChanged(),
-          CanonPropertyChanged() => null,
+          CanonPropertyChanged() || CanonAllowedValues() => null,
         };
         if (forwarded != null && !_events.isClosed) {
           _events.add(forwarded);
@@ -158,8 +156,6 @@ class _CanonEosConnection implements ProfileConnection {
     } on PtpResponseException {
       return;
     } on CameraDisconnectedException {
-      return;
-    } on PtpProtocolException {
       return;
     } finally {
       _pollInFlight = false;
@@ -170,9 +166,9 @@ class _CanonEosConnection implements ProfileConnection {
     for (final event in events) {
       if (event case CanonPropertyChanged(
         property: CanonEosProperty.cameraTime,
-        :final value,
+        u32: final seconds?,
       )) {
-        _clock = (seconds: value, age: Stopwatch()..start());
+        _clock = (seconds: seconds, age: Stopwatch()..start());
       }
     }
   }
@@ -212,6 +208,9 @@ class _CanonEosConnection implements ProfileConnection {
     attempts: _quirks.deleteBusyAttempts,
     delay: _quirks.deleteBusyDelay,
   );
+
+  @override
+  ReconnectPolicy get reconnectPolicy => _canonReconnectPolicy;
 
   /// Hands the camera back in remote mode, as on connect.
   @override

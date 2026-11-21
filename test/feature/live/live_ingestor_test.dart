@@ -41,6 +41,7 @@ class _ScriptedClient extends FakeCameraClient {
     int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
+    int? chunkSize,
   }) {
     if (failingDownloads > 0) {
       failingDownloads--;
@@ -53,6 +54,7 @@ class _ScriptedClient extends FakeCameraClient {
       length: length,
       onProgress: onProgress,
       cancelToken: cancelToken,
+      chunkSize: chunkSize,
     );
   }
 

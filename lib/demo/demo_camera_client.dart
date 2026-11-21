@@ -99,6 +99,9 @@ class DemoCameraClient implements CameraClient {
   bool get thumbnailsUpright => true;
 
   @override
+  ReconnectPolicy? get reconnectPolicy => null;
+
+  @override
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken}) async {
     bool cancelled() => cancelToken?.isCancelled ?? false;
     final photo = _photos[handle];
@@ -129,6 +132,7 @@ class DemoCameraClient implements CameraClient {
     int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
+    int? chunkSize,
   }) async {
     final photo = _photos[object.handle];
     if (photo == null) {
@@ -148,7 +152,9 @@ class DemoCameraClient implements CameraClient {
         if (cancelToken?.isCancelled ?? false) {
           throw const TransferCancelledException();
         }
-        final chunk = await file.read(min(chunkSize, end - received));
+        final chunk = await file.read(
+          min(DemoCameraClient.chunkSize, end - received),
+        );
         if (chunk.isEmpty) {
           throw FileSystemException('The photo ended early', photo.$1.path);
         }

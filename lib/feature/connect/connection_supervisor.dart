@@ -99,6 +99,10 @@ class ConnectionSupervisor {
   bool _permissionRequested = false;
   Timer? _retryTimer;
   Duration _reconnectDelay = initialReconnectDelay;
+
+  /// The attached camera's own schedule. USB retries ignore it: the gap
+  /// after a closed connection is a TCP one.
+  ReconnectPolicy? _reconnectPolicy;
   DateTime? _failingSince;
   bool _unreachable = false;
   int? _reconnecting;
@@ -209,6 +213,7 @@ class ConnectionSupervisor {
     _discoveredName = null;
     _cameraKey = null;
     _failedRetries = 0;
+    _reconnectPolicy = null;
     _reconnectDelay = initialReconnectDelay;
     _failingSince = null;
     _unreachable = false;
@@ -222,7 +227,8 @@ class ConnectionSupervisor {
     unawaited(client.disconnected.then((_) => _disconnected(client)));
     _cameraKey ??= cameraKeyOf(client.deviceInfo);
     _failedRetries = 0;
-    _reconnectDelay = initialReconnectDelay;
+    _reconnectPolicy = _target is UsbTarget ? null : client.reconnectPolicy;
+    _reconnectDelay = _firstReconnectDelay;
     _failingSince = null;
     _unreachable = false;
     _userActionNeeded = false;
@@ -230,7 +236,7 @@ class ConnectionSupervisor {
   }
 
   void _retryNow() {
-    _reconnectDelay = initialReconnectDelay;
+    _reconnectDelay = _firstReconnectDelay;
     _failingSince = null;
     _unreachable = false;
     _retryTimer?.cancel();
@@ -266,11 +272,19 @@ class ConnectionSupervisor {
     usb: _target is UsbTarget,
   );
 
+  Duration get _firstReconnectDelay =>
+      _reconnectPolicy?.first ?? initialReconnectDelay;
+
   Duration _nextDelay() {
     // Waiting for the user to allow USB access: look again soon.
     if (_userActionNeeded) return initialReconnectDelay;
     if (_unreachable) return unreachableReconnectDelay;
     final delay = _reconnectDelay;
+    final policy = _reconnectPolicy;
+    if (policy != null) {
+      _reconnectDelay = policy.repeat;
+      return delay;
+    }
     final next = delay * reconnectDelayFactor;
     _reconnectDelay = next > maxReconnectDelay ? maxReconnectDelay : next;
     return delay;

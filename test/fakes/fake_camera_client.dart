@@ -49,6 +49,7 @@ class FakeCameraClient implements CameraClient {
   final downloadLengths = <int, List<int?>>{};
   final thumbnailRequests = <int>[];
   final thumbnailTokens = <CancelToken?>[];
+  final downloadChunkSizes = <int, List<int?>>{};
   final downloadTokens = <int, List<CancelToken?>>{};
   final contentOverrides = <int, Uint8List>{};
   Map<int, CameraObject?> objectInfoOverrides = {};
@@ -134,6 +135,9 @@ class FakeCameraClient implements CameraClient {
   bool thumbnailsUpright = false;
 
   @override
+  ReconnectPolicy? reconnectPolicy;
+
+  @override
   Future<Uint8List?> thumbnail(int handle, {CancelToken? cancelToken}) async {
     thumbnailRequests.add(handle);
     thumbnailTokens.add(cancelToken);
@@ -149,9 +153,11 @@ class FakeCameraClient implements CameraClient {
     int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
+    int? chunkSize,
   }) async {
     requestedOffsets.putIfAbsent(object.handle, () => []).add(offset);
     downloadLengths.putIfAbsent(object.handle, () => []).add(length);
+    downloadChunkSizes.putIfAbsent(object.handle, () => []).add(chunkSize);
     downloadTokens.putIfAbsent(object.handle, () => []).add(cancelToken);
     final content = contentOverrides[object.handle] ?? contentFor(object);
     final end = length == null
@@ -167,7 +173,7 @@ class FakeCameraClient implements CameraClient {
         simulateDisconnect();
         throw const CameraDisconnectedException();
       }
-      final chunkEnd = (position + chunkSize).clamp(0, end);
+      final chunkEnd = (position + this.chunkSize).clamp(0, end);
       await write(Uint8List.sublistView(content, position, chunkEnd));
       _chunksSent++;
       position = chunkEnd;

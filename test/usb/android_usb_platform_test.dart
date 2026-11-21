@@ -182,6 +182,7 @@ void main() {
       final data = await pipe.bulkIn(4096);
       expect(data, isA<UsbData>());
       expect((data as UsbData).bytes, [1, 2, 3]);
+      expect(data.nativeMicros, isNull);
       expect(calls.last.arguments, {'sessionId': 1, 'maxLength': 4096});
       expect(await pipe.bulkIn(4096), isA<UsbZeroLength>());
       final error = await pipe.bulkIn(4096);
@@ -190,6 +191,22 @@ void main() {
         (error as UsbReadError).cause,
         isA<PlatformException>().having((e) => e.code, 'code', 'usb_io'),
       );
+    });
+
+    test('a timed bulkIn asks for and reports the native time', () async {
+      final pipe = await openPipe();
+      answers['bulkIn'] = (_) => {
+        'bytes': Uint8List.fromList([1]),
+        'nativeMicros': 250,
+      };
+
+      final data = await pipe.bulkIn(4096, timing: true);
+      expect((data as UsbData).nativeMicros, 250);
+      expect(calls.last.arguments, {
+        'sessionId': 1,
+        'maxLength': 4096,
+        'timing': true,
+      });
     });
 
     test('bulkOut, clearHalt and drainIn pass through', () async {

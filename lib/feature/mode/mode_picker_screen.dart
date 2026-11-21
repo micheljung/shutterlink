@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -6,6 +7,7 @@ import '../../brand/shutterlink_logo.dart';
 import '../../brand/shutterlink_wordmark.dart';
 import '../connect/connect_cubit.dart';
 import '../connect/connect_state.dart';
+import '../live_view_probe/live_view_probe_screen.dart';
 import '../settings/sessions_setup_screen.dart';
 import '../settings/settings_cubit.dart';
 import '../settings/settings_screen.dart';
@@ -19,6 +21,11 @@ import 'operating_mode.dart';
 /// Shown after a connect: the user picks what happens to photos.
 class ModePickerScreen extends StatelessWidget {
   const ModePickerScreen({super.key});
+
+  /// Hides the debug tools; profile builds keep them, since they measure.
+  /// The README screenshots turn it on to show the app as released.
+  @visibleForTesting
+  static bool hidesDebugTools = kReleaseMode;
 
   static const title = 'Choose a mode';
 
@@ -82,6 +89,13 @@ class ModePickerScreen extends StatelessWidget {
         ),
         actions: [
           const UploadStatusIndicator(),
+          if (!hidesDebugTools)
+            IconButton(
+              tooltip: LiveViewProbe.title,
+              icon: const Icon(Icons.speed),
+              onPressed: () =>
+                  Navigator.of(context).push(LiveViewProbeScreen.route()),
+            ),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),

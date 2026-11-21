@@ -277,15 +277,18 @@ class AndroidUsbPipe implements UsbBulkPipe {
       _transfer('bulkOut', {'bytes': bytes});
 
   @override
-  Future<UsbRead> bulkIn(int maxLength) async {
+  Future<UsbRead> bulkIn(int maxLength, {bool timing = false}) async {
     if (_detached.isCompleted) return const UsbReadError(_ended);
     try {
       final result = await _channel.invokeMapMethod<String, Object?>('bulkIn', {
         'sessionId': sessionId,
         'maxLength': maxLength,
+        if (timing) 'timing': true,
       });
       final bytes = result!['bytes']! as Uint8List;
-      return bytes.isEmpty ? const UsbZeroLength() : UsbData(bytes);
+      return bytes.isEmpty
+          ? const UsbZeroLength()
+          : UsbData(bytes, nativeMicros: result['nativeMicros'] as int?);
     } on PlatformException catch (e) {
       return UsbReadError(e);
     }

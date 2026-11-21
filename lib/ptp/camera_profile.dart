@@ -36,6 +36,9 @@ abstract interface class ProfileConnection {
 
   RetryPolicy get deleteBusyRetry;
 
+  /// Null keeps the supervisor's own backoff.
+  ReconnectPolicy? get reconnectPolicy;
+
   /// Stops event delivery and runs the vendor goodbye, if any.
   Future<void> detach();
 }

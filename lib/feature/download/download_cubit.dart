@@ -43,12 +43,19 @@ class DownloadCubit extends Cubit<DownloadState> {
   String _cameraKey = '';
   bool _alsoUpload = false;
   bool _starting = false;
+  DownloadOrigin _origin = DownloadOrigin.browse;
+  int? _chunkSize;
   FetchedCallback? _onFetched;
+
+  DownloadOrigin get origin => _origin;
+
+  int? get chunkSize => _chunkSize;
 
   /// Downloads [groups] in [format]. [prefetched] holds the start of files
   /// already received elsewhere, such as by the preview; their transfer
   /// resumes after those bytes. [onFetched] sees each file once it is
-  /// complete, before it is saved.
+  /// complete, before it is saved. A paused batch of another [origin] is left
+  /// as it is, so its partial files stay resumable.
   Future<void> start(
     CameraClient client,
     List<PhotoGroup> groups,
@@ -56,9 +63,14 @@ class DownloadCubit extends Cubit<DownloadState> {
     bool alsoUpload = false,
     Map<CameraObject, Uint8List> prefetched = const {},
     FetchedCallback? onFetched,
+    int? chunkSize,
+    DownloadOrigin origin = DownloadOrigin.browse,
   }) async {
     if (state.status == DownloadStatus.running || _starting) return;
+    if (state.status == DownloadStatus.paused && origin != _origin) return;
     _starting = true;
+    _origin = origin;
+    _chunkSize = chunkSize;
     try {
       await _prepare(client, groups, format, alsoUpload, prefetched);
     } finally {
@@ -352,6 +364,7 @@ class DownloadCubit extends Cubit<DownloadState> {
       object,
       _workFile(object),
       cancelToken: token,
+      chunkSize: _chunkSize,
       onResume: (received) => _emit(
         state.copyWith(
           currentFile: () => object.filename,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'camera_client.dart';
 import 'ptp_constants.dart';
@@ -9,6 +10,30 @@ const ptpDefaultResponseTimeout = Duration(seconds: 3);
 const _openSessionTransactionId = 0;
 const _firstTransactionId = 1;
 const _maxTransactionId = 0xFFFFFFFE;
+
+/// Where one transaction's time went, measured from the request being
+/// handed to the transport.
+class PtpTiming {
+  const PtpTiming({
+    required this.opcode,
+    required this.requestSent,
+    required this.response,
+    this.firstByte,
+    this.channelOverhead,
+  });
+
+  final int opcode;
+
+  final DateTime requestSent;
+
+  /// Null when the transport reports no received bytes.
+  final Duration? firstByte;
+
+  final Duration response;
+
+  /// Null unless the transport measures its platform channel.
+  final Duration? channelOverhead;
+}
 
 class PtpSession {
   PtpSession(
@@ -27,9 +52,24 @@ class PtpSession {
   int _lowPriorityHolds = 0;
   bool _running = false;
   bool _inTransaction = false;
+  Duration? _callTimeout;
   Timer? _watchdog;
+  void Function(int transactionId, PtpTiming timing)? _onTiming;
+  _Measurement? _measurement;
 
   Future<void> get disconnected => _transport.disconnected;
+
+  /// Reports the timing of every transaction that gets a response. One owner
+  /// at a time: clear it before another owner sets it.
+  set onTiming(void Function(int transactionId, PtpTiming timing)? callback) {
+    assert(
+      callback == null || _onTiming == null,
+      'PtpSession.onTiming already has an owner',
+    );
+    _onTiming = callback;
+    _measurement = null;
+    _transport.onTransferTiming = callback == null ? null : _onTransferTiming;
+  }
 
   Future<void> openSession() => _enqueue(() async {
     await _run(
@@ -41,20 +81,41 @@ class PtpSession {
     _nextTransactionId = _firstTransactionId;
   });
 
+  /// [timeout] replaces [responseTimeout] for this call only.
   Future<PtpTransactionResult> execute(
     int opcode, {
     List<int> params = const [],
     Set<int> acceptedCodes = const {PtpResponseCode.ok},
-  }) =>
-      _enqueue(() => _run(opcode, params, _takeTransactionId(), acceptedCodes));
+    Uint8List? dataOut,
+    Duration? timeout,
+  }) => _enqueue(
+    () => _run(
+      opcode,
+      params,
+      _takeTransactionId(),
+      acceptedCodes,
+      dataOut: dataOut,
+      timeout: timeout,
+    ),
+  );
 
+  /// [timeout] replaces [responseTimeout] for this call only.
   Future<PtpTransactionResult> executeLowPriority(
     int opcode, {
     List<int> params = const [],
     Set<int> acceptedCodes = const {PtpResponseCode.ok},
+    Uint8List? dataOut,
+    Duration? timeout,
     CancelToken? cancelToken,
   }) => _enqueue(
-    () => _run(opcode, params, _takeTransactionId(), acceptedCodes),
+    () => _run(
+      opcode,
+      params,
+      _takeTransactionId(),
+      acceptedCodes,
+      dataOut: dataOut,
+      timeout: timeout,
+    ),
     lowPriority: true,
     cancelToken: cancelToken,
   );
@@ -128,30 +189,46 @@ class PtpSession {
     int opcode,
     List<int> params,
     int transactionId,
-    Set<int> acceptedCodes,
-  ) async {
+    Set<int> acceptedCodes, {
+    Uint8List? dataOut,
+    Duration? timeout,
+  }) async {
     if (!_transport.isConnected) {
       throw CameraDisconnectedException(_transport.disconnectCause);
     }
     _inTransaction = true;
+    _callTimeout = timeout;
+    final tap = _onTiming;
+    final measurement = _measurement = tap == null
+        ? null
+        : _Measurement(transactionId, opcode, tap);
     _armWatchdog();
     try {
-      final result = await _transport.transact(opcode, params, transactionId);
+      final result = await _transport.transact(
+        opcode,
+        params,
+        transactionId,
+        dataOut: dataOut,
+      );
+      if (measurement != null && identical(measurement, _measurement)) {
+        measurement.report();
+      }
       if (!acceptedCodes.contains(result.code)) {
         throw PtpResponseException(opcode, result.code);
       }
       return result;
     } finally {
       _inTransaction = false;
+      _callTimeout = null;
+      _measurement = null;
       _watchdog?.cancel();
     }
   }
 
   Duration get _effectiveTimeout {
+    final requested = _callTimeout ?? responseTimeout;
     final minimum = _transport.minimumResponseTimeout;
-    return minimum != null && minimum > responseTimeout
-        ? minimum
-        : responseTimeout;
+    return minimum != null && minimum > requested ? minimum : requested;
   }
 
   void _armWatchdog() {
@@ -165,9 +242,42 @@ class PtpSession {
 
   void _onBytes() {
     if (_inTransaction) {
+      _measurement?.byteArrived();
       _armWatchdog();
     }
   }
+
+  void _onTransferTiming(int transactionId, Duration channelOverhead) {
+    final measurement = _measurement;
+    if (measurement != null && measurement.transactionId == transactionId) {
+      measurement.channelOverhead = channelOverhead;
+    }
+  }
+}
+
+class _Measurement {
+  _Measurement(this.transactionId, this.opcode, this._tap);
+
+  final int transactionId;
+  final int opcode;
+  final void Function(int transactionId, PtpTiming timing) _tap;
+  final requestSent = DateTime.now();
+  final _clock = Stopwatch()..start();
+  Duration? _firstByte;
+  Duration? channelOverhead;
+
+  void byteArrived() => _firstByte ??= _clock.elapsed;
+
+  void report() => _tap(
+    transactionId,
+    PtpTiming(
+      opcode: opcode,
+      requestSent: requestSent,
+      firstByte: _firstByte,
+      response: _clock.elapsed,
+      channelOverhead: channelOverhead,
+    ),
+  );
 }
 
 class _Job {

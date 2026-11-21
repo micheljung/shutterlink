@@ -14,6 +14,9 @@ import 'package:shutterlink/usb/usb_pipe.dart';
 
 import '../fakes/fake_ptp_device.dart';
 
+const _smallValue = 4;
+const _largeValue = 200 * 1000;
+
 /// ImageCaptureCore as the transport sees it: whole transactions, a session
 /// it owns, and buffers whose header and order are not certain.
 class _FakePassthrough implements UsbPassthrough {
@@ -38,8 +41,9 @@ class _FakePassthrough implements UsbPassthrough {
 
   @override
   Future<({Uint8List data, Uint8List response})> send(
-    Uint8List commandContainer,
-  ) async {
+    Uint8List commandContainer, {
+    Uint8List? dataOut,
+  }) async {
     final command = UsbContainerReader().add(commandContainer).single;
     commands.add(command);
     device.receivedOpcodes.add(command.code);
@@ -47,7 +51,7 @@ class _FakePassthrough implements UsbPassthrough {
     if (closed) {
       throw StateError('session closed');
     }
-    final reply = device.handle(command.code, command.params);
+    final reply = device.handle(command.code, command.params, dataOut: dataOut);
     final transactionId = rewriteTransactionIds
         ? command.transactionId + 1000
         : command.transactionId;
@@ -149,8 +153,27 @@ void main() {
   test('raises the session timeout to 30 s', () {
     final transport = open(_FakePassthrough(device));
     expect(transport.minimumResponseTimeout, const Duration(seconds: 30));
-    transport.onActivity = () {};
+    transport
+      ..onActivity = () {}
+      ..onTransferTiming = (_, _) => fail('no channel to measure');
   });
+
+  for (final size in [_smallValue, _largeValue]) {
+    test('round-trips a $size-byte property value', () async {
+      final session = PtpSession(open(_FakePassthrough(device)));
+      final value = patternBytes(size, seed: size);
+      await session.execute(
+        PtpOperation.setDevicePropValue,
+        params: const [PtpDeviceProperty.dateTime],
+        dataOut: value,
+      );
+      final read = await session.execute(
+        PtpOperation.getDevicePropValue,
+        params: const [PtpDeviceProperty.dateTime],
+      );
+      expect(read.data, value);
+    });
+  }
 
   test('abort closes the session and fails the transaction', () async {
     final passthrough = _FakePassthrough(device)..hold = Completer<void>();

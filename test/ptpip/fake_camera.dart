@@ -89,6 +89,10 @@ class FakeCamera {
   final receivedRequests = <CommandRequest>[];
   final receivedNames = <String>[];
   int pongsReceived = 0;
+
+  /// Data packets of every data-out phase, not counting StartData and
+  /// EndData.
+  int dataOutPackets = 0;
   int maxConcurrentRequests = 0;
   int _inFlight = 0;
   bool silent = false;
@@ -96,6 +100,9 @@ class FakeCamera {
   final _sockets = <Socket>[];
   Socket? _commandSocket;
   Socket? _eventSocket;
+  CommandRequest? _dataOutRequest;
+  BytesBuilder? _dataOut;
+  int? _dataOutLength;
   late final ServerSocket _server;
 
   List<FakeObject> get objects => device.objects;
@@ -146,6 +153,7 @@ class FakeCamera {
 
   void _onClient(Socket socket) {
     _sockets.add(socket);
+    socket.setOption(SocketOption.tcpNoDelay, true);
     socket.done.ignore();
     socket
         .transform(const PtpIpPacketReader())
@@ -235,24 +243,60 @@ class FakeCamera {
         }
       case PongPacket():
         pongsReceived++;
+      case CommandRequest(dataPhase: PtpDataPhase.dataOut):
+        _receive(packet);
+        _dataOutRequest = packet;
       case CommandRequest():
-        device.receivedOpcodes.add(packet.opcode);
-        receivedRequests.add(packet);
-        _inFlight++;
-        maxConcurrentRequests = max(maxConcurrentRequests, _inFlight);
-        if (responseDelay == Duration.zero) {
-          _handle(socket, packet);
-        } else {
-          Timer(responseDelay, () => _handle(socket, packet));
+        _receive(packet);
+        _dispatch(socket, packet);
+      case StartData(:final transactionId, :final totalLength)
+          when transactionId == _dataOutRequest?.transactionId:
+        _dataOut = BytesBuilder(copy: true);
+        _dataOutLength = totalLength;
+      case DataPacket(:final transactionId, :final payload)
+          when transactionId == _dataOutRequest?.transactionId:
+        dataOutPackets++;
+        _dataOut!.add(payload);
+      case EndDataPacket(:final transactionId, :final payload)
+          when transactionId == _dataOutRequest?.transactionId:
+        final request = _dataOutRequest!;
+        final data = (_dataOut!..add(payload)).takeBytes();
+        if (data.length != _dataOutLength) {
+          throw StateError(
+            'StartData announced $_dataOutLength bytes, got ${data.length}',
+          );
         }
+        _dataOutRequest = null;
+        _dataOut = null;
+        _dataOutLength = null;
+        _dispatch(socket, request, dataOut: data);
       default:
     }
   }
 
-  void _handle(Socket socket, CommandRequest request) {
+  void _receive(CommandRequest request) {
+    device.receivedOpcodes.add(request.opcode);
+    receivedRequests.add(request);
+    _inFlight++;
+    maxConcurrentRequests = max(maxConcurrentRequests, _inFlight);
+  }
+
+  void _dispatch(Socket socket, CommandRequest request, {Uint8List? dataOut}) {
+    if (responseDelay == Duration.zero) {
+      _handle(socket, request, dataOut);
+    } else {
+      Timer(responseDelay, () => _handle(socket, request, dataOut));
+    }
+  }
+
+  void _handle(Socket socket, CommandRequest request, Uint8List? dataOut) {
     _inFlight--;
     final txid = request.transactionId;
-    final reply = device.handle(request.opcode, request.params);
+    final reply = device.handle(
+      request.opcode,
+      request.params,
+      dataOut: dataOut,
+    );
     final data = reply.data;
     final drop = reply.dropAfterBytes;
     if (drop != null) {

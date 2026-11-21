@@ -58,6 +58,11 @@ class PtpCameraClient implements CameraClient {
   /// The id of the profile chosen for this camera.
   String get profileId => _profile.profileId;
 
+  /// The PTP session this client runs on, for vendor operations the client
+  /// does not wrap, such as Canon live view. Commands sent here share the
+  /// client's queue.
+  PtpSession get session => _session;
+
   static Future<PtpCameraClient> open(
     PtpTransport transport, {
     ProfileRegistry registry = defaultProfileRegistry,
@@ -313,6 +318,9 @@ class PtpCameraClient implements CameraClient {
   bool get thumbnailsUpright => false;
 
   @override
+  ReconnectPolicy? get reconnectPolicy => _profile.reconnectPolicy;
+
+  @override
   Future<void> download(
     CameraObject object,
     ChunkWriter write, {
@@ -320,6 +328,7 @@ class PtpCameraClient implements CameraClient {
     int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
+    int? chunkSize,
   }) async {
     final release = _session.holdLowPriority();
     try {
@@ -336,7 +345,7 @@ class PtpCameraClient implements CameraClient {
           params: [
             object.handle,
             received,
-            min(ptpDownloadChunkSize, end - received),
+            min(chunkSize ?? ptpDownloadChunkSize, end - received),
           ],
         )).data;
         if (chunk.isEmpty) {

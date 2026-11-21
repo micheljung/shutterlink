@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 
-import '../ptp_protocol_exception.dart';
 import 'canon_constants.dart';
 
 const canonEventHeaderSize = 8;
@@ -19,7 +18,9 @@ const _nameOffset64 = 0x2C;
 const _handleRecordMinSize = _handleOffset + _u32Size;
 const _propertyOffset = 0x08;
 const _propertyValueOffset = 0x0C;
-const _propertyRecordMinSize = _propertyValueOffset + _u32Size;
+const _allowedDataTypeOffset = 0x0C;
+const _allowedCountOffset = 0x10;
+const _allowedValuesOffset = 0x14;
 
 sealed class CanonEvent extends Equatable {
   const CanonEvent();
@@ -71,15 +72,32 @@ class CanonStorageChanged extends CanonEvent {
   List<Object?> get props => [];
 }
 
-/// A property whose value is a single u32; longer values are not decoded.
+/// A property's new value, as the raw bytes the camera sent.
 class CanonPropertyChanged extends CanonEvent {
   const CanonPropertyChanged(this.property, this.value);
 
   final int property;
-  final int value;
+  final Uint8List value;
+
+  /// The value as a little-endian u32, or null unless it is 4 bytes long.
+  int? get u32 => value.length == _u32Size
+      ? ByteData.sublistView(value).getUint32(0, Endian.little)
+      : null;
 
   @override
   List<Object?> get props => [property, value];
+}
+
+/// The values a property currently accepts.
+class CanonAllowedValues extends CanonEvent {
+  const CanonAllowedValues(this.property, this.dataType, this.values);
+
+  final int property;
+  final int dataType;
+  final List<int> values;
+
+  @override
+  List<Object?> get props => [property, dataType, values];
 }
 
 class CanonEventRecord {
@@ -92,8 +110,13 @@ class CanonEventRecord {
 }
 
 /// Splits a Canon EOS GetEvent response into its records, following
-/// libgphoto2's `ptp_unpack_CANON_changes`.
-List<CanonEventRecord> canonEventRecords(Uint8List data) {
+/// libgphoto2's `ptp_unpack_CANON_changes`. A record whose size is below the
+/// header or past the end ends the batch: the records before it are kept,
+/// and [onMalformed] learns where it was.
+List<CanonEventRecord> canonEventRecords(
+  Uint8List data, {
+  void Function(int offset, int size)? onMalformed,
+}) {
   final view = ByteData.sublistView(data);
   final records = <CanonEventRecord>[];
   var offset = 0;
@@ -104,9 +127,8 @@ List<CanonEventRecord> canonEventRecords(Uint8List data) {
       break;
     }
     if (size < canonEventHeaderSize || offset + size > data.length) {
-      throw PtpProtocolException(
-        'Malformed Canon event at $offset: size $size of ${data.length}',
-      );
+      onMalformed?.call(offset, size);
+      break;
     }
     records.add(
       CanonEventRecord(
@@ -152,10 +174,23 @@ CanonEvent? parseCanonEvent(CanonEventRecord record) {
       return CanonObjectRemoved(u32(_handleOffset));
     case CanonEosEvent.storageInfoChanged:
       return const CanonStorageChanged();
-    case CanonEosEvent.propValueChanged when length == _propertyRecordMinSize:
+    case CanonEosEvent.propValueChanged when length >= _propertyValueOffset:
       return CanonPropertyChanged(
         u32(_propertyOffset),
-        u32(_propertyValueOffset),
+        Uint8List.sublistView(record.bytes, _propertyValueOffset),
+      );
+    case CanonEosEvent.availListChanged when length >= _allowedValuesOffset:
+      final count = u32(_allowedCountOffset);
+      if (length < _allowedValuesOffset + count * _u32Size) {
+        return null;
+      }
+      return CanonAllowedValues(
+        u32(_propertyOffset),
+        u32(_allowedDataTypeOffset),
+        [
+          for (var i = 0; i < count; i++)
+            u32(_allowedValuesOffset + i * _u32Size),
+        ],
       );
     default:
       return null;

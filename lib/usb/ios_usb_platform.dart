@@ -210,8 +210,9 @@ class IosUsbPassthrough implements UsbPassthrough {
 
   @override
   Future<({Uint8List data, Uint8List response})> send(
-    Uint8List commandContainer,
-  ) async {
+    Uint8List commandContainer, {
+    Uint8List? dataOut,
+  }) async {
     if (_detached.isCompleted) {
       throw const UsbTransferException('send failed: session closed');
     }
@@ -219,7 +220,7 @@ class IosUsbPassthrough implements UsbPassthrough {
     try {
       result = await IosUsbPlatform.channel.invokeMapMethod<String, Object?>(
         'send',
-        {'bytes': commandContainer},
+        {'bytes': commandContainer, 'dataOut': ?dataOut},
       );
     } on PlatformException catch (e) {
       throw UsbTransferException('send failed: ${e.code} ${e.message}');

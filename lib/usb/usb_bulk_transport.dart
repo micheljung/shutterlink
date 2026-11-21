@@ -109,6 +109,7 @@ class UsbBulkTransport implements PtpTransport {
   final _events = StreamController<PtpEvent>.broadcast();
   final _disconnected = Completer<void>();
   void Function()? _onActivity;
+  void Function(int transactionId, Duration channelOverhead)? _onTransferTiming;
   Object? _cause;
   Completer<PtpTransactionResult>? _current;
 
@@ -127,6 +128,12 @@ class UsbBulkTransport implements PtpTransport {
   @override
   set onActivity(void Function()? callback) => _onActivity = callback;
 
+  /// While set, every read asks the bridge for its native transfer time.
+  @override
+  set onTransferTiming(
+    void Function(int transactionId, Duration channelOverhead)? callback,
+  ) => _onTransferTiming = callback;
+
   @override
   Duration? get minimumResponseTimeout => null;
 
@@ -134,13 +141,14 @@ class UsbBulkTransport implements PtpTransport {
   Future<PtpTransactionResult> transact(
     int opcode,
     List<int> params,
-    int transactionId,
-  ) {
+    int transactionId, {
+    Uint8List? dataOut,
+  }) {
     if (!isConnected) {
       return Future.error(CameraDisconnectedException(_cause));
     }
     final completer = _current = Completer<PtpTransactionResult>();
-    _exchange(opcode, params, transactionId).then(
+    _exchange(opcode, params, transactionId, dataOut).then(
       (result) {
         if (!completer.isCompleted) {
           completer.complete(result);
@@ -163,6 +171,7 @@ class UsbBulkTransport implements PtpTransport {
     int opcode,
     List<int> params,
     int transactionId,
+    Uint8List? dataOut,
   ) async {
     try {
       await _pipe.bulkOut(
@@ -173,15 +182,35 @@ class UsbBulkTransport implements PtpTransport {
           params,
         ).encode(),
       );
+      if (dataOut != null) {
+        await _pipe.bulkOut(
+          UsbContainer(
+            type: UsbContainerType.data,
+            code: opcode,
+            transactionId: transactionId,
+            payload: dataOut,
+          ).encode(),
+        );
+      }
+      final timing = _onTransferTiming != null;
+      final roundTrip = Stopwatch();
+      var channelOverhead = Duration.zero;
       Uint8List? data;
       while (true) {
-        final read = await _pipe.bulkIn(_pipe.maxTransfer);
+        roundTrip
+          ..reset()
+          ..start();
+        final read = await _pipe.bulkIn(_pipe.maxTransfer, timing: timing);
         if (!isConnected) {
           throw CameraDisconnectedException(_cause);
         }
         final Uint8List bytes;
         switch (read) {
-          case UsbData(bytes: final received):
+          case UsbData(bytes: final received, :final nativeMicros):
+            if (nativeMicros != null) {
+              channelOverhead +=
+                  roundTrip.elapsed - Duration(microseconds: nativeMicros);
+            }
             _onActivity?.call();
             bytes = received;
           case UsbZeroLength():
@@ -204,6 +233,9 @@ class UsbBulkTransport implements PtpTransport {
             case UsbContainerType.data:
               data = container.payload;
             case UsbContainerType.response:
+              if (timing) {
+                _onTransferTiming?.call(transactionId, channelOverhead);
+              }
               return PtpTransactionResult(
                 code: container.code,
                 params: container.params,

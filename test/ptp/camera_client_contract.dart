@@ -32,16 +32,20 @@ void cameraClientContract(String name, OpenFakeClient open) {
       CameraObject object, {
       int offset = 0,
       CancelToken? cancelToken,
+      int? chunkSize,
+      List<int>? chunkLengths,
     }) async {
       final bytes = BytesBuilder(copy: false);
       await client.download(
         object,
         (chunk) async {
           bytes.add(chunk);
+          chunkLengths?.add(chunk.length);
           cancelToken?.cancel();
         },
         offset: offset,
         cancelToken: cancelToken,
+        chunkSize: chunkSize,
       );
       return bytes.takeBytes();
     }
@@ -96,6 +100,26 @@ void cameraClientContract(String name, OpenFakeClient open) {
         await download(object, offset: offset),
         Uint8List.sublistView(contentOf(object.handle), offset),
       );
+    });
+
+    test('a small chunk size splits a download into partial reads', () async {
+      const chunkSize = 300000;
+      final object = await photo(FakePtpDevice.largeJpegHandle);
+      final lengths = <int>[];
+      final content = contentOf(object.handle);
+
+      expect(
+        await download(object, chunkSize: chunkSize, chunkLengths: lengths),
+        content,
+      );
+
+      final fullChunks = content.length ~/ chunkSize;
+      expect(
+        count(PtpOperation.getPartialObject),
+        (content.length / chunkSize).ceil(),
+      );
+      expect(lengths.take(fullChunks), everyElement(chunkSize));
+      expect(lengths.fold<int>(0, (sum, n) => sum + n), content.length);
     });
 
     test('a cancelled download stops after the chunk in flight', () async {

@@ -13,7 +13,12 @@ const _beforeName = 0x20;
 const _pastEnd = 0x30;
 const _partialHeader = 4;
 const _unknownPayload = 5;
-const _longPropertyRecord = 52;
+const _longValue = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60];
+const _evfProperty = 0xD1B0;
+const _isoProperty = 0xD103;
+const _isoValues = [0x48, 0x50, 0x58];
+const _enumDataType = 3;
+const _u32 = 4;
 
 Uint8List _join(List<List<int>> parts) =>
     Uint8List.fromList([for (final part in parts) ...part]);
@@ -87,27 +92,82 @@ void main() {
   });
 
   test('a storage change and a u32 property change are decoded', () {
+    final events = parseCanonEvents(
+      _join([
+        storageChangedRecord(0x00020001),
+        propertyChangedRecord(CanonEosProperty.cameraTime, 0x6af859d9),
+      ]),
+    );
+    expect(events, [
+      const CanonStorageChanged(),
+      CanonPropertyChanged(
+        CanonEosProperty.cameraTime,
+        Uint8List.fromList([0xd9, 0x59, 0xf8, 0x6a]),
+      ),
+    ]);
+    expect((events.last as CanonPropertyChanged).u32, 0x6af859d9);
+  });
+
+  test('a property change keeps a longer value as raw bytes', () {
+    final event =
+        parseCanonEvents(propertyBytesChangedRecord(_evfProperty, _longValue))
+                .single
+            as CanonPropertyChanged;
+    expect(event.property, _evfProperty);
+    expect(event.value, _longValue);
+    expect(event.u32, isNull);
+  });
+
+  test('a property change without a value has empty bytes', () {
+    final event =
+        parseCanonEvents(propertyBytesChangedRecord(_evfProperty, const []))
+                .single
+            as CanonPropertyChanged;
+    expect(event.value, isEmpty);
+    expect(event.u32, isNull);
+  });
+
+  test('an allowed-values list yields the property, type and values', () {
     expect(
       parseCanonEvents(
         _join([
-          storageChangedRecord(0x00020001),
-          propertyChangedRecord(CanonEosProperty.cameraTime, 0x6af859d9),
+          allowedValuesRecord(_isoProperty, _enumDataType, _isoValues),
+          _terminator,
         ]),
       ),
-      [
-        const CanonStorageChanged(),
-        const CanonPropertyChanged(CanonEosProperty.cameraTime, 0x6af859d9),
-      ],
+      [const CanonAllowedValues(_isoProperty, _enumDataType, _isoValues)],
+    );
+    expect(
+      parseCanonEvents(
+        allowedValuesRecord(_isoProperty, _enumDataType, const []),
+      ),
+      [const CanonAllowedValues(_isoProperty, _enumDataType, [])],
     );
   });
 
-  test('a property change with a longer value is skipped', () {
-    final long = Uint8List(_longPropertyRecord);
-    ByteData.sublistView(long)
-      ..setUint32(0, _longPropertyRecord, Endian.little)
-      ..setUint32(4, CanonEosEvent.propValueChanged, Endian.little)
-      ..setUint32(8, 0xD157, Endian.little);
-    expect(parseCanonEvents(long), isEmpty);
+  test('an allowed-values list whose count overruns the record is skipped', () {
+    expect(
+      parseCanonEvents(
+        _join([
+          allowedValuesRecord(
+            _isoProperty,
+            _enumDataType,
+            _isoValues,
+            count: _isoValues.length + 1,
+          ),
+          storageChangedRecord(fakeStorageId),
+        ]),
+      ),
+      [const CanonStorageChanged()],
+    );
+  });
+
+  test('0xC18B stays an unknown record', () {
+    final record = _unknownRecord(_u32);
+    ByteData.sublistView(record).setUint32(4, 0xC18B, Endian.little);
+    final records = canonEventRecords(record);
+    expect(records.single.type, 0xC18B);
+    expect(parseCanonEvent(records.single), isNull);
   });
 
   test('unknown and too short records are skipped by their size', () {
@@ -144,21 +204,33 @@ void main() {
     );
   });
 
-  test('a size below the header or past the end is a protocol error', () {
+  test('a malformed record ends the batch and keeps the records before', () {
     final tooSmall = _join([
-      [4, 0, 0, 0, 1, 0, 0, 0],
+      objectAddedRecord(jpeg),
+      malformedEventRecord(),
+      storageChangedRecord(fakeStorageId),
       _terminator,
     ]);
-    final truncated = objectAddedRecord(jpeg).sublist(0, _pastEnd);
+    final truncated = _join([
+      storageChangedRecord(fakeStorageId),
+      objectAddedRecord(jpeg).sublist(0, _pastEnd),
+    ]);
+    final malformed = <(int, int)>[];
 
+    expect(parseCanonEvents(tooSmall), [jpegAdded]);
     expect(
-      () => parseCanonEvents(tooSmall),
-      throwsA(isA<PtpProtocolException>()),
+      canonEventRecords(
+        truncated,
+        onMalformed: (offset, size) => malformed.add((offset, size)),
+      ).map(parseCanonEvent),
+      [const CanonStorageChanged()],
     );
-    expect(
-      () => parseCanonEvents(truncated),
-      throwsA(isA<PtpProtocolException>()),
-    );
+    expect(malformed, [
+      (
+        storageChangedRecord(fakeStorageId).length,
+        objectAddedRecord(jpeg).length,
+      ),
+    ]);
   });
 
   test('records expose their type and bytes', () {

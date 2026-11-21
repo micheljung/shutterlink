@@ -50,14 +50,20 @@ class UsbPassthroughTransport implements PtpTransport {
   set onActivity(void Function()? callback) {}
 
   @override
+  set onTransferTiming(
+    void Function(int transactionId, Duration channelOverhead)? callback,
+  ) {}
+
+  @override
   Duration? get minimumResponseTimeout => usbPassthroughMinimumResponseTimeout;
 
   @override
   Future<PtpTransactionResult> transact(
     int opcode,
     List<int> params,
-    int transactionId,
-  ) {
+    int transactionId, {
+    Uint8List? dataOut,
+  }) {
     if (!isConnected) {
       return Future.error(CameraDisconnectedException(_cause));
     }
@@ -72,7 +78,7 @@ class UsbPassthroughTransport implements PtpTransport {
       );
     }
     final completer = _current = Completer<PtpTransactionResult>();
-    _exchange(opcode, params, transactionId).then(
+    _exchange(opcode, params, transactionId, dataOut).then(
       (result) {
         if (!completer.isCompleted) {
           completer.complete(result);
@@ -95,6 +101,7 @@ class UsbPassthroughTransport implements PtpTransport {
     int opcode,
     List<int> params,
     int transactionId,
+    Uint8List? dataOut,
   ) async {
     try {
       final command = UsbContainer.withParams(
@@ -103,7 +110,10 @@ class UsbPassthroughTransport implements PtpTransport {
         transactionId,
         params,
       ).encode();
-      final (:data, :response) = await _passthrough.send(command);
+      final (:data, :response) = await _passthrough.send(
+        command,
+        dataOut: dataOut,
+      );
       if (!isConnected) {
         throw CameraDisconnectedException(_cause);
       }

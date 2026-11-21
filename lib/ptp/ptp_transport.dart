@@ -30,13 +30,15 @@ class PtpEvent {
 /// Moves whole PTP transactions over one wire. Framing is the transport's;
 /// queueing and timeouts are `PtpSession`'s.
 abstract interface class PtpTransport {
-  /// Sends one command and completes with its data-in phase and response.
-  /// Fails with `CameraDisconnectedException` once the transport is down.
+  /// Sends one command, then [dataOut] as its data-out phase if given, and
+  /// completes with its data-in phase and response. Fails with
+  /// `CameraDisconnectedException` once the transport is down.
   Future<PtpTransactionResult> transact(
     int opcode,
     List<int> params,
-    int transactionId,
-  );
+    int transactionId, {
+    Uint8List? dataOut,
+  });
 
   Stream<PtpEvent> get events;
 
@@ -48,6 +50,13 @@ abstract interface class PtpTransport {
 
   /// Called on every non-empty read, so a slow transfer stays alive.
   set onActivity(void Function()? callback);
+
+  /// While set, reports per transaction the time spent in the platform
+  /// channel rather than on the wire. Transports without a channel to
+  /// measure never call it.
+  set onTransferTiming(
+    void Function(int transactionId, Duration channelOverhead)? callback,
+  );
 
   /// A floor for the session's response timeout, for transports that report
   /// no progress while a transaction runs. Null keeps the session's.

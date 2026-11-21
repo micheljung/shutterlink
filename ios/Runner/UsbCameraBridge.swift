@@ -125,8 +125,8 @@ final class UsbCameraBridge: NSObject, FlutterStreamHandler, ICDeviceBrowserDele
         result(FlutterError(code: "bad_arguments", message: "Missing bytes", details: nil))
         return
       }
-      // No data-out phase is in scope, so outData is nil.
-      camera.requestSendPTPCommand(command, outData: nil) { data, response, error in
+      let dataOut = (arguments?["dataOut"] as? FlutterStandardTypedData)?.data
+      camera.requestSendPTPCommand(command, outData: dataOut) { data, response, error in
         let reply = UsbCameraBridge.reply(
           command: command, data: (data as Data?) ?? Data(),
           response: (response as Data?) ?? Data(), error: error as Error?)

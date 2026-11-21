@@ -6,6 +6,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_state.dart';
+import 'package:shutterlink/feature/live_view_probe/live_view_probe_screen.dart';
 import 'package:shutterlink/feature/mode/mode_cubit.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
@@ -78,7 +79,7 @@ void main() {
           BlocProvider<UploadStatusCubit>.value(value: uploads),
           BlocProvider<SessionsUploadCubit>.value(value: sessions),
         ],
-        child: const MaterialApp(home: ModePickerScreen()),
+        child: MaterialApp(home: const ModePickerScreen()),
       ),
     );
   }
@@ -144,5 +145,23 @@ void main() {
       find.text(ModePickerScreen.statusText(const DemoTarget())),
       findsOneWidget,
     );
+  });
+
+  testWidgets('the live view probe opens from the app bar', (tester) async {
+    await pumpPicker(tester);
+
+    await tester.tap(find.byTooltip(LiveViewProbe.title));
+    await tester.pumpAndSettle();
+
+    expect(find.text(LiveViewProbe.notCanonText), findsOneWidget);
+  });
+
+  testWidgets('a release build hides the live view probe', (tester) async {
+    ModePickerScreen.hidesDebugTools = true;
+    addTearDown(() => ModePickerScreen.hidesDebugTools = false);
+    await pumpPicker(tester);
+
+    expect(find.byTooltip(LiveViewProbe.title), findsNothing);
+    expect(find.byTooltip('Settings'), findsOneWidget);
   });
 }
