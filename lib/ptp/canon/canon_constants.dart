@@ -43,6 +43,12 @@ abstract final class CanonEosEvent {
   static const cameraStatusChanged = 0xC18B;
 }
 
+/// The value of a CameraStatusChanged record.
+abstract final class CanonCameraStatus {
+  static const idle = 0;
+  static const capturing = 1;
+}
+
 abstract final class CanonEosProperty {
   static const aperture = 0xD101;
   static const shutterSpeed = 0xD102;

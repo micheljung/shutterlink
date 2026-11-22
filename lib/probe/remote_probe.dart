@@ -32,12 +32,14 @@ const _diffOperations = {
   PtpOperation.getObjectHandles,
   PtpOperation.getObjectInfo,
 };
+const _busyRetries = 5;
+const _busyBackoff = Duration(milliseconds: 100);
 const _operationNames = {
   CanonEosOperation.remoteReleaseOn: 'RemoteReleaseOn',
   CanonEosOperation.remoteReleaseOff: 'RemoteReleaseOff',
 };
 
-/// The Wi-Fi remote-shooting measurements of `bin/probe.dart`.
+/// The remote-shooting measurements of `bin/probe.dart`, over Wi-Fi or USB.
 class RemoteProbe {
   RemoteProbe(
     this._out,
@@ -171,6 +173,12 @@ class RemoteProbe {
     final rows = <List<String>>[];
     for (var shot = 1; shot <= _options.shots; shot++) {
       _out.writeln('Shot $shot:');
+      if (!await _awaitIdle()) {
+        _out.writeln(
+          '  Camera still capturing after '
+          '${_options.releaseTimeout.inSeconds} s.',
+        );
+      }
       final timeline = ReleaseTimeline(_clock.elapsed);
       String since() => milliseconds(_clock.elapsed - timeline.trigger);
       final events = _poller.records.listen((timed) {
@@ -182,22 +190,29 @@ class RemoteProbe {
       for (final (opcode, params) in canonReleaseSequence(
         _options.releaseParams,
       )) {
-        final code = await _send(opcode, params: params);
+        final code = await _sendRelease(opcode, params, timeline, since);
         _out.writeln(
           '  +${since()} ${_operationNames[opcode]}(${params.first}) '
           '-> ${hex(code)}',
         );
       }
       timeline.released = _clock.elapsed - timeline.trigger;
-      await _wait(_options.releaseTimeout, orUntil: timeline.stored);
-      if (!timeline.isStored) {
-        _out.writeln(
-          '  No 0xc185 or new object within '
-          '${_options.releaseTimeout.inSeconds} s.',
-        );
+      if (timeline.busy) {
+        _out.writeln('  Camera busy: the release was refused with 0x2019.');
+      } else {
+        await _wait(_options.releaseTimeout, orUntil: timeline.finished);
+        if (!timeline.sawCapture) {
+          _out.writeln(
+            '  No events within ${_options.releaseTimeout.inSeconds} s: '
+            'no capture (AF failed?)',
+          );
+        }
       }
       final cold = timeline.coldDiff = await _diff();
-      final fresh = cold.handles.where((h) => !known.contains(h)).toList();
+      final fresh = {
+        ?timeline.addedHandle,
+        ...cold.handles.where((h) => !known.contains(h)),
+      }.toList();
       if (fresh.isNotEmpty) {
         timeline.newHandle = _clock.elapsed - timeline.trigger;
       }
@@ -234,6 +249,49 @@ class RemoteProbe {
     }
     _out.write(formatTable(ReleaseTimeline.tableHeaders, rows));
     return exitOk;
+  }
+
+  /// RemoteReleaseOn is retried while the camera answers 0x2019; the shot
+  /// is marked busy when it never accepts.
+  Future<int> _sendRelease(
+    int opcode,
+    List<int> params,
+    ReleaseTimeline timeline,
+    String Function() since,
+  ) async {
+    var code = await _send(opcode, params: params);
+    if (opcode != CanonEosOperation.remoteReleaseOn) {
+      return code;
+    }
+    for (
+      var retry = 1;
+      retry <= _busyRetries && code == PtpResponseCode.deviceBusy;
+      retry++
+    ) {
+      _out.writeln(
+        '  +${since()} ${_operationNames[opcode]}(${params.first}) '
+        '-> ${hex(code)}, retry $retry',
+      );
+      await _wait(_busyBackoff);
+      code = await _send(opcode, params: params);
+    }
+    if (code == PtpResponseCode.deviceBusy) {
+      timeline.busy = true;
+    }
+    return code;
+  }
+
+  /// Whether the camera is idle, waiting up to the release timeout for the
+  /// capture in progress to end.
+  Future<bool> _awaitIdle() async {
+    if (!_poller.isCapturing) {
+      return true;
+    }
+    final idle = await _poller.waitFor(
+      (record) => cameraStatusValue(record) == CanonCameraStatus.idle,
+      _options.releaseTimeout,
+    );
+    return idle != null;
   }
 
   Future<int> _runSet() async {

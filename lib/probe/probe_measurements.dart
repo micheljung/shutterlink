@@ -8,9 +8,12 @@ import '../ptp/canon/canon_constants.dart';
 import '../ptp/canon/canon_events.dart';
 import '../ptp/canon/canon_live_view.dart';
 import '../ptp/canon/canon_live_view_stats.dart';
+import '../ptp/ptp_constants.dart';
 import '../ptp/ptp_session.dart';
 import '../ptpip/connection.dart';
 import '../ptpip/packet.dart';
+import '../usb/usb_container.dart';
+import '../usb/usb_pipe.dart';
 import 'probe_args.dart';
 
 const _packetHeaderSize = 8;
@@ -21,6 +24,10 @@ const _maxInlineBytes = 32;
 const _bytesPerKibibyte = 1024;
 const _columnGap = '  ';
 const _u32Size = 4;
+const _usbContainerTypeOffset = 4;
+const _usbContainerCodeOffset = 6;
+const _percent = 100;
+const _percentDecimals = 1;
 
 String hex(int value) => '0x${value.toRadixString(_hexRadix)}';
 
@@ -69,6 +76,16 @@ int? canonPropertyValue(List<CanonEventRecord> records, int property) => records
     .lastWhereOrNull((event) => event.property == property)
     ?.u32;
 
+/// The u32 of a CameraStatusChanged record, or null for any other record.
+int? cameraStatusValue(CanonEventRecord record) {
+  const valueAt = canonEventHeaderSize;
+  if (record.type != CanonEosEvent.cameraStatusChanged ||
+      record.bytes.length < valueAt + _u32Size) {
+    return null;
+  }
+  return ByteData.sublistView(record.bytes).getUint32(valueAt, Endian.little);
+}
+
 String formatTable(List<String> headers, List<List<String>> rows) {
   final widths = [
     for (var column = 0; column < headers.length; column++)
@@ -80,9 +97,20 @@ String formatTable(List<String> headers, List<List<String>> rows) {
   return [line(headers), ...rows.map(line)].map((l) => '$l\n').join();
 }
 
-/// Counts the PTP/IP requests sent by opcode.
+/// Counts the PTP requests sent by opcode, over PTP/IP or USB.
 class TransactionLedger {
   final _sent = <int, int>{};
+
+  void onUsbBulkOut(Uint8List bytes) {
+    if (bytes.length < usbContainerHeaderSize) {
+      return;
+    }
+    final view = ByteData.sublistView(bytes);
+    if (view.getUint16(_usbContainerTypeOffset, Endian.little) ==
+        UsbContainerType.command.code) {
+      _count(view.getUint16(_usbContainerCodeOffset, Endian.little));
+    }
+  }
 
   void onPacket(PtpIpChannel channel, Uint8List frame) {
     if (channel != PtpIpChannel.command || frame.length < _packetHeaderSize) {
@@ -94,13 +122,71 @@ class TransactionLedger {
       return;
     }
     if (PtpIpPacket.decode(frame) case CommandRequest(:final opcode)) {
-      _sent.update(opcode, (count) => count + 1, ifAbsent: () => 1);
+      _count(opcode);
     }
   }
+
+  void _count(int opcode) =>
+      _sent.update(opcode, (count) => count + 1, ifAbsent: () => 1);
 
   /// How many requests with one of [opcodes] were sent so far.
   int sentCount(Set<int> opcodes) =>
       opcodes.map((opcode) => _sent[opcode] ?? 0).sum;
+}
+
+/// A [UsbBulkPipe] that notes every command it sends in a
+/// [TransactionLedger].
+class LedgerUsbPipe implements UsbBulkPipe {
+  LedgerUsbPipe(this._pipe, this._ledger);
+
+  final UsbBulkPipe _pipe;
+  final TransactionLedger _ledger;
+
+  @override
+  int get maxPacketSize => _pipe.maxPacketSize;
+
+  @override
+  int get maxTransfer => _pipe.maxTransfer;
+
+  @override
+  Future<void> bulkOut(Uint8List bytes) {
+    _ledger.onUsbBulkOut(bytes);
+    return _pipe.bulkOut(bytes);
+  }
+
+  @override
+  Future<UsbRead> bulkIn(int maxLength, {bool timing = false}) =>
+      _pipe.bulkIn(maxLength, timing: timing);
+
+  @override
+  Stream<Uint8List> get interrupt => _pipe.interrupt;
+
+  @override
+  Future<void> get detached => _pipe.detached;
+
+  @override
+  Future<void> clearHalt() => _pipe.clearHalt();
+
+  @override
+  Future<Uint8List> classRequest(
+    int request, {
+    required bool deviceToHost,
+    int value = 0,
+    int length = 0,
+    Uint8List? data,
+  }) => _pipe.classRequest(
+    request,
+    deviceToHost: deviceToHost,
+    value: value,
+    length: length,
+    data: data,
+  );
+
+  @override
+  Future<void> drainIn() => _pipe.drainIn();
+
+  @override
+  Future<void> close() => _pipe.close();
 }
 
 String liveViewReport(LiveViewSummary summary) {
@@ -111,6 +197,7 @@ String liveViewReport(LiveViewSummary summary) {
   final firstByte = summary.timeToFirstByte;
   final transfer = summary.transfer;
   final counts = summary.counts;
+  final overhead = summary.channelOverhead;
   return 'Live view ${seconds.toStringAsFixed(1)} s: ${summary.frames} frames, '
       'average ${fps.toStringAsFixed(2)} fps\n'
       'Time to first byte: mean ${milliseconds(firstByte?.mean)}, '
@@ -119,7 +206,18 @@ String liveViewReport(LiveViewSummary summary) {
       'p95 ${milliseconds(transfer?.p95)}\n'
       'Frame size: mean ${meanSize.toStringAsFixed(1)} KiB\n'
       'Not ready (0xa102) ${counts.notReady}, busy (0x2019) ${counts.busy}, '
-      'errors ${counts.errors}, watchdog aborts ${summary.watchdogAborts}\n';
+      'errors ${counts.errors}, watchdog aborts ${summary.watchdogAborts}\n'
+      '${overhead == null ? '' : _overheadLine(overhead, summary)}';
+}
+
+/// Time spent outside the wire, e.g. crossing to the USB worker, against
+/// the mean time per frame.
+String _overheadLine(LiveViewSpread overhead, LiveViewSummary summary) {
+  final share = summary.frames == 0 || summary.elapsed == Duration.zero
+      ? '-'
+      : '${(_percent * overhead.mean.inMicroseconds * summary.frames / summary.elapsed.inMicroseconds).toStringAsFixed(_percentDecimals)} %';
+  return 'Channel overhead: mean ${milliseconds(overhead.mean)}, '
+      'p95 ${milliseconds(overhead.p95)}, $share of the frame time\n';
 }
 
 /// [CanonLiveViewLoop] with [LiveViewStats] fed from the session tap.
@@ -203,9 +301,13 @@ class CanonEventPoller {
   final _refusedCodes = <int>{};
   Future<void>? _loop;
   Completer<void>? _wake;
+  int? _cameraStatus;
   bool _running = false;
 
   Stream<TimedCanonRecord> get records => _records.stream;
+
+  /// Whether the last CameraStatusChanged said a capture is under way.
+  bool get isCapturing => _cameraStatus == CanonCameraStatus.capturing;
 
   void start() {
     if (_running) {
@@ -253,6 +355,7 @@ class CanonEventPoller {
         final result = await _session.execute(CanonEosOperation.getEvent);
         final at = _clock.elapsed;
         for (final record in canonEventRecords(result.data)) {
+          _cameraStatus = cameraStatusValue(record) ?? _cameraStatus;
           _records.add((at: at, record: record));
         }
       } on PtpResponseException catch (error) {
@@ -313,53 +416,65 @@ class ReleaseTimeline {
   ReleaseTimeline(this.trigger);
 
   final Duration trigger;
-  final _stored = Completer<void>();
+  final _finished = Completer<void>();
   Duration? released;
-  Duration? statusChanged;
+  Duration? captureStarted;
   Duration? storageChanged;
   Duration? objectAdded;
+  Duration? captureDone;
   Duration? newHandle;
   Duration? thumbnail;
+  int? addedHandle;
+  bool busy = false;
   DiffRun? coldDiff;
   DiffRun? warmDiff;
 
-  /// Completes on the first StorageInfoChanged or new object.
-  Future<void> get stored => _stored.future;
+  /// Completes on the first new file or the camera going idle again; a
+  /// StorageInfoChanged alone comes too early to diff.
+  Future<void> get finished => _finished.future;
 
-  bool get isStored => _stored.isCompleted;
+  bool get isFinished => _finished.isCompleted;
+
+  /// Whether any event of the capture arrived.
+  bool get sawCapture => captureStarted != null || objectAdded != null;
 
   /// Notes [record], arriving at [at] on the same clock as [trigger], and
   /// returns how long after the trigger it came.
   Duration note(Duration at, CanonEventRecord record) {
     final since = at - trigger;
-    switch (record.type) {
-      case CanonEosEvent.cameraStatusChanged:
-        statusChanged ??= since;
-      case CanonEosEvent.storageInfoChanged:
+    switch (cameraStatusValue(record)) {
+      case CanonCameraStatus.capturing:
+        captureStarted ??= since;
+      case CanonCameraStatus.idle when captureStarted != null:
+        captureDone ??= since;
+        _finish();
+    }
+    switch (parseCanonEvent(record)) {
+      case CanonStorageChanged():
         storageChanged ??= since;
-        _markStored();
-      case CanonEosEvent.objectAddedEx ||
-          CanonEosEvent.objectAddedEx64 ||
-          CanonEosEvent.requestObjectTransfer ||
-          CanonEosEvent.requestObjectTransfer64:
-        objectAdded ??= since;
-        _markStored();
+      case CanonObjectAdded(:final handle, :final format)
+          when format != PtpObjectFormat.association && objectAdded == null:
+        objectAdded = since;
+        addedHandle = handle;
+        _finish();
+      default:
     }
     return since;
   }
 
-  void _markStored() {
-    if (!_stored.isCompleted) {
-      _stored.complete();
+  void _finish() {
+    if (!_finished.isCompleted) {
+      _finished.complete();
     }
   }
 
   static const tableHeaders = [
     'Shot',
     'Release',
-    '0xc18b',
+    'Started',
     '0xc185',
     'Added',
+    'Done',
     'Handle',
     'Thumb',
     'Cold diff',
@@ -369,9 +484,10 @@ class ReleaseTimeline {
   List<String> row(int shot) => [
     '$shot',
     milliseconds(released),
-    milliseconds(statusChanged),
+    milliseconds(captureStarted),
     milliseconds(storageChanged),
     milliseconds(objectAdded),
+    milliseconds(captureDone),
     milliseconds(newHandle),
     milliseconds(thumbnail),
     _describeDiff(coldDiff),

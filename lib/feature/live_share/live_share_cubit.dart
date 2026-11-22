@@ -84,6 +84,7 @@ class LiveShareCubit extends Cubit<LiveShareState> {
   static const reconnectingText = 'Reconnecting to the camera';
   static const unreachableText = 'Camera not reachable';
   static const userActionText = 'Open Shutterlink to allow USB access';
+  static const notRespondingText = ConnectCubit.notRespondingMessage;
 
   /// A Session cut off longer ago than this is not resumed by itself, so
   /// a camera connected much later sends nothing to old guests unasked.
@@ -395,6 +396,10 @@ class LiveShareCubit extends Cubit<LiveShareState> {
       ConnectReconnecting(userActionNeeded: true) => (
         LiveServiceState.reconnecting,
         userActionText,
+      ),
+      ConnectReconnecting(notResponding: true) => (
+        LiveServiceState.reconnecting,
+        notRespondingText,
       ),
       ConnectReconnecting(unreachable: true) => (
         LiveServiceState.unreachable,

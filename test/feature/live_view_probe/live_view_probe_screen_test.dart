@@ -182,4 +182,24 @@ void main() {
     expect(find.byType(RawImage), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  for (final (notResponding, text) in [
+    (false, LiveViewProbe.waitingText),
+    (true, LiveViewProbe.notRespondingText),
+  ]) {
+    testWidgets('a reconnecting camera shows "$text"', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LiveViewProbe(
+            client: null,
+            usb: true,
+            notResponding: notResponding,
+          ),
+        ),
+      );
+
+      expect(find.text(text), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 }

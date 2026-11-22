@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/feature/download/object_fetcher.dart';
 import 'package:shutterlink/ptp/camera_client.dart';
@@ -27,6 +28,10 @@ const _packetSize = 512;
 const _replyLength = 1100;
 const _timedRead = Duration(milliseconds: 10);
 const _nativeHour = Duration(hours: 1);
+
+/// The open polls the device status for 2 s.
+const _beforeStatusDeadline = Duration(milliseconds: 1900);
+const _pastStatusDeadline = Duration(seconds: 3);
 
 /// Standard PTP only, so the tests see no Canon event polling.
 const _genericOnly = ProfileRegistry([]);
@@ -56,6 +61,30 @@ void main() {
 
   int count(int opcode) =>
       device.receivedOpcodes.where((op) => op == opcode).length;
+
+  /// Opens a pipe [create] makes in fake time, where the pipe's own
+  /// futures run too, and returns how the open failed. When [before] is
+  /// given, the open must still be running after that long.
+  (Object?, FakeUsbPipe) openFailure(
+    FakeUsbPipe Function() create, {
+    Duration? before,
+  }) {
+    Object? failure;
+    late FakeUsbPipe pipe;
+    fakeAsync((async) {
+      pipe = create();
+      UsbBulkTransport.open(pipe).then<void>(
+        (transport) => transport.close(),
+        onError: (Object error) => failure = error,
+      );
+      if (before != null) {
+        async.elapse(before);
+        expect(failure, isNull);
+      }
+      async.elapse(_pastStatusDeadline);
+    });
+    return (failure, pipe);
+  }
 
   group('reset sequence', () {
     test('runs before the first transaction', () async {
@@ -95,19 +124,52 @@ void main() {
       expect(pipe.calls.where((c) => c == 'class 0x67'), hasLength(4));
     });
 
-    test('gives up on a device that stays busy, and closes the pipe', () async {
-      final pipe = FakeUsbPipe(device, deviceStatusBusyPolls: 1 << 30);
-      final started = DateTime.now();
-      await expectLater(
-        UsbBulkTransport.open(pipe),
-        throwsA(isA<CameraDisconnectedException>()),
+    test('gives up on a device that stays busy, and closes the pipe', () {
+      final (failure, pipe) = openFailure(
+        () => FakeUsbPipe(device, deviceStatusBusyPolls: 1 << 30),
+        before: _beforeStatusDeadline,
       );
-      expect(
-        DateTime.now().difference(started),
-        greaterThanOrEqualTo(const Duration(seconds: 2)),
-      );
+      expect(failure, isA<CameraDisconnectedException>());
+      expect(failure, isNot(isA<CameraNotRespondingException>()));
       expect(pipe.isClosed, isTrue);
     });
+
+    test('a device status that times out means not responding', () {
+      final (failure, pipe) = openFailure(
+        () => FakeUsbPipe(device, deviceStatusTimesOut: true),
+        before: _beforeStatusDeadline,
+      );
+      expect(failure, isA<CameraNotRespondingException>());
+      expect(pipe.isClosed, isTrue);
+    });
+
+    test('a device that takes neither reset is not responding', () {
+      final (failure, pipe) = openFailure(
+        () => FakeUsbPipe(device, resetStalls: true, cancelStalls: true),
+      );
+      expect(failure, isA<CameraNotRespondingException>());
+      expect(pipe.calls, isNot(contains('class 0x67')));
+      expect(pipe.isClosed, isTrue);
+    });
+
+    for (final (step, request, stalls) in [
+      ('Device Reset', UsbStillImageRequest.deviceReset, false),
+      ('Cancel', UsbStillImageRequest.cancel, true),
+      ('GetDeviceStatus', UsbStillImageRequest.getDeviceStatus, false),
+    ]) {
+      test('a cable pulled during $step is a plain disconnect', () {
+        final (failure, pipe) = openFailure(
+          () => FakeUsbPipe(
+            device,
+            unplugOnRequest: request,
+            resetStalls: stalls,
+          ),
+        );
+        expect(failure, isA<CameraDisconnectedException>());
+        expect(failure, isNot(isA<CameraNotRespondingException>()));
+        expect(pipe.isClosed, isTrue);
+      });
+    }
   });
 
   group('over an unmodified PtpSession', () {

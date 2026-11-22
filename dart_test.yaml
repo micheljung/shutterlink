@@ -9,3 +9,7 @@ tags:
       --tags sftp-root --run-skipped.
   brand-assets:
     skip: Renders brand masters; run with --tags brand-assets --run-skipped.
+  usb-hardware:
+    skip: >-
+      Needs libusb and a still-image camera the user may open; run with
+      --tags usb-hardware --run-skipped.

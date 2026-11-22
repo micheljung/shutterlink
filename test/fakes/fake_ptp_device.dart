@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
 import 'dart:typed_data';
@@ -187,6 +188,16 @@ Uint8List storageChangedRecord(int storageId) {
   return record.buffer.asUint8List();
 }
 
+/// A Canon CameraStatusChanged record, as the EOS R sends it around a shot.
+Uint8List cameraStatusRecord(int status) {
+  const size = _recordHandleAt + _u32Size;
+  final record = ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_recordTypeAt, CanonEosEvent.cameraStatusChanged, Endian.little)
+    ..setUint32(_recordHandleAt, status, Endian.little);
+  return record.buffer.asUint8List();
+}
+
 Uint8List viewFinderRecord(int type, Uint8List payload) {
   final size = _viewFinderRecordHeaderSize + payload.length;
   final record = ByteData(size)
@@ -363,6 +374,20 @@ class FakePtpDevice {
 
   static const _firstCapturedHandle = 0x30;
   int _capturedCount = 0;
+  bool _capturing = false;
+
+  /// How long after the release the new object is announced.
+  Duration captureObjectDelay = const Duration(milliseconds: 60);
+
+  /// How long after the new object the camera reports idle.
+  Duration captureIdleDelay = const Duration(milliseconds: 30);
+
+  /// Releases that capture nothing and send no event, as when autofocus
+  /// fails.
+  int failedAutofocusReleases = 0;
+
+  /// RemoteReleaseOn calls refused because a capture was still running.
+  int busyRefusals = 0;
 
   void addObject(FakeObject object, {bool sixtyFourBit = false}) {
     objects.add(object);
@@ -480,6 +505,10 @@ class FakePtpDevice {
           CanonEosOperation.doAf ||
           CanonEosOperation.setLiveAfFrame:
         vendorCalls.add((opcode: opcode, params: p, dataOut: dataOut));
+        if (opcode == CanonEosOperation.remoteReleaseOn && _capturing) {
+          busyRefusals++;
+          return const FakePtpReply(PtpResponseCode.deviceBusy);
+        }
         if (opcode == CanonEosOperation.remoteReleaseOn &&
             p.firstOrNull == CanonRemoteRelease.fullPress) {
           _capture();
@@ -496,20 +525,34 @@ class FakePtpDevice {
     }
   }
 
-  /// A shot written to the card: StorageInfoChanged, then the new object.
+  /// A shot as the EOS R reports it: capture started with
+  /// StorageInfoChanged at once, the new object later, then idle. The camera
+  /// refuses another release until then.
   void _capture() {
+    if (failedAutofocusReleases > 0) {
+      failedAutofocusReleases--;
+      return;
+    }
     final handle = _firstCapturedHandle + _capturedCount++;
+    _capturing = true;
+    queueEventRecord(cameraStatusRecord(CanonCameraStatus.capturing));
     queueEventRecord(storageChangedRecord(fakeStorageId));
-    addObject(
-      FakeObject(
-        handle: handle,
-        format: PtpObjectFormat.exifJpeg,
-        filename: 'IMG_${handle.toString().padLeft(4, '0')}.JPG',
-        parent: folderHandle,
-        content: patternBytes(jpegSize, seed: handle),
-        thumbnail: patternBytes(100, seed: handle),
-      ),
-    );
+    Timer(captureObjectDelay, () {
+      addObject(
+        FakeObject(
+          handle: handle,
+          format: PtpObjectFormat.exifJpeg,
+          filename: 'IMG_${handle.toString().padLeft(4, '0')}.JPG',
+          parent: folderHandle,
+          content: patternBytes(jpegSize, seed: handle),
+          thumbnail: patternBytes(100, seed: handle),
+        ),
+      );
+    });
+    Timer(captureObjectDelay + captureIdleDelay, () {
+      _capturing = false;
+      queueEventRecord(cameraStatusRecord(CanonCameraStatus.idle));
+    });
   }
 
   FakePtpReply _setCanonProperty(Uint8List? dataOut) {

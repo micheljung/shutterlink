@@ -53,6 +53,7 @@ class ConnectReconnecting extends ConnectState {
   const ConnectReconnecting({
     this.unreachable = false,
     this.userActionNeeded = false,
+    this.notResponding = false,
     this.usb = false,
   });
 
@@ -62,11 +63,20 @@ class ConnectReconnecting extends ConnectState {
   /// The USB camera is back, but the user must allow access in the app.
   final bool userActionNeeded;
 
+  /// The USB camera is attached but keeps not answering, which only a
+  /// power-cycle clears.
+  final bool notResponding;
+
   /// Reconnecting over the USB cable rather than Wi-Fi.
   final bool usb;
 
   @override
-  List<Object?> get props => [unreachable, userActionNeeded, usb];
+  List<Object?> get props => [
+    unreachable,
+    userActionNeeded,
+    notResponding,
+    usb,
+  ];
 }
 
 class ConnectPairingRequired extends ConnectState {

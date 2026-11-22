@@ -18,7 +18,12 @@ import '../../upload/upload_fakes.dart';
 
 const owner = 'live';
 
-typedef Reconnecting = ({bool unreachable, bool userActionNeeded, bool usb});
+typedef Reconnecting = ({
+  bool unreachable,
+  bool userActionNeeded,
+  bool notResponding,
+  bool usb,
+});
 
 /// Records what a [ConnectionSupervisor] reports to its owner.
 class SupervisorEvents {
@@ -39,15 +44,22 @@ class SupervisorEvents {
   void onReconnecting({
     required bool unreachable,
     required bool userActionNeeded,
+    required bool notResponding,
     required bool usb,
   }) => reconnecting.add((
     unreachable: unreachable,
     userActionNeeded: userActionNeeded,
+    notResponding: notResponding,
     usb: usb,
   ));
 }
 
-const retrying = (unreachable: false, userActionNeeded: false, usb: false);
+const retrying = (
+  unreachable: false,
+  userActionNeeded: false,
+  notResponding: false,
+  usb: false,
+);
 
 /// A camera on the home Wi-Fi, found by discovery rather than the gateway.
 const stationHost = '192.168.1.50';
@@ -262,6 +274,7 @@ void main() {
     expect(events.reconnecting.last, (
       unreachable: true,
       userActionNeeded: false,
+      notResponding: false,
       usb: false,
     ));
   });

@@ -2,17 +2,21 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shutterlink/probe/libusb_pipe.dart';
 import 'package:shutterlink/probe/probe_args.dart';
 import 'package:shutterlink/probe/probe_measurements.dart';
 import 'package:shutterlink/ptp/canon/canon_live_view_stats.dart';
 import 'package:shutterlink/ptpip/ptpip.dart';
+import 'package:shutterlink/usb/usb_pipe.dart';
 
 import '../bin/probe.dart';
+import 'fakes/fake_usb_pipe.dart';
 import 'ptpip/fake_camera.dart';
 
 const _unknownEventRecord = [12, 0, 0, 0, 0x89, 0xC1, 0, 0, 1, 2, 3, 4];
 const _statusRecord = [12, 0, 0, 0, 0x8B, 0xC1, 0, 0, 1, 2, 3, 4];
 const _fastPoll = ['--poll-interval', '20'];
+const _slowObject = Duration(milliseconds: 200);
 const _measureWindow = Duration(milliseconds: 100);
 
 RemoteProbeOptions? _remote(List<String> args) =>
@@ -414,6 +418,27 @@ void main() {
           contains('average 0.00 fps'),
           contains('Time to first byte: mean -, p95 -'),
           contains('Frame size: mean 0.0 KiB'),
+          isNot(contains('Channel overhead')),
+        ),
+      );
+      expect(
+        liveViewReport(
+          const LiveViewSummary(
+            elapsed: Duration(seconds: 2),
+            frames: 20,
+            fps: 0,
+            averageFps: 0,
+            counts: (notReady: 0, busy: 0, errors: 0),
+            watchdogAborts: 0,
+            channelOverhead: LiveViewSpread(
+              mean: Duration(milliseconds: 10),
+              p95: Duration(milliseconds: 25),
+            ),
+          ),
+        ),
+        endsWith(
+          'Channel overhead: mean 10.0 ms, p95 25.0 ms, '
+          '10.0 % of the frame time\n',
         ),
       );
     });
@@ -444,34 +469,78 @@ void main() {
       );
     });
 
-    test('release timeline notes the first of each event', () {
+    test('release timeline finishes on the new file, not on 0xc185', () {
       final timeline = ReleaseTimeline(const Duration(seconds: 1));
       CanonEventRecord record(List<int> bytes) =>
           canonEventRecords(Uint8List.fromList(bytes))[0];
+      final photo = FakeObject(
+        handle: 0x30,
+        format: PtpObjectFormat.exifJpeg,
+        filename: 'IMG_0030.JPG',
+      );
       expect(
-        timeline.note(const Duration(seconds: 2), record(_statusRecord)),
+        timeline.note(
+          const Duration(seconds: 2),
+          record(cameraStatusRecord(CanonCameraStatus.capturing)),
+        ),
         const Duration(seconds: 1),
       );
-      timeline.note(const Duration(seconds: 3), record(_statusRecord));
-      expect(timeline.isStored, isFalse);
+      timeline.note(
+        const Duration(seconds: 3),
+        record(cameraStatusRecord(CanonCameraStatus.capturing)),
+      );
       timeline.note(
         const Duration(milliseconds: 3500),
         record(storageChangedRecord(fakeStorageId)),
       );
-      expect(timeline.statusChanged, const Duration(seconds: 1));
-      expect(timeline.storageChanged, const Duration(milliseconds: 2500));
-      expect(timeline.isStored, isTrue);
+      timeline.note(
+        const Duration(seconds: 4),
+        record(
+          objectAddedRecord(
+            FakeObject(
+              handle: 0x11,
+              format: PtpObjectFormat.association,
+              filename: '100CANON',
+            ),
+          ),
+        ),
+      );
+      expect(timeline.isFinished, isFalse);
+      timeline.note(
+        const Duration(milliseconds: 4500),
+        record(objectAddedRecord(photo, sixtyFourBit: true)),
+      );
+      expect(timeline.isFinished, isTrue);
+      expect(timeline.addedHandle, 0x30);
+      timeline.note(
+        const Duration(seconds: 5),
+        record(cameraStatusRecord(CanonCameraStatus.idle)),
+      );
       expect(timeline.row(1), [
         '1',
         '-',
         '1000.0 ms',
         '2500.0 ms',
-        '-',
+        '3500.0 ms',
+        '4000.0 ms',
         '-',
         '-',
         '-',
         '-',
       ]);
+    });
+
+    test('release timeline finishes when the camera goes idle', () {
+      final timeline = ReleaseTimeline(Duration.zero);
+      CanonEventRecord record(int status) =>
+          canonEventRecords(Uint8List.fromList(cameraStatusRecord(status)))[0];
+      timeline.note(const Duration(seconds: 1), record(CanonCameraStatus.idle));
+      expect(timeline.isFinished, isFalse);
+      timeline
+        ..note(const Duration(seconds: 2), record(CanonCameraStatus.capturing))
+        ..note(const Duration(seconds: 3), record(CanonCameraStatus.idle));
+      expect(timeline.isFinished, isTrue);
+      expect(timeline.captureDone, const Duration(seconds: 3));
     });
 
     test('tables pad their columns', () {
@@ -617,36 +686,41 @@ void main() {
     });
 
     test('--release times events, diff and thumbnail per shot', () async {
-      camera.device.liveViewFrames.addAll([
-        for (var i = 0; i < 10; i++) _frame(i),
-      ]);
+      camera.device
+        ..captureObjectDelay = _slowObject
+        ..liveViewFrames.addAll([for (var i = 0; i < 10; i++) _frame(i)]);
       final out = StringBuffer();
       final code = await runProbe([
         ...baseArgs(),
         '--release',
         '--shots',
-        '2',
+        '3',
         ..._fastPoll,
       ], output: out);
       final text = out.toString();
       expect(code, exitOk, reason: text);
       expect(text, contains('Shot 1:'));
       expect(text, contains('Shot 2:'));
+      expect(text, contains(' 0xc18b size 12: 01 00 00 00'));
       expect(text, contains(' RemoteReleaseOn(1) -> 0x2001'));
       expect(text, contains(' RemoteReleaseOff(3) -> 0x2001'));
       expect(text, contains(' 0xc185 StorageInfoChanged'));
       expect(text, contains(' 0xc181 ObjectAdded handle 0x30 format 0x3801'));
       expect(text, contains('New handles: 0x30'));
       expect(text, contains('New handles: 0x31'));
-      expect(text, contains('GetThumb 0x31 -> 0x2001, 100 bytes'));
+      expect(text, contains('New handles: 0x32'));
+      expect(text, contains('GetThumb 0x32 -> 0x2001, 100 bytes'));
+      expect(text, isNot(contains('0x2019')));
+      expect(text, isNot(contains('no capture')));
+      expect(camera.device.busyRefusals, 0);
       expect(text, contains('Diff cold: 7 transactions in '));
       expect(text, contains('warm: 7 transactions'));
       final table = text.substring(text.indexOf('Shot  Release'));
-      expect(table.split('\n').where((l) => l.isNotEmpty), hasLength(3));
+      expect(table.split('\n').where((l) => l.isNotEmpty), hasLength(4));
       expect(table, contains('7 tx'));
       final releases = camera.device.vendorCalls;
       expect(releases.map((c) => c.opcode), [
-        for (var shot = 0; shot < 2; shot++) ...[
+        for (var shot = 0; shot < 3; shot++) ...[
           CanonEosOperation.remoteReleaseOn,
           CanonEosOperation.remoteReleaseOn,
           CanonEosOperation.remoteReleaseOff,
@@ -661,7 +735,7 @@ void main() {
       ]);
     });
 
-    test('--release reports refusals and a missing shot', () async {
+    test('--release retries a busy release, then records it as busy', () async {
       camera.device.responseOverrides[CanonEosOperation.remoteReleaseOn] =
           PtpResponseCode.deviceBusy;
       final out = StringBuffer();
@@ -676,10 +750,36 @@ void main() {
       ], output: out);
       final text = out.toString();
       expect(code, exitOk, reason: text);
-      expect(text, contains('RemoteReleaseOn(2) -> 0x2019'));
+      expect(text, contains('RemoteReleaseOn(2) -> 0x2019, retry 5'));
+      expect(text, contains('RemoteReleaseOn(2) -> 0x2019\n'));
       expect(text, contains('RemoteReleaseOff(4) -> 0x2001'));
-      expect(text, contains('No 0xc185 or new object within 1 s.'));
+      expect(text, contains('Camera busy'));
       expect(text, contains('New handles: \n'));
+    });
+
+    test('--release reports a shot whose autofocus failed', () async {
+      camera.device
+        ..failedAutofocusReleases = 1
+        ..captureObjectDelay = _slowObject;
+      final out = StringBuffer();
+      final code = await runProbe([
+        ...baseArgs(),
+        '--release',
+        '--shots',
+        '2',
+        '--release-timeout',
+        '1',
+        ..._fastPoll,
+      ], output: out);
+      final text = out.toString();
+      expect(code, exitOk, reason: text);
+      expect(
+        RegExp(r'no capture \(AF failed\?\)').allMatches(text),
+        hasLength(1),
+      );
+      expect(text.indexOf('no capture'), lessThan(text.indexOf('Shot 2:')));
+      expect(text, contains('New handles: 0x30'));
+      expect(camera.device.busyRefusals, 0);
     });
 
     test('--release without live view still measures', () async {
@@ -822,6 +922,201 @@ void main() {
         [300, 100],
         <int>[],
       ]);
+    });
+  });
+
+  group('USB', () {
+    const canon = (vendorId: 0x04a9, productId: 0x32da);
+    late FakePtpDevice device;
+    late FakeUsbPipe pipe;
+    late List<UsbDeviceId?> opened;
+
+    setUp(() {
+      device = FakePtpDevice();
+      pipe = FakeUsbPipe(device);
+      opened = [];
+    });
+
+    Future<int> probeUsb(List<String> args, StringBuffer out) => runProbe(
+      ['--usb', ...args],
+      output: out,
+      openUsb: (id) async {
+        opened.add(id);
+        return pipe;
+      },
+    );
+
+    test('device ids are hex vid:pid', () {
+      expect(parseUsbDeviceId('04a9:32DA'), canon);
+      expect(formatUsbDeviceId(canon), '04a9:32da');
+      for (final bad in ['04a9', '04a9:32da:1', 'canon:1', '10000:1']) {
+        expect(() => parseUsbDeviceId(bad), throwsFormatException);
+      }
+    });
+
+    test('usage errors name the conflicting options', () async {
+      Future<String> usage(List<String> args) async {
+        final out = StringBuffer();
+        expect(await runProbe(args, output: out), exitUsage);
+        return out.toString();
+      }
+
+      expect(
+        await usage(['--host', 'x', '--usb']),
+        startsWith('Choose one of --host and --usb.'),
+      );
+      expect(
+        await usage(['--usb-device', '04a9:32da']),
+        startsWith('--usb-device needs --usb.'),
+      );
+      expect(
+        await usage(['--usb', '--usb-device', 'canon']),
+        startsWith('--usb-device expects vid:pid'),
+      );
+      expect(
+        await usage(['--usb', '--dump', 'x']),
+        startsWith('--dump works with --host only.'),
+      );
+      expect(await usage([]), contains('--usb [--usb-device vid:pid]'));
+      final help = StringBuffer();
+      expect(await runProbe(['--help'], output: help), exitOk);
+      expect(
+        help.toString(),
+        allOf(contains('--usb-device'), contains('--list-usb')),
+      );
+    });
+
+    test('--list-usb prints each device or why it cannot', () async {
+      final out = StringBuffer();
+      expect(
+        await runProbe(
+          ['--list-usb'],
+          output: out,
+          listUsb: () => const [
+            UsbStillImageDevice(
+              id: canon,
+              bus: 1,
+              address: 2,
+              manufacturer: 'Canon Inc.',
+              product: 'Canon Digital Camera',
+            ),
+            UsbStillImageDevice(
+              id: canon,
+              bus: 3,
+              address: 14,
+              openError: 'no access to /dev/bus/usb/003/014',
+            ),
+          ],
+          openUsb: (_) => fail('--list-usb must not open a device'),
+        ),
+        exitOk,
+      );
+      expect(
+        out.toString(),
+        '04a9:32da bus 1 address 2 (/dev/bus/usb/001/002), '
+        'Canon Inc. Canon Digital Camera\n'
+        '04a9:32da bus 3 address 14 (/dev/bus/usb/003/014), '
+        'open: no access to /dev/bus/usb/003/014\n',
+      );
+
+      final none = StringBuffer();
+      expect(
+        await runProbe(['--list-usb'], output: none, listUsb: () => const []),
+        exitOk,
+      );
+      expect(none.toString(), 'No USB still-image devices.\n');
+
+      final missing = StringBuffer();
+      expect(
+        await runProbe(
+          ['--list-usb'],
+          output: missing,
+          listUsb: () =>
+              throw const UsbTransferException('libusb is not available'),
+        ),
+        exitUnavailable,
+      );
+      expect(
+        missing.toString(),
+        'Cannot list USB devices: libusb is not available\n',
+      );
+    });
+
+    test('a camera that cannot be opened is reported cleanly', () async {
+      final out = StringBuffer();
+      final code = await runProbe(
+        ['--usb', '--props', '--duration', '1'],
+        output: out,
+        openUsb: (_) => throw const UsbTransferException(
+          'no access to /dev/bus/usb/001/002: the device node is missing',
+        ),
+      );
+      expect(code, exitUnavailable);
+      expect(
+        out.toString(),
+        'Opening the USB camera...\n'
+        'USB camera unavailable: no access to /dev/bus/usb/001/002: '
+        'the device node is missing\n',
+      );
+    });
+
+    test('--usb-device picks the camera; --clock works over USB', () async {
+      final out = StringBuffer();
+      final code = await probeUsb([
+        '--usb-device',
+        '04a9:32da',
+        '--clock',
+      ], out);
+      expect(code, exitOk, reason: out.toString());
+      expect(opened, [canon]);
+      expect(out.toString(), contains('Opening the USB camera 04a9:32da...'));
+      expect(out.toString(), contains('Camera time:'));
+      expect(pipe.isClosed, isTrue);
+    });
+
+    test('--liveview reports the channel overhead', () async {
+      device.liveViewFrames.addAll([for (var i = 0; i < 20; i++) _frame(i)]);
+      final out = StringBuffer();
+      final code = await probeUsb(['--liveview', '1', ..._fastPoll], out);
+      final text = out.toString();
+      expect(code, exitOk, reason: text);
+      expect(opened, [null]);
+      expect(text, contains('20 frames, average'));
+      expect(text, contains('Channel overhead: mean '));
+      expect(text, isNot(contains('Channel overhead: mean -')));
+      expect(pipe.bulkInTiming, contains(true));
+    });
+
+    test('--release prints the trigger-to-thumbnail timeline', () async {
+      device
+        ..captureObjectDelay = _slowObject
+        ..liveViewFrames.addAll([for (var i = 0; i < 10; i++) _frame(i)]);
+      final out = StringBuffer();
+      final code = await probeUsb(['--release', ..._fastPoll], out);
+      final text = out.toString();
+      expect(code, exitOk, reason: text);
+      expect(text, contains(' RemoteReleaseOn(1) -> 0x2001'));
+      expect(text, contains(' 0xc185 StorageInfoChanged'));
+      expect(text, contains('New handles: 0x30'));
+      expect(text, contains('GetThumb 0x30 -> 0x2001, 100 bytes'));
+      expect(text, contains('Diff cold: 7 transactions in '));
+      expect(text, contains('Shot  Release'));
+    });
+
+    test('every other remote mode runs over USB', () async {
+      for (final args in [
+        ['--props', '--duration', '1'],
+        ['--set', '0xd103=0x48', '--trials', '1'],
+        ['--zoom', '5'],
+        ['--af', '0.5,0.5'],
+      ]) {
+        device = FakePtpDevice();
+        pipe = FakeUsbPipe(device);
+        final out = StringBuffer();
+        final code = await probeUsb([...args, ..._fastPoll], out);
+        expect(code, exitOk, reason: '$args: $out');
+        expect(pipe.isClosed, isTrue, reason: '$args');
+      }
     });
   });
 

@@ -14,6 +14,8 @@ const _hexPrefix = '0x';
 const _hexRadix = 16;
 const _decimalRadix = 10;
 const _pairParts = 2;
+const _maxUsbId = 0xFFFF;
+const _usbIdDigits = 4;
 
 /// The EOS R's full sensor, as AF coordinates without `--af-space`.
 const defaultAfSpace = (width: 6720, height: 4480);
@@ -31,6 +33,7 @@ typedef ProbePoint = ({double x, double y});
 typedef ProbeSize = ({int width, int height});
 typedef ReleaseParams = ({int half, int full});
 typedef PropertyAssignment = ({int property, int value});
+typedef UsbDeviceId = ({int vendorId, int productId});
 
 /// The options of the remote-shooting probe modes.
 class RemoteProbeOptions {
@@ -210,3 +213,20 @@ ProbeSize parseSize(String text) {
     height: _parsePositive(parts[1], 'af-space'),
   );
 }
+
+/// `vid:pid` in hex, as `lsusb` prints it.
+UsbDeviceId parseUsbDeviceId(String text) {
+  final parts = text.split(':');
+  final ids = parts.map((part) => int.tryParse(part.trim(), radix: _hexRadix));
+  if (parts.length != _pairParts ||
+      ids.any((id) => id == null || id < 0 || id > _maxUsbId)) {
+    throw const FormatException(
+      '--usb-device expects vid:pid in hex, e.g. 04a9:32da.',
+    );
+  }
+  return (vendorId: ids.first!, productId: ids.last!);
+}
+
+String formatUsbDeviceId(UsbDeviceId id) => [id.vendorId, id.productId]
+    .map((part) => part.toRadixString(_hexRadix).padLeft(_usbIdDigits, '0'))
+    .join(':');

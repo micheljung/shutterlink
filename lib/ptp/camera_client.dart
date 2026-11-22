@@ -94,6 +94,15 @@ class CameraDisconnectedException implements Exception {
   String toString() => 'CameraDisconnectedException($cause)';
 }
 
+/// The camera is on the cable but does not answer the reset sequence, as
+/// when its firmware crashed.
+class CameraNotRespondingException extends CameraDisconnectedException {
+  const CameraNotRespondingException([super.cause]);
+
+  @override
+  String toString() => 'CameraNotRespondingException($cause)';
+}
+
 class PtpResponseException implements Exception {
   const PtpResponseException(this.operation, this.responseCode);
 

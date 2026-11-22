@@ -36,7 +36,11 @@ class LiveViewProbeScreen extends StatelessWidget {
         client: client,
         usb: target is UsbTarget,
       ),
-      ConnectReconnecting(:final usb) => LiveViewProbe(client: null, usb: usb),
+      ConnectReconnecting(:final usb, :final notResponding) => LiveViewProbe(
+        client: null,
+        usb: usb,
+        notResponding: notResponding,
+      ),
       _ => const LiveViewProbe(client: null, usb: false),
     },
   );
@@ -49,6 +53,7 @@ class LiveViewProbe extends StatefulWidget {
     super.key,
     required this.client,
     required this.usb,
+    this.notResponding = false,
     this.clock = const Clock(),
   });
 
@@ -56,12 +61,16 @@ class LiveViewProbe extends StatefulWidget {
   static const notCanonText =
       'The live view probe needs a Canon camera connected over PTP.';
   static const waitingText = 'Waiting for the camera…';
+  static const notRespondingText = ConnectCubit.notRespondingMessage;
   static const copiedText = 'Stats copied';
   static const statsInterval = Duration(milliseconds: 500);
 
   /// Null while the camera reconnects.
   final CameraClient? client;
   final bool usb;
+
+  /// The camera keeps not answering while it reconnects.
+  final bool notResponding;
   final Clock clock;
 
   @override
@@ -293,7 +302,10 @@ class _LiveViewProbeState extends State<LiveViewProbe> {
           if (waiting)
             Center(
               child: Text(
-                LiveViewProbe.waitingText,
+                widget.notResponding
+                    ? LiveViewProbe.notRespondingText
+                    : LiveViewProbe.waitingText,
+                textAlign: TextAlign.center,
                 style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white),
               ),
             ),

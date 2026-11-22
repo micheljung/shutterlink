@@ -22,6 +22,7 @@ typedef ConnectedCallback = void Function(
 typedef ReconnectingCallback = void Function({
   required bool unreachable,
   required bool userActionNeeded,
+  required bool notResponding,
   required bool usb,
 });
 
@@ -56,6 +57,10 @@ class ConnectionSupervisor {
   /// Failed Wi-Fi retries before a camera found by discovery is looked for
   /// at a new address.
   static const rediscoverAfter = 3;
+
+  /// Consecutive USB retries the attached camera leaves unanswered before
+  /// the user is told to power-cycle it.
+  static const notRespondingAfter = 3;
 
   final CameraConnector _connector;
   final IdentityRepository _identity;
@@ -97,6 +102,8 @@ class ConnectionSupervisor {
   bool _usbPresent = true;
   bool _userActionNeeded = false;
   bool _permissionRequested = false;
+  int _unansweredRetries = 0;
+  bool _notResponding = false;
   Timer? _retryTimer;
   Duration _reconnectDelay = initialReconnectDelay;
 
@@ -180,6 +187,8 @@ class ConnectionSupervisor {
     if (target is UsbTarget && target.device == device) {
       _usbPresent = false;
       _userActionNeeded = false;
+      _unansweredRetries = 0;
+      _notResponding = false;
     }
   }
 
@@ -209,6 +218,8 @@ class ConnectionSupervisor {
     _usbPresent = true;
     _userActionNeeded = false;
     _permissionRequested = false;
+    _unansweredRetries = 0;
+    _notResponding = false;
     _gateway = null;
     _discoveredName = null;
     _cameraKey = null;
@@ -232,6 +243,8 @@ class ConnectionSupervisor {
     _failingSince = null;
     _unreachable = false;
     _userActionNeeded = false;
+    _unansweredRetries = 0;
+    _notResponding = false;
     _onConnected(client, _target, reconnected: reconnected);
   }
 
@@ -269,6 +282,7 @@ class ConnectionSupervisor {
   void _emitReconnecting() => _onReconnecting(
     unreachable: _unreachable,
     userActionNeeded: _userActionNeeded,
+    notResponding: _notResponding,
     usb: _target is UsbTarget,
   );
 
@@ -440,7 +454,12 @@ class ConnectionSupervisor {
       }
       _attach(client, reconnected: true);
       return true;
-    } on Exception {
+    } on Exception catch (error) {
+      if (!_isCurrent(session)) return false;
+      _unansweredRetries = error is CameraNotRespondingException
+          ? _unansweredRetries + 1
+          : 0;
+      _notResponding = _unansweredRetries >= notRespondingAfter;
       return false;
     }
   }

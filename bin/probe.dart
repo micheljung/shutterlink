@@ -8,10 +8,13 @@ import 'package:collection/collection.dart';
 import 'package:path/path.dart' as p;
 import 'package:shutterlink/data/cr3_preview.dart';
 import 'package:shutterlink/data/exif.dart';
+import 'package:shutterlink/probe/libusb_pipe.dart';
 import 'package:shutterlink/probe/probe_args.dart';
 import 'package:shutterlink/probe/probe_measurements.dart';
 import 'package:shutterlink/probe/remote_probe.dart';
 import 'package:shutterlink/ptpip/ptpip.dart';
+import 'package:shutterlink/usb/usb_camera_client.dart';
+import 'package:shutterlink/usb/usb_pipe.dart';
 import 'package:uuid/uuid.dart';
 
 export 'package:shutterlink/probe/probe_args.dart'
@@ -46,8 +49,33 @@ The camera does not know this computer yet. Pair it once:
      "{name}", confirm it on the camera.
 ''';
 
+typedef UsbPipeOpener = Future<UsbBulkPipe> Function(UsbDeviceId? device);
+typedef UsbDeviceLister = List<UsbStillImageDevice> Function();
+
+typedef _Connect = Future<PtpCameraClient> Function(
+  ProfileOptions options,
+  TransactionLedger ledger,
+);
+
 ArgParser probeArgParser() => ArgParser()
   ..addOption('host', help: 'Camera IP address (camera access point).')
+  ..addFlag(
+    'usb',
+    negatable: false,
+    help: 'Connect over USB through libusb instead of --host.',
+  )
+  ..addOption(
+    'usb-device',
+    valueHelp: 'vid:pid',
+    help:
+        'With --usb: the camera to open (default: the first still-image '
+        'device).',
+  )
+  ..addFlag(
+    'list-usb',
+    negatable: false,
+    help: 'List the USB still-image devices without claiming them.',
+  )
   ..addOption('port', defaultsTo: '$ptpIpDefaultPort')
   ..addOption('name', defaultsTo: _defaultName, help: 'Name shown on camera.')
   ..addOption('guid-file', help: 'Defaults to ~/$_defaultGuidFileName.')
@@ -123,7 +151,8 @@ ArgParser probeArgParser() => ArgParser()
     'release-timeout',
     valueHelp: 'seconds',
     help:
-        'Wait this long for 0xc185 after a release '
+        'Wait this long for a new object or the camera going idle '
+        'after a release '
         '(default ${defaultReleaseTimeout.inSeconds}).',
   )
   ..addOption(
@@ -171,58 +200,108 @@ Future<int> runProbe(
   int? watchPolls,
   Duration watchInterval = PtpIpCameraClient.defaultEventPollInterval,
   Duration measureWindow = probeMeasureWindow,
+  UsbPipeOpener openUsb = _openLibusb,
+  UsbDeviceLister listUsb = listLibusbDevices,
 }) async {
   final out = output ?? stdout;
   final parser = probeArgParser();
   final ArgResults options;
   final RemoteProbeOptions? remote;
+  final UsbDeviceId? usbDevice;
   try {
     options = parser.parse(args);
     remote = RemoteProbeOptions.fromArgs(options);
+    usbDevice = _usbDevice(options);
   } on FormatException catch (error) {
     out
       ..writeln(error.message)
       ..writeln(parser.usage);
     return exitUsage;
   }
+  if (options.flag('list-usb')) {
+    return _listUsb(out, listUsb);
+  }
   final host = options.option('host');
+  final usb = options.flag('usb');
   final port = int.tryParse(options.option('port')!);
   final indexOption = options.option('index');
   final index = indexOption == null ? null : int.tryParse(indexOption);
   final pairSeconds = int.tryParse(options.option('pair-timeout')!);
   if (options.flag('help') ||
-      host == null ||
+      (host == null) == !usb ||
       port == null ||
       pairSeconds == null ||
       (indexOption != null && index == null)) {
     out
-      ..writeln('Usage: dart run bin/probe.dart --host <camera-ip> [options]')
+      ..writeln(
+        host != null && usb
+            ? 'Choose one of --host and --usb.'
+            : 'Usage: dart run bin/probe.dart '
+                  '(--host <camera-ip> | --usb [--usb-device vid:pid]) '
+                  '[options]',
+      )
       ..writeln(parser.usage);
     return options.flag('help') ? exitOk : exitUsage;
   }
   final name = options.option('name')!;
-  final guid = await loadOrCreateGuid(
-    File(options.option('guid-file') ?? _defaultGuidPath()),
-  );
   final dumpPath = options.option('dump');
   final dump = dumpPath == null ? null : File(dumpPath).openWrite();
+  final _Connect connect;
+  if (host == null) {
+    connect = (profileOptions, ledger) async {
+      out.writeln(
+        'Opening the USB camera'
+        '${usbDevice == null ? '' : ' ${formatUsbDeviceId(usbDevice)}'}...',
+      );
+      final pipe = await openUsb(usbDevice);
+      if (pipe is LibusbPipe) {
+        out.writeln('Opened ${pipe.description}.');
+      }
+      return connectUsb(
+        BulkLink(LedgerUsbPipe(pipe, ledger)),
+        options: profileOptions,
+      );
+    };
+  } else {
+    final guid = await loadOrCreateGuid(
+      File(options.option('guid-file') ?? _defaultGuidPath()),
+    );
+    connect = (profileOptions, ledger) {
+      out.writeln('Connecting to $host:$port as "$name"...');
+      return PtpIpCameraClient.connect(
+        host: host,
+        port: port,
+        identity: CameraIdentity(guid: guid, name: name),
+        pairingTimeout: Duration(seconds: pairSeconds),
+        packetTap: dump == null && remote == null
+            ? null
+            : (channel, direction, frame) {
+                if (dump != null) {
+                  _dumpPacket(dump, channel, direction, frame);
+                }
+                ledger.onPacket(channel, frame);
+              },
+        eventPollInterval: profileOptions.eventPollInterval,
+        onEventData: profileOptions.onEventData,
+      );
+    };
+  }
   try {
     return await _probe(
       out,
-      host: host,
-      port: port,
-      identity: CameraIdentity(guid: guid, name: name),
+      connect: connect,
       downloadDir: Directory(options.option('download-dir')!),
       index: index,
       clockOnly: options.flag('clock'),
-      pairingTimeout: Duration(seconds: pairSeconds),
       watch: options.flag('watch-events'),
       watchPolls: watchPolls,
       watchInterval: watchInterval,
       remote: remote,
       measureWindow: measureWindow,
-      dump: dump,
     );
+  } on UsbTransferException catch (error) {
+    out.writeln('USB camera unavailable: ${error.message}');
+    return exitUnavailable;
   } on PairingRequiredException catch (error) {
     out
       ..writeln('Pairing required (InitFail reason ${error.reason}).')
@@ -248,45 +327,67 @@ Future<int> runProbe(
   }
 }
 
+Future<UsbBulkPipe> _openLibusb(UsbDeviceId? device) =>
+    LibusbPipe.open(device: device);
+
+/// Throws a [FormatException] for a bad `--usb-device` or an option that
+/// does not go with `--usb`.
+UsbDeviceId? _usbDevice(ArgResults options) {
+  if (options.flag('usb') && options.option('dump') != null) {
+    throw const FormatException('--dump works with --host only.');
+  }
+  final text = options.option('usb-device');
+  if (text == null) {
+    return null;
+  }
+  if (!options.flag('usb')) {
+    throw const FormatException('--usb-device needs --usb.');
+  }
+  return parseUsbDeviceId(text);
+}
+
+int _listUsb(StringSink out, UsbDeviceLister listUsb) {
+  final List<UsbStillImageDevice> devices;
+  try {
+    devices = listUsb();
+  } on UsbTransferException catch (error) {
+    out.writeln('Cannot list USB devices: ${error.message}');
+    return exitUnavailable;
+  }
+  if (devices.isEmpty) {
+    out.writeln('No USB still-image devices.');
+  }
+  for (final device in devices) {
+    out.writeln(device);
+  }
+  return exitOk;
+}
+
 Future<int> _probe(
   StringSink out, {
-  required String host,
-  required int port,
-  required CameraIdentity identity,
+  required _Connect connect,
   required Directory downloadDir,
   required int? index,
   required bool clockOnly,
-  required Duration pairingTimeout,
   required bool watch,
   required int? watchPolls,
   required Duration watchInterval,
   required RemoteProbeOptions? remote,
   required Duration measureWindow,
-  required IOSink? dump,
 }) async {
-  out.writeln('Connecting to $host:$port as "${identity.name}"...');
   final events = watch && remote == null
       ? _EventWatcher(out, watchPolls)
       : null;
   final ledger = TransactionLedger();
   Uint8List? initialDump;
-  final client = await PtpIpCameraClient.connect(
-    host: host,
-    port: port,
-    identity: identity,
-    pairingTimeout: pairingTimeout,
-    packetTap: dump == null && remote == null
-        ? null
-        : (channel, direction, frame) {
-            if (dump != null) {
-              _dumpPacket(dump, channel, direction, frame);
-            }
-            ledger.onPacket(channel, frame);
-          },
-    eventPollInterval: remote == null ? watchInterval : _profilePollerIdle,
-    onEventData: remote == null
-        ? events?.onData
-        : (data) => initialDump ??= data,
+  final client = await connect(
+    ProfileOptions(
+      eventPollInterval: remote == null ? watchInterval : _profilePollerIdle,
+      onEventData: remote == null
+          ? events?.onData
+          : (data) => initialDump ??= data,
+    ),
+    ledger,
   );
   try {
     final info = client.deviceInfo;

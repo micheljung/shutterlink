@@ -16,7 +16,12 @@ import '../../fakes/recording_binder.dart' show RecordingBinder;
 import '../../upload/upload_fakes.dart';
 import 'connection_supervisor_test.dart' show SupervisorEvents, owner;
 
-const usbRetrying = (unreachable: false, userActionNeeded: false, usb: true);
+const usbRetrying = (
+  unreachable: false,
+  userActionNeeded: false,
+  notResponding: false,
+  usb: true,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -179,6 +184,7 @@ void main() {
     expect(events.reconnecting.last, (
       unreachable: false,
       userActionNeeded: true,
+      notResponding: false,
       usb: true,
     ));
     await fire();
@@ -306,6 +312,111 @@ void main() {
 
     expect(events.connected, [client, second]);
     expect(timers.active, isNull);
+  });
+
+  group('a camera on the cable that does not answer', () {
+    const notResponding = (
+      unreachable: false,
+      userActionNeeded: false,
+      notResponding: true,
+      usb: true,
+    );
+    const unanswered = CameraNotRespondingException();
+
+    Future<FakeCameraClient> wedge() async {
+      final client = await superviseUsb();
+      connections[UsbTarget]!.addAll(
+        List.filled(ConnectionSupervisor.notRespondingAfter, unanswered),
+      );
+      client.simulateDisconnect();
+      await pumpEventQueue();
+      for (
+        var retry = 1;
+        retry < ConnectionSupervisor.notRespondingAfter;
+        retry++
+      ) {
+        await fire();
+        expect(events.reconnecting.last, usbRetrying);
+      }
+      await fire();
+      return client;
+    }
+
+    test('is reported after repeated retries, and retries go on', () async {
+      await wedge();
+
+      expect(events.reconnecting.last, notResponding);
+      expect(timers.active, isNotNull);
+      expect(targets, hasLength(ConnectionSupervisor.notRespondingAfter));
+    });
+
+    test('a power-cycle clears it and reconnects', () async {
+      final client = await wedge();
+
+      watcher.detach(canon);
+      supervisor.usbDetached(canon);
+      await fire();
+      expect(events.reconnecting.last, usbRetrying);
+
+      final second = FakeCameraClient([old]);
+      connections[UsbTarget]!.add(second);
+      await plug(canon);
+
+      expect(events.connected, [client, second]);
+    });
+
+    test('a later drop counts afresh', () async {
+      final client = await wedge();
+      final second = FakeCameraClient([old]);
+      connections[UsbTarget]!.addAll([second, unanswered]);
+      await fire();
+      expect(events.connected, [client, second]);
+
+      second.simulateDisconnect();
+      await pumpEventQueue();
+      await fire();
+
+      expect(events.reconnecting.last, usbRetrying);
+    });
+
+    test('stopping counts afresh', () async {
+      await wedge();
+      connections[UsbTarget]!.add(unanswered);
+
+      supervisor.stop();
+      await supervisor.supervise(null, UsbTarget(canon), bindingOwner: owner);
+
+      expect(events.reconnecting.last, usbRetrying);
+    });
+
+    test('another target counts afresh', () async {
+      await wedge();
+      watcher.permitted.add(other);
+      connections[UsbTarget]!.add(unanswered);
+
+      await supervisor.supervise(null, UsbTarget(other), bindingOwner: owner);
+
+      expect((targets.last as UsbTarget).device, other);
+      expect(events.reconnecting.last, usbRetrying);
+    });
+
+    test('another failure in between counts afresh', () async {
+      final client = await superviseUsb();
+      final failures = [
+        unanswered,
+        unanswered,
+        const CameraDisconnectedException(),
+        unanswered,
+      ];
+      connections[UsbTarget]!.addAll(failures);
+      client.simulateDisconnect();
+      await pumpEventQueue();
+      for (final _ in failures) {
+        await fire();
+      }
+
+      expect(events.reconnecting.toSet(), {usbRetrying});
+    });
   });
 }
 

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shutterlink/data/camera_host_resolver.dart';
 import 'package:shutterlink/data/identity_repository.dart';
+import 'package:shutterlink/data/live_service.dart';
 import 'package:shutterlink/data/settings_repository.dart';
 import 'package:shutterlink/feature/connect/connect_cubit.dart';
 import 'package:shutterlink/feature/connect/connect_state.dart';
@@ -124,6 +125,17 @@ void main() {
     expect(binder.calls, contains('acquire connect hold'));
     expect(sessions.clockSyncs, 1);
     expect(sessions.collectors, 1);
+  });
+
+  test('a camera that does not answer asks for a power-cycle', () async {
+    cubit = build();
+    await enter();
+
+    connect.emit(const ConnectReconnecting(notResponding: true, usb: true));
+    await pumpEventQueue();
+
+    expect(service.statuses.last.text, LiveShareCubit.notRespondingText);
+    expect(service.statuses.last.state, LiveServiceState.reconnecting);
   });
 
   test('leaving closes the window and stops the service', () async {

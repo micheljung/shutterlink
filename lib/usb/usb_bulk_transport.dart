@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:typed_data';
 
+import 'package:clock/clock.dart';
+
 import '../ptp/camera_client.dart';
 import '../ptp/ptp_constants.dart';
 import '../ptp/ptp_protocol_exception.dart';
@@ -36,8 +38,12 @@ class UsbBulkTransport implements PtpTransport {
 
   /// Runs the reset sequence, so no stale state from an earlier session
   /// reaches the first transaction: clear halt, Device Reset (Cancel if it
-  /// stalls), GetDeviceStatus until OK, drain. Closes the pipe on failure.
+  /// stalls), GetDeviceStatus until OK, drain. Closes the pipe on failure;
+  /// a camera that stays attached but rejects both resets or never answers
+  /// its status fails with [CameraNotRespondingException].
   static Future<UsbBulkTransport> open(UsbBulkPipe pipe) async {
+    var detached = false;
+    unawaited(pipe.detached.then((_) => detached = true));
     try {
       await pipe.clearHalt();
       await _reset(pipe);
@@ -45,9 +51,12 @@ class UsbBulkTransport implements PtpTransport {
       await pipe.drainIn();
     } catch (error) {
       unawaited(pipe.close());
-      throw error is CameraDisconnectedException
-          ? error
-          : CameraDisconnectedException(error);
+      throw switch (error) {
+        CameraNotRespondingException(:final cause) when detached =>
+          CameraDisconnectedException(cause),
+        CameraDisconnectedException() => error,
+        _ => CameraDisconnectedException(error),
+      };
     }
     return UsbBulkTransport._(pipe);
   }
@@ -62,17 +71,21 @@ class UsbBulkTransport implements PtpTransport {
       final cancel = ByteData(6)
         ..setUint16(0, _cancellationCode, Endian.little)
         ..setUint32(2, 0, Endian.little);
-      await pipe.classRequest(
-        UsbStillImageRequest.cancel,
-        deviceToHost: false,
-        length: cancel.lengthInBytes,
-        data: cancel.buffer.asUint8List(),
-      );
+      try {
+        await pipe.classRequest(
+          UsbStillImageRequest.cancel,
+          deviceToHost: false,
+          length: cancel.lengthInBytes,
+          data: cancel.buffer.asUint8List(),
+        );
+      } on UsbTransferException catch (error) {
+        throw CameraNotRespondingException(error);
+      }
     }
   }
 
   static Future<void> _awaitDeviceReady(UsbBulkPipe pipe) async {
-    final deadline = DateTime.now().add(_deviceStatusTimeout);
+    final deadline = clock.now().add(_deviceStatusTimeout);
     Object? last;
     while (true) {
       try {
@@ -95,8 +108,10 @@ class UsbBulkTransport implements PtpTransport {
       } on UsbTransferException catch (error) {
         last = error;
       }
-      if (!DateTime.now().isBefore(deadline)) {
-        throw CameraDisconnectedException(last);
+      if (!clock.now().isBefore(deadline)) {
+        throw last is UsbTransferException
+            ? CameraNotRespondingException(last)
+            : CameraDisconnectedException(last);
       }
       await Future<void>.delayed(_deviceStatusPollInterval);
     }

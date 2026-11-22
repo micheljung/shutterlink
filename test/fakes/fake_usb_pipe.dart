@@ -24,6 +24,9 @@ class FakeUsbPipe implements UsbBulkPipe {
     this.stallAfterBytes,
     Uint8List? staleInData,
     this.resetStalls = false,
+    this.cancelStalls = false,
+    this.deviceStatusTimesOut = false,
+    this.unplugOnRequest,
     this.deviceStatusBusyPolls = 0,
     List<Uint8List> interruptEvents = const [],
     this.readDelay = Duration.zero,
@@ -65,6 +68,15 @@ class FakeUsbPipe implements UsbBulkPipe {
 
   /// Device Reset (0x66) stalls, so the host must Cancel (0x64) instead.
   final bool resetStalls;
+
+  /// Cancel (0x64) stalls as well, as a camera that takes no reset.
+  final bool cancelStalls;
+
+  /// GetDeviceStatus never answers, as a camera whose firmware crashed.
+  final bool deviceStatusTimesOut;
+
+  /// The cable is pulled while this class request runs.
+  final int? unplugOnRequest;
 
   /// GetDeviceStatus answers Device Busy this many times before OK.
   int deviceStatusBusyPolls;
@@ -268,12 +280,17 @@ class FakeUsbPipe implements UsbBulkPipe {
     Uint8List? data,
   }) async {
     calls.add('class 0x${request.toRadixString(16)}');
+    if (request == unplugOnRequest) unplug();
     if (_gone) {
       throw const UsbTransferException('control request on a gone pipe');
     }
     switch (request) {
       case UsbStillImageRequest.deviceReset when resetStalls:
         throw const UsbTransferException('stall');
+      case UsbStillImageRequest.cancel when cancelStalls:
+        throw const UsbTransferException('stall');
+      case UsbStillImageRequest.getDeviceStatus when deviceStatusTimesOut:
+        throw const UsbTransferException('timeout');
       case UsbStillImageRequest.getDeviceStatus:
         final busy = deviceStatusBusyPolls > 0;
         if (busy) {
