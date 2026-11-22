@@ -71,6 +71,8 @@ class ConnectCubit extends Cubit<ConnectState> {
       'USB access to the camera was denied.';
   static const usbPermissionNeededMessage =
       'Open Shutterlink and allow USB access to the camera.';
+  static const notRespondingMessage =
+      "The camera isn't responding. Turn it off and on again.";
 
   final CameraConnector _connector;
   final IdentityRepository _identity;
@@ -286,6 +288,7 @@ class ConnectCubit extends Cubit<ConnectState> {
   void _onReconnecting({
     required bool unreachable,
     required bool userActionNeeded,
+    required bool notResponding,
     required bool usb,
   }) {
     if (isClosed) return;
@@ -293,6 +296,7 @@ class ConnectCubit extends Cubit<ConnectState> {
       ConnectReconnecting(
         unreachable: unreachable,
         userActionNeeded: userActionNeeded,
+        notResponding: notResponding,
         usb: usb,
       ),
     );

@@ -403,6 +403,19 @@ void main() {
       expect(result.response, [3, 4]);
     });
 
+    test('sends a data-out phase along with the command', () async {
+      answers['send'] = (_) => {
+        'data': Uint8List(0),
+        'response': Uint8List.fromList([3, 4]),
+      };
+      final passthrough = await openPassthrough();
+      final command = Uint8List.fromList([9, 9]);
+      final dataOut = Uint8List.fromList([5, 6, 7]);
+      await passthrough.send(command, dataOut: dataOut);
+
+      expect(calls.last.arguments, {'bytes': command, 'dataOut': dataOut});
+    });
+
     test('a failed send throws UsbTransferException', () async {
       answers['send'] = (_) => fail('send_failed');
       final passthrough = await openPassthrough();
@@ -473,7 +486,11 @@ void main() {
           .add((call.arguments as Map)['bytes'] as Uint8List)
           .single;
       device.receivedOpcodes.add(command.code);
-      final reply = device.handle(command.code, command.params);
+      final reply = device.handle(
+        command.code,
+        command.params,
+        dataOut: (call.arguments as Map)['dataOut'] as Uint8List?,
+      );
       return {
         'data': reply.data ?? Uint8List(0),
         'response': UsbContainer.withParams(

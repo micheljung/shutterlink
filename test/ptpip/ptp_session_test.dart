@@ -7,6 +7,9 @@ import 'package:shutterlink/ptpip/ptpip.dart';
 
 import 'fake_camera.dart';
 
+const _smallValue = 4;
+const _largeValue = 200 * 1000;
+
 typedef RequestHandler = void Function(Socket socket, CommandRequest request);
 
 Future<(ServerSocket, PtpIpConnection)> scriptedCamera(
@@ -115,6 +118,53 @@ void main() {
       expect(result.data, expected);
       expect(result.code, PtpResponseCode.ok);
       expect(result.params, isEmpty);
+    });
+
+    for (final (size, dataPackets) in [
+      (_smallValue, 0),
+      (_largeValue, _largeValue ~/ ptpIpDataOutPacketSize),
+    ]) {
+      test('round-trips a $size-byte property value', () async {
+        await start(FakeCamera());
+        final value = patternBytes(size, seed: size);
+        await session.execute(
+          PtpOperation.setDevicePropValue,
+          params: const [PtpDeviceProperty.dateTime],
+          dataOut: value,
+        );
+        final read = await session.execute(
+          PtpOperation.getDevicePropValue,
+          params: const [PtpDeviceProperty.dateTime],
+        );
+        expect(read.data, value);
+        expect(camera.dataOutPackets, dataPackets);
+        final request = camera.receivedRequests.first;
+        expect(request.dataPhase, PtpDataPhase.dataOut);
+        expect(
+          camera.receivedRequests.last.dataPhase,
+          PtpDataPhase.noneOrDataIn,
+        );
+      });
+    }
+
+    test('a data-out phase without data is refused', () async {
+      await start(FakeCamera());
+      await expectLater(
+        session.execute(
+          PtpOperation.setDevicePropValue,
+          params: const [PtpDeviceProperty.dateTime],
+        ),
+        throwsA(isA<PtpResponseException>()),
+      );
+    });
+
+    test('never reports channel overhead', () async {
+      await start(FakeCamera());
+      PtpTiming? reported;
+      session.onTiming = (_, timing) => reported = timing;
+      await session.execute(PtpOperation.getStorageIds);
+      expect(reported!.firstByte, isNotNull);
+      expect(reported!.channelOverhead, isNull);
     });
 
     test('concurrent calls are strictly serialized', () async {

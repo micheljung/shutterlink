@@ -49,5 +49,8 @@ class _FakeProfileConnection implements ProfileConnection {
       const RetryPolicy(attempts: 3, delay: Duration(milliseconds: 1));
 
   @override
+  ReconnectPolicy? get reconnectPolicy => null;
+
+  @override
   Future<void> detach() async {}
 }

@@ -16,6 +16,7 @@ class ReconnectingOverlay extends StatelessWidget {
   static const reconnectingText = 'Reconnecting…';
   static const unreachableText = 'Camera not reachable';
   static const userActionText = 'Open Shutterlink to allow USB access';
+  static const notRespondingText = ConnectCubit.notRespondingMessage;
   static const allowUsbLabel = 'Allow USB access';
   static const abortLabel = 'Abort';
 
@@ -35,6 +36,10 @@ class ReconnectingOverlay extends StatelessWidget {
       ConnectReconnecting(userActionNeeded: true) => (
         Icons.usb,
         userActionText,
+      ),
+      ConnectReconnecting(notResponding: true) => (
+        Icons.power_settings_new,
+        notRespondingText,
       ),
       ConnectReconnecting(unreachable: true) => (
         Icons.portable_wifi_off,

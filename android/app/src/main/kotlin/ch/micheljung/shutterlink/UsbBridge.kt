@@ -316,8 +316,9 @@ class UsbBridge(private val context: Context) {
                     { bulkOut(bytes) }
                 }
                 "bulkIn" -> {
-                    val maxLength = call.argument<Int>("maxLength") ?: maxTransfer;
-                    { mapOf("bytes" to bulkIn(maxLength)) }
+                    val maxLength = call.argument<Int>("maxLength") ?: maxTransfer
+                    val clock = TransferClock(call.argument<Boolean>("timing") ?: false);
+                    { clock.reply(bulkIn(maxLength, clock)) }
                 }
                 "clearHalt" -> ({ clearHalt() })
                 "classRequest" -> {
@@ -387,14 +388,16 @@ class UsbBridge(private val context: Context) {
          * Reads one whole transfer: whole packets until a short one arrives or
          * [maxLength] is reached. Has no timeout; [close] ends it.
          */
-        private fun bulkIn(maxLength: Int): ByteArray {
+        private fun bulkIn(maxLength: Int, clock: TransferClock): ByteArray {
             val limit = maxOf(maxPacketSize, maxLength - maxLength % maxPacketSize)
             val buffer = ByteArray(limit)
             var offset = 0
             while (offset < limit) {
                 checkOpen()
                 val requested = minOf(maxTransfer, limit - offset)
-                val read = connection.bulkTransfer(bulkIn, buffer, offset, requested, 0)
+                val read = clock.measure {
+                    connection.bulkTransfer(bulkIn, buffer, offset, requested, 0)
+                }
                 if (read < 0) throw UsbIoException("bulkIn failed")
                 offset += read
                 if (read < requested) break

@@ -8,6 +8,7 @@ abstract final class PtpOperation {
   static const getThumb = 0x100A;
   static const deleteObject = 0x100B;
   static const getDevicePropValue = 0x1015;
+  static const setDevicePropValue = 0x1016;
   static const getPartialObject = 0x101B;
 }
 

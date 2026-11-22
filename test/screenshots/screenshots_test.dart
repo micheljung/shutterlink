@@ -32,6 +32,7 @@ import 'package:shutterlink/feature/intervalometer/interval_presets.dart';
 import 'package:shutterlink/feature/intervalometer/intervalometer_cubit.dart';
 import 'package:shutterlink/feature/intervalometer/intervalometer_entry_card.dart';
 import 'package:shutterlink/feature/intervalometer/intervalometer_screen.dart';
+import 'package:shutterlink/feature/live_view_probe/live_view_probe_screen.dart';
 import 'package:shutterlink/feature/mode/mode_back_button.dart';
 import 'package:shutterlink/feature/mode/mode_picker_screen.dart';
 import 'package:shutterlink/feature/mode/operating_mode.dart';
@@ -71,9 +72,13 @@ const _settingsScrollStep = 200.0;
 void main() {
   setUpAll(() async {
     WidgetsApp.debugAllowBannerOverride = false;
+    ModePickerScreen.hidesDebugTools = true;
     await _loadFonts();
   });
-  tearDownAll(() => WidgetsApp.debugAllowBannerOverride = true);
+  tearDownAll(() {
+    WidgetsApp.debugAllowBannerOverride = true;
+    ModePickerScreen.hidesDebugTools = false;
+  });
 
   testWidgets('connect screen', (tester) async {
     await _pumpApp(tester, _ScreenshotCameraClient());
@@ -85,6 +90,7 @@ void main() {
     await tester.tap(find.text(ConnectScreen.connectLabel));
     await tester.pumpAndSettle();
     expect(find.text(ModePickerScreen.title), findsOneWidget);
+    expect(find.byTooltip(LiveViewProbe.title), findsNothing);
     await _capture(tester, 'modes');
   }, variant: _platform);
 
@@ -618,6 +624,7 @@ class _ScreenshotCameraClient extends FakeCameraClient {
     int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
+    int? chunkSize,
   }) async {
     if (!stall || object.filename != _stallName) {
       return super.download(
@@ -627,6 +634,7 @@ class _ScreenshotCameraClient extends FakeCameraClient {
         length: length,
         onProgress: onProgress,
         cancelToken: cancelToken,
+        chunkSize: chunkSize,
       );
     }
     final content = contentFor(object);

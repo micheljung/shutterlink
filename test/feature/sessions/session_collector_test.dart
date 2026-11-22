@@ -41,6 +41,7 @@ class _LoggingClient extends FakeCameraClient {
     int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
+    int? chunkSize,
   }) async {
     if (failNextDownload case final error?) {
       failNextDownload = null;
@@ -54,6 +55,7 @@ class _LoggingClient extends FakeCameraClient {
       length: length,
       onProgress: onProgress,
       cancelToken: cancelToken,
+      chunkSize: chunkSize,
     );
     log.add('end ${object.handle}');
   }

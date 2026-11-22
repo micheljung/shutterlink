@@ -5,6 +5,9 @@ import 'download_plan.dart';
 
 enum DownloadStatus { idle, running, paused, cancelled, completed }
 
+/// Which screen started a download.
+enum DownloadOrigin { browse, remote }
+
 enum DownloadFailureReason { saveFailed, photoChanged }
 
 class DownloadFailure extends Equatable {

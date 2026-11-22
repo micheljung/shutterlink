@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shutterlink/feature/download/object_fetcher.dart';
 import 'package:shutterlink/ptp/camera_client.dart';
@@ -20,6 +21,17 @@ import '../fakes/fake_usb_pipe.dart';
 const _resetSequence = ['clearHalt', 'class 0x66', 'class 0x67', 'drain'];
 const _watchdog = Duration(milliseconds: 100);
 const _slowRead = Duration(milliseconds: 40);
+const _smallValue = 4;
+const _largeValue = 200 * 1000;
+const _readsPerReply = 3;
+const _packetSize = 512;
+const _replyLength = 1100;
+const _timedRead = Duration(milliseconds: 10);
+const _nativeHour = Duration(hours: 1);
+
+/// The open polls the device status for 2 s.
+const _beforeStatusDeadline = Duration(milliseconds: 1900);
+const _pastStatusDeadline = Duration(seconds: 3);
 
 /// Standard PTP only, so the tests see no Canon event polling.
 const _genericOnly = ProfileRegistry([]);
@@ -49,6 +61,30 @@ void main() {
 
   int count(int opcode) =>
       device.receivedOpcodes.where((op) => op == opcode).length;
+
+  /// Opens a pipe [create] makes in fake time, where the pipe's own
+  /// futures run too, and returns how the open failed. When [before] is
+  /// given, the open must still be running after that long.
+  (Object?, FakeUsbPipe) openFailure(
+    FakeUsbPipe Function() create, {
+    Duration? before,
+  }) {
+    Object? failure;
+    late FakeUsbPipe pipe;
+    fakeAsync((async) {
+      pipe = create();
+      UsbBulkTransport.open(pipe).then<void>(
+        (transport) => transport.close(),
+        onError: (Object error) => failure = error,
+      );
+      if (before != null) {
+        async.elapse(before);
+        expect(failure, isNull);
+      }
+      async.elapse(_pastStatusDeadline);
+    });
+    return (failure, pipe);
+  }
 
   group('reset sequence', () {
     test('runs before the first transaction', () async {
@@ -88,19 +124,52 @@ void main() {
       expect(pipe.calls.where((c) => c == 'class 0x67'), hasLength(4));
     });
 
-    test('gives up on a device that stays busy, and closes the pipe', () async {
-      final pipe = FakeUsbPipe(device, deviceStatusBusyPolls: 1 << 30);
-      final started = DateTime.now();
-      await expectLater(
-        UsbBulkTransport.open(pipe),
-        throwsA(isA<CameraDisconnectedException>()),
+    test('gives up on a device that stays busy, and closes the pipe', () {
+      final (failure, pipe) = openFailure(
+        () => FakeUsbPipe(device, deviceStatusBusyPolls: 1 << 30),
+        before: _beforeStatusDeadline,
       );
-      expect(
-        DateTime.now().difference(started),
-        greaterThanOrEqualTo(const Duration(seconds: 2)),
-      );
+      expect(failure, isA<CameraDisconnectedException>());
+      expect(failure, isNot(isA<CameraNotRespondingException>()));
       expect(pipe.isClosed, isTrue);
     });
+
+    test('a device status that times out means not responding', () {
+      final (failure, pipe) = openFailure(
+        () => FakeUsbPipe(device, deviceStatusTimesOut: true),
+        before: _beforeStatusDeadline,
+      );
+      expect(failure, isA<CameraNotRespondingException>());
+      expect(pipe.isClosed, isTrue);
+    });
+
+    test('a device that takes neither reset is not responding', () {
+      final (failure, pipe) = openFailure(
+        () => FakeUsbPipe(device, resetStalls: true, cancelStalls: true),
+      );
+      expect(failure, isA<CameraNotRespondingException>());
+      expect(pipe.calls, isNot(contains('class 0x67')));
+      expect(pipe.isClosed, isTrue);
+    });
+
+    for (final (step, request, stalls) in [
+      ('Device Reset', UsbStillImageRequest.deviceReset, false),
+      ('Cancel', UsbStillImageRequest.cancel, true),
+      ('GetDeviceStatus', UsbStillImageRequest.getDeviceStatus, false),
+    ]) {
+      test('a cable pulled during $step is a plain disconnect', () {
+        final (failure, pipe) = openFailure(
+          () => FakeUsbPipe(
+            device,
+            unplugOnRequest: request,
+            resetStalls: stalls,
+          ),
+        );
+        expect(failure, isA<CameraDisconnectedException>());
+        expect(failure, isNot(isA<CameraNotRespondingException>()));
+        expect(pipe.isClosed, isTrue);
+      });
+    }
   });
 
   group('over an unmodified PtpSession', () {
@@ -247,6 +316,88 @@ void main() {
     expect(await file.readAsBytes(), contentOf(object.handle));
   });
 
+  group('data-out phase', () {
+    final packetBoundary = _packetSize - usbContainerHeaderSize;
+    for (final size in [_smallValue, packetBoundary, _largeValue]) {
+      test('round-trips a $size-byte property value', () async {
+        final pipe = FakeUsbPipe(device);
+        final (session, _) = await openSession(pipe);
+        final value = patternBytes(size, seed: size);
+        await session.execute(
+          PtpOperation.setDevicePropValue,
+          params: const [PtpDeviceProperty.dateTime],
+          dataOut: value,
+        );
+        final read = await session.execute(
+          PtpOperation.getDevicePropValue,
+          params: const [PtpDeviceProperty.dateTime],
+        );
+        expect(read.data, value);
+      });
+    }
+
+    test('the fake refuses a zero-length packet from Dart', () {
+      expect(() => FakeUsbPipe(device).bulkOut(Uint8List(0)), throwsStateError);
+    });
+  });
+
+  group('transfer timing', () {
+    Future<List<PtpTiming>> timeTwoReplies(FakeUsbPipe pipe) async {
+      final (session, _) = await openSession(pipe);
+      final timings = <PtpTiming>[];
+      session.onTiming = (_, timing) => timings.add(timing);
+      for (var i = 0; i < 2; i++) {
+        await session.execute(
+          PtpOperation.getPartialObject,
+          params: const [FakePtpDevice.jpegHandle, 0, _replyLength],
+        );
+      }
+      return timings;
+    }
+
+    test('sums the overhead of every read of one transaction', () async {
+      final pipe = FakeUsbPipe(
+        device,
+        maxTransfer: _packetSize,
+        nativeMicros: _nativeHour.inMicroseconds,
+      );
+      final timings = await timeTwoReplies(pipe);
+      expect(pipe.bulkInTiming, everyElement(isTrue));
+      for (final timing in timings) {
+        final overhead = timing.channelOverhead!;
+        expect(overhead, lessThan(-_nativeHour * (_readsPerReply - 1)));
+        expect(overhead, greaterThan(-_nativeHour * _readsPerReply));
+      }
+    });
+
+    test('counts the round trip beyond the native transfer', () async {
+      final pipe = FakeUsbPipe(
+        device,
+        maxTransfer: _packetSize,
+        readDelay: _timedRead,
+      );
+      final timings = await timeTwoReplies(pipe);
+      for (final timing in timings) {
+        expect(
+          timing.channelOverhead,
+          greaterThanOrEqualTo(_timedRead * _readsPerReply),
+        );
+      }
+    });
+
+    test('asks the pipe for nothing while no tap is set', () async {
+      final pipe = FakeUsbPipe(device);
+      final (session, _) = await openSession(pipe);
+      await session.execute(PtpOperation.getStorageIds);
+      session
+        ..onTiming = (_, _) {}
+        ..onTiming = null;
+      await session.execute(PtpOperation.getStorageIds);
+      expect(pipe.bulkInTiming, isNotEmpty);
+      expect(pipe.bulkInTiming, everyElement(isFalse));
+    });
+  });
+
   group('transport', () {
     test('decodes interrupt events and drops garbled ones', () async {
       final event = UsbContainer.withParams(UsbContainerType.event, 0x4002, 5, [
@@ -352,10 +503,12 @@ class _ScriptedPipe implements UsbBulkPipe {
   Uint8List? script;
 
   @override
-  Future<UsbRead> bulkIn(int maxLength) async {
+  Future<UsbRead> bulkIn(int maxLength, {bool timing = false}) async {
     final bytes = script;
     script = null;
-    return bytes == null ? inner.bulkIn(maxLength) : UsbData(bytes);
+    return bytes == null
+        ? inner.bulkIn(maxLength, timing: timing)
+        : UsbData(bytes);
   }
 
   @override

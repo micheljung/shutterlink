@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:typed_data';
 
+import 'package:clock/clock.dart';
+
 import '../ptp/camera_client.dart';
 import '../ptp/ptp_constants.dart';
 import '../ptp/ptp_protocol_exception.dart';
@@ -36,8 +38,12 @@ class UsbBulkTransport implements PtpTransport {
 
   /// Runs the reset sequence, so no stale state from an earlier session
   /// reaches the first transaction: clear halt, Device Reset (Cancel if it
-  /// stalls), GetDeviceStatus until OK, drain. Closes the pipe on failure.
+  /// stalls), GetDeviceStatus until OK, drain. Closes the pipe on failure;
+  /// a camera that stays attached but rejects both resets or never answers
+  /// its status fails with [CameraNotRespondingException].
   static Future<UsbBulkTransport> open(UsbBulkPipe pipe) async {
+    var detached = false;
+    unawaited(pipe.detached.then((_) => detached = true));
     try {
       await pipe.clearHalt();
       await _reset(pipe);
@@ -45,9 +51,12 @@ class UsbBulkTransport implements PtpTransport {
       await pipe.drainIn();
     } catch (error) {
       unawaited(pipe.close());
-      throw error is CameraDisconnectedException
-          ? error
-          : CameraDisconnectedException(error);
+      throw switch (error) {
+        CameraNotRespondingException(:final cause) when detached =>
+          CameraDisconnectedException(cause),
+        CameraDisconnectedException() => error,
+        _ => CameraDisconnectedException(error),
+      };
     }
     return UsbBulkTransport._(pipe);
   }
@@ -62,17 +71,21 @@ class UsbBulkTransport implements PtpTransport {
       final cancel = ByteData(6)
         ..setUint16(0, _cancellationCode, Endian.little)
         ..setUint32(2, 0, Endian.little);
-      await pipe.classRequest(
-        UsbStillImageRequest.cancel,
-        deviceToHost: false,
-        length: cancel.lengthInBytes,
-        data: cancel.buffer.asUint8List(),
-      );
+      try {
+        await pipe.classRequest(
+          UsbStillImageRequest.cancel,
+          deviceToHost: false,
+          length: cancel.lengthInBytes,
+          data: cancel.buffer.asUint8List(),
+        );
+      } on UsbTransferException catch (error) {
+        throw CameraNotRespondingException(error);
+      }
     }
   }
 
   static Future<void> _awaitDeviceReady(UsbBulkPipe pipe) async {
-    final deadline = DateTime.now().add(_deviceStatusTimeout);
+    final deadline = clock.now().add(_deviceStatusTimeout);
     Object? last;
     while (true) {
       try {
@@ -95,8 +108,10 @@ class UsbBulkTransport implements PtpTransport {
       } on UsbTransferException catch (error) {
         last = error;
       }
-      if (!DateTime.now().isBefore(deadline)) {
-        throw CameraDisconnectedException(last);
+      if (!clock.now().isBefore(deadline)) {
+        throw last is UsbTransferException
+            ? CameraNotRespondingException(last)
+            : CameraDisconnectedException(last);
       }
       await Future<void>.delayed(_deviceStatusPollInterval);
     }
@@ -109,6 +124,7 @@ class UsbBulkTransport implements PtpTransport {
   final _events = StreamController<PtpEvent>.broadcast();
   final _disconnected = Completer<void>();
   void Function()? _onActivity;
+  void Function(int transactionId, Duration channelOverhead)? _onTransferTiming;
   Object? _cause;
   Completer<PtpTransactionResult>? _current;
 
@@ -127,6 +143,12 @@ class UsbBulkTransport implements PtpTransport {
   @override
   set onActivity(void Function()? callback) => _onActivity = callback;
 
+  /// While set, every read asks the bridge for its native transfer time.
+  @override
+  set onTransferTiming(
+    void Function(int transactionId, Duration channelOverhead)? callback,
+  ) => _onTransferTiming = callback;
+
   @override
   Duration? get minimumResponseTimeout => null;
 
@@ -134,13 +156,14 @@ class UsbBulkTransport implements PtpTransport {
   Future<PtpTransactionResult> transact(
     int opcode,
     List<int> params,
-    int transactionId,
-  ) {
+    int transactionId, {
+    Uint8List? dataOut,
+  }) {
     if (!isConnected) {
       return Future.error(CameraDisconnectedException(_cause));
     }
     final completer = _current = Completer<PtpTransactionResult>();
-    _exchange(opcode, params, transactionId).then(
+    _exchange(opcode, params, transactionId, dataOut).then(
       (result) {
         if (!completer.isCompleted) {
           completer.complete(result);
@@ -163,6 +186,7 @@ class UsbBulkTransport implements PtpTransport {
     int opcode,
     List<int> params,
     int transactionId,
+    Uint8List? dataOut,
   ) async {
     try {
       await _pipe.bulkOut(
@@ -173,15 +197,35 @@ class UsbBulkTransport implements PtpTransport {
           params,
         ).encode(),
       );
+      if (dataOut != null) {
+        await _pipe.bulkOut(
+          UsbContainer(
+            type: UsbContainerType.data,
+            code: opcode,
+            transactionId: transactionId,
+            payload: dataOut,
+          ).encode(),
+        );
+      }
+      final timing = _onTransferTiming != null;
+      final roundTrip = Stopwatch();
+      var channelOverhead = Duration.zero;
       Uint8List? data;
       while (true) {
-        final read = await _pipe.bulkIn(_pipe.maxTransfer);
+        roundTrip
+          ..reset()
+          ..start();
+        final read = await _pipe.bulkIn(_pipe.maxTransfer, timing: timing);
         if (!isConnected) {
           throw CameraDisconnectedException(_cause);
         }
         final Uint8List bytes;
         switch (read) {
-          case UsbData(bytes: final received):
+          case UsbData(bytes: final received, :final nativeMicros):
+            if (nativeMicros != null) {
+              channelOverhead +=
+                  roundTrip.elapsed - Duration(microseconds: nativeMicros);
+            }
             _onActivity?.call();
             bytes = received;
           case UsbZeroLength():
@@ -204,6 +248,9 @@ class UsbBulkTransport implements PtpTransport {
             case UsbContainerType.data:
               data = container.payload;
             case UsbContainerType.response:
+              if (timing) {
+                _onTransferTiming?.call(transactionId, channelOverhead);
+              }
               return PtpTransactionResult(
                 code: container.code,
                 params: container.params,

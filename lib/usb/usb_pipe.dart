@@ -8,9 +8,12 @@ sealed class UsbRead {
 /// A non-empty transfer: packets up to a short one, or up to the requested
 /// length.
 final class UsbData extends UsbRead {
-  const UsbData(this.bytes);
+  const UsbData(this.bytes, {this.nativeMicros});
 
   final Uint8List bytes;
+
+  /// Time the platform spent in its USB transfers, when timing was asked.
+  final int? nativeMicros;
 }
 
 /// A real zero-length packet, ending a transfer that filled whole packets.
@@ -50,8 +53,9 @@ abstract interface class UsbBulkPipe {
 
   /// One whole transfer: reads packets until a short one arrives or
   /// [maxLength] is reached. Never times out and never throws; a closed,
-  /// detached or failed pipe completes with [UsbReadError].
-  Future<UsbRead> bulkIn(int maxLength);
+  /// detached or failed pipe completes with [UsbReadError]. With [timing],
+  /// [UsbData.nativeMicros] reports the platform's own transfer time.
+  Future<UsbRead> bulkIn(int maxLength, {bool timing = false});
 
   /// Raw interrupt-endpoint transfers.
   Stream<Uint8List> get interrupt;
@@ -84,12 +88,14 @@ abstract interface class UsbBulkPipe {
 
 /// A platform that runs whole PTP transactions itself (iOS ImageCaptureCore).
 abstract interface class UsbPassthrough {
-  /// Runs one transaction from a USB command container. [data] is the
-  /// data-in phase and [response] the response; either may come with or
-  /// without its 12-byte container header.
+  /// Runs one transaction from a USB command container, with [dataOut] as
+  /// its data-out phase, without a container header. [data] is the data-in
+  /// phase and [response] the response; either may come with or without its
+  /// 12-byte container header.
   Future<({Uint8List data, Uint8List response})> send(
-    Uint8List commandContainer,
-  );
+    Uint8List commandContainer, {
+    Uint8List? dataOut,
+  });
 
   /// Raw event payloads the camera pushes.
   Stream<Uint8List> get events;

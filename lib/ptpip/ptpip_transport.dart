@@ -6,6 +6,8 @@ import '../ptp/ptp_transport.dart';
 import 'connection.dart';
 import 'packet.dart';
 
+const ptpIpDataOutPacketSize = 64 * 1024;
+
 class PtpIpTransport implements PtpTransport {
   PtpIpTransport(this._connection) {
     _connection.commandPackets.listen(_onPacket);
@@ -39,14 +41,20 @@ class PtpIpTransport implements PtpTransport {
   set onActivity(void Function()? callback) => _onActivity = callback;
 
   @override
+  set onTransferTiming(
+    void Function(int transactionId, Duration channelOverhead)? callback,
+  ) {}
+
+  @override
   Duration? get minimumResponseTimeout => null;
 
   @override
   Future<PtpTransactionResult> transact(
     int opcode,
     List<int> params,
-    int transactionId,
-  ) async {
+    int transactionId, {
+    Uint8List? dataOut,
+  }) async {
     if (!_connection.isConnected) {
       throw CameraDisconnectedException(_connection.disconnectCause);
     }
@@ -57,14 +65,46 @@ class PtpIpTransport implements PtpTransport {
           opcode: opcode,
           transactionId: transactionId,
           params: params,
+          dataPhase: dataOut == null
+              ? PtpDataPhase.noneOrDataIn
+              : PtpDataPhase.dataOut,
         ),
       );
+      if (dataOut != null) {
+        _sendData(transactionId, dataOut);
+      }
       return await transaction.completer.future;
     } finally {
       if (identical(_current, transaction)) {
         _current = null;
       }
     }
+  }
+
+  void _sendData(int transactionId, Uint8List data) {
+    _connection.send(
+      StartData(transactionId: transactionId, totalLength: data.length),
+    );
+    var offset = 0;
+    while (data.length - offset > ptpIpDataOutPacketSize) {
+      _connection.send(
+        DataPacket(
+          transactionId: transactionId,
+          payload: Uint8List.sublistView(
+            data,
+            offset,
+            offset + ptpIpDataOutPacketSize,
+          ),
+        ),
+      );
+      offset += ptpIpDataOutPacketSize;
+    }
+    _connection.send(
+      EndDataPacket(
+        transactionId: transactionId,
+        payload: Uint8List.sublistView(data, offset),
+      ),
+    );
   }
 
   @override

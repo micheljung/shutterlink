@@ -287,6 +287,77 @@ void main() {
     expect(workFiles(), isEmpty);
   });
 
+  group('origin', () {
+    const remoteChunkSize = 256 * 1024;
+    final groupList = groupPhotos([lone, rawOnly]);
+
+    Future<FakeCameraClient> pause({
+      DownloadOrigin origin = DownloadOrigin.browse,
+      int? chunkSize,
+    }) async {
+      final client = FakeCameraClient([
+        lone,
+        rawOnly,
+      ], disconnectAfterChunks: 3);
+      await cubit.start(
+        client,
+        groupList,
+        DownloadFormat.both,
+        origin: origin,
+        chunkSize: chunkSize,
+      );
+      expect(cubit.state.status, DownloadStatus.paused);
+      return client;
+    }
+
+    test('a paused browse batch survives a remote start', () async {
+      await pause();
+      final partial = workFiles().single.path;
+
+      await cubit.start(
+        FakeCameraClient(objects),
+        groups(),
+        DownloadFormat.both,
+        origin: DownloadOrigin.remote,
+        chunkSize: remoteChunkSize,
+      );
+
+      expect(cubit.state.status, DownloadStatus.paused);
+      expect(workFiles().single.path, partial);
+      expect(cubit.origin, DownloadOrigin.browse);
+      expect(cubit.chunkSize, isNull);
+    });
+
+    test('a paused remote batch survives a browse start', () async {
+      await pause(origin: DownloadOrigin.remote, chunkSize: remoteChunkSize);
+      final partial = workFiles().single.path;
+
+      await cubit.start(
+        FakeCameraClient(objects),
+        groups(),
+        DownloadFormat.both,
+      );
+
+      expect(cubit.state.status, DownloadStatus.paused);
+      expect(workFiles().single.path, partial);
+      expect(cubit.origin, DownloadOrigin.remote);
+      expect(cubit.chunkSize, remoteChunkSize);
+    });
+
+    test('a resumed remote download keeps its chunk size', () async {
+      await pause(origin: DownloadOrigin.remote, chunkSize: remoteChunkSize);
+      final reconnected = FakeCameraClient([lone, rawOnly]);
+
+      await cubit.resume(reconnected);
+
+      expect(cubit.state.status, DownloadStatus.completed);
+      expect(reconnected.downloadChunkSizes, {
+        lone.handle: [remoteChunkSize],
+      });
+      expect(cubit.origin, DownloadOrigin.remote);
+    });
+  });
+
   test('cancel while resume checks photos stops the queue', () async {
     await cubit.start(
       FakeCameraClient([lone, rawOnly], disconnectAfterChunks: 3),

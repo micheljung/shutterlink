@@ -18,7 +18,12 @@ import '../../upload/upload_fakes.dart';
 
 const owner = 'live';
 
-typedef Reconnecting = ({bool unreachable, bool userActionNeeded, bool usb});
+typedef Reconnecting = ({
+  bool unreachable,
+  bool userActionNeeded,
+  bool notResponding,
+  bool usb,
+});
 
 /// Records what a [ConnectionSupervisor] reports to its owner.
 class SupervisorEvents {
@@ -39,15 +44,22 @@ class SupervisorEvents {
   void onReconnecting({
     required bool unreachable,
     required bool userActionNeeded,
+    required bool notResponding,
     required bool usb,
   }) => reconnecting.add((
     unreachable: unreachable,
     userActionNeeded: userActionNeeded,
+    notResponding: notResponding,
     usb: usb,
   ));
 }
 
-const retrying = (unreachable: false, userActionNeeded: false, usb: false);
+const retrying = (
+  unreachable: false,
+  userActionNeeded: false,
+  notResponding: false,
+  usb: false,
+);
 
 /// A camera on the home Wi-Fi, found by discovery rather than the gateway.
 const stationHost = '192.168.1.50';
@@ -200,6 +212,51 @@ void main() {
     expect(events.reconnecting.toSet(), {retrying});
   });
 
+  test('a Canon waits out its reconnect gap, then retries every 5 s', () async {
+    first.reconnectPolicy = const ReconnectPolicy(
+      first: Duration(seconds: 15),
+      repeat: Duration(seconds: 5),
+    );
+    await superviseFirst();
+    binder.gateway = () => PlatformException(code: ConnectCubit.noWifiCode);
+
+    first.simulateDisconnect();
+    await pumpEventQueue();
+    for (var i = 0; i < 4; i++) {
+      await fire();
+    }
+
+    expect(delays(), [
+      for (final seconds in [15, 5, 5, 5, 5]) Duration(seconds: seconds),
+    ]);
+  });
+
+  test(
+    'a reconnected Canon waits out the gap again on the next drop',
+    () async {
+      const policy = ReconnectPolicy(
+        first: Duration(seconds: 15),
+        repeat: Duration(seconds: 5),
+      );
+      first.reconnectPolicy = policy;
+      final second = FakeCameraClient([old])..reconnectPolicy = policy;
+      connections.addAll([unreachable, second, unreachable]);
+      await superviseFirst();
+
+      first.simulateDisconnect();
+      await pumpEventQueue();
+      await fire();
+      await fire();
+      expect(supervisor.client, second);
+      second.simulateDisconnect();
+      await pumpEventQueue();
+
+      expect(delays(), [
+        for (final seconds in [15, 5, 15]) Duration(seconds: seconds),
+      ]);
+    },
+  );
+
   // live_transfer_cubit_test.dart:328
   test('slows down to 60 s after 10 minutes of failures', () async {
     await superviseFirst();
@@ -217,6 +274,7 @@ void main() {
     expect(events.reconnecting.last, (
       unreachable: true,
       userActionNeeded: false,
+      notResponding: false,
       usb: false,
     ));
   });

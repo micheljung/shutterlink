@@ -27,6 +27,7 @@ import 'feature/intervalometer/intervalometer_screen.dart';
 import 'feature/live/ingest_coordinator.dart';
 import 'feature/live/live_ingestor.dart';
 import 'feature/live_share/live_share_cubit.dart';
+import 'feature/live_view_probe/live_view_probe_screen.dart';
 import 'feature/mode/mode_cubit.dart';
 import 'feature/mode/mode_host.dart';
 import 'feature/onboarding/onboarding_screen.dart';
@@ -300,8 +301,10 @@ class _HomeState extends State<_Home> {
 
   /// The camera dropped. Pushed screens go, since they would cover the
   /// overlay and may hold the dead client. A setup screen stays, so typed
-  /// credentials survive a brief drop.
+  /// credentials survive a brief drop; the live view probe stays to keep
+  /// counting across the drop.
   static const _survivesDrop = {
+    LiveViewProbeScreen.routeName,
     UploadSetupScreen.routeName,
     SessionsSetupScreen.routeName,
     IntervalometerScreen.routeName,

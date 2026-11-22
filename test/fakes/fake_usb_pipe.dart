@@ -24,10 +24,14 @@ class FakeUsbPipe implements UsbBulkPipe {
     this.stallAfterBytes,
     Uint8List? staleInData,
     this.resetStalls = false,
+    this.cancelStalls = false,
+    this.deviceStatusTimesOut = false,
+    this.unplugOnRequest,
     this.deviceStatusBusyPolls = 0,
     List<Uint8List> interruptEvents = const [],
     this.readDelay = Duration.zero,
     this.onlyZeroLengthReads = false,
+    this.nativeMicros = 0,
   }) {
     if (staleInData != null) {
       _transfers.add(_Transfer(staleInData));
@@ -65,6 +69,15 @@ class FakeUsbPipe implements UsbBulkPipe {
   /// Device Reset (0x66) stalls, so the host must Cancel (0x64) instead.
   final bool resetStalls;
 
+  /// Cancel (0x64) stalls as well, as a camera that takes no reset.
+  final bool cancelStalls;
+
+  /// GetDeviceStatus never answers, as a camera whose firmware crashed.
+  final bool deviceStatusTimesOut;
+
+  /// The cable is pulled while this class request runs.
+  final int? unplugOnRequest;
+
   /// GetDeviceStatus answers Device Busy this many times before OK.
   int deviceStatusBusyPolls;
 
@@ -74,6 +87,15 @@ class FakeUsbPipe implements UsbBulkPipe {
   /// Every [bulkIn] answers a zero-length packet and never the reply.
   final bool onlyZeroLengthReads;
 
+  /// What a timed [bulkIn] reports as the bridge's own transfer time.
+  final int nativeMicros;
+
+  /// The `timing` flag of every [bulkIn], in order.
+  final bulkInTiming = <bool>[];
+
+  /// While set, [bulkIn] never answers, as a wedged camera.
+  bool hang = false;
+
   /// Pipe calls in order: 'clearHalt', 'class 0x66', 'drain', 'close'...
   final calls = <String>[];
 
@@ -81,6 +103,8 @@ class FakeUsbPipe implements UsbBulkPipe {
   int bytesDelivered = 0;
 
   final _transfers = Queue<_Transfer>();
+  late final _outReader = UsbContainerReader(maxPacketSize: maxPacketSize);
+  UsbContainer? _dataOutCommand;
   late final StreamController<Uint8List> _interrupt;
   final _detached = Completer<void>();
   Completer<void>? _dataArrived;
@@ -121,9 +145,30 @@ class FakeUsbPipe implements UsbBulkPipe {
     if (_gone) {
       throw const UsbTransferException('bulk-out on a gone pipe');
     }
-    final command = UsbContainerReader().add(bytes).single;
-    device.receivedOpcodes.add(command.code);
-    final reply = device.handle(command.code, command.params);
+    if (bytes.isEmpty) {
+      throw StateError('Dart sent a zero-length packet; the bridge sends it');
+    }
+    for (final container in _outReader.add(bytes)) {
+      switch (container.type) {
+        case UsbContainerType.command
+            when FakePtpDevice.dataOutOperations.contains(container.code):
+          device.receivedOpcodes.add(container.code);
+          _dataOutCommand = container;
+        case UsbContainerType.command:
+          device.receivedOpcodes.add(container.code);
+          _reply(container);
+        case UsbContainerType.data:
+          final command = _dataOutCommand!;
+          _dataOutCommand = null;
+          _reply(command, dataOut: container.payload);
+        case UsbContainerType.response || UsbContainerType.event:
+          throw StateError('Unexpected ${container.type.name} container');
+      }
+    }
+  }
+
+  void _reply(UsbContainer command, {Uint8List? dataOut}) {
+    final reply = device.handle(command.code, command.params, dataOut: dataOut);
     final transfer = BytesBuilder(copy: false);
     final data = reply.data;
     final drop = reply.dropAfterBytes;
@@ -159,7 +204,11 @@ class FakeUsbPipe implements UsbBulkPipe {
   }
 
   @override
-  Future<UsbRead> bulkIn(int maxLength) async {
+  Future<UsbRead> bulkIn(int maxLength, {bool timing = false}) async {
+    bulkInTiming.add(timing);
+    if (hang) {
+      return Completer<UsbRead>().future;
+    }
     await Future<void>.delayed(readDelay);
     while (true) {
       if (_gone) {
@@ -182,11 +231,11 @@ class FakeUsbPipe implements UsbBulkPipe {
         await (_dataArrived = Completer<void>()).future;
         continue;
       }
-      return _take(maxLength);
+      return _take(maxLength, timing: timing);
     }
   }
 
-  UsbRead _take(int maxLength) {
+  UsbRead _take(int maxLength, {required bool timing}) {
     final transfer = _transfers.first;
     var length = min(maxLength, transfer.remaining);
     for (final limit in [
@@ -214,7 +263,7 @@ class FakeUsbPipe implements UsbBulkPipe {
         unplug();
       }
     }
-    return UsbData(bytes);
+    return UsbData(bytes, nativeMicros: timing ? nativeMicros : null);
   }
 
   @override
@@ -231,12 +280,17 @@ class FakeUsbPipe implements UsbBulkPipe {
     Uint8List? data,
   }) async {
     calls.add('class 0x${request.toRadixString(16)}');
+    if (request == unplugOnRequest) unplug();
     if (_gone) {
       throw const UsbTransferException('control request on a gone pipe');
     }
     switch (request) {
       case UsbStillImageRequest.deviceReset when resetStalls:
         throw const UsbTransferException('stall');
+      case UsbStillImageRequest.cancel when cancelStalls:
+        throw const UsbTransferException('stall');
+      case UsbStillImageRequest.getDeviceStatus when deviceStatusTimesOut:
+        throw const UsbTransferException('timeout');
       case UsbStillImageRequest.getDeviceStatus:
         final busy = deviceStatusBusyPolls > 0;
         if (busy) {

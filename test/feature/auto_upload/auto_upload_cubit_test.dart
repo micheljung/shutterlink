@@ -249,6 +249,19 @@ void main() {
     expect(cubit.state.backlog, isNull);
   });
 
+  test('a camera that does not answer asks for a power-cycle', () async {
+    await enter();
+
+    connect.emit(const ConnectReconnecting(notResponding: true, usb: true));
+    await pumpEventQueue();
+
+    expect(
+      service.statuses.last.text,
+      startsWith(AutoUploadCubit.notRespondingText),
+    );
+    expect(service.statuses.last.state, LiveServiceState.reconnecting);
+  });
+
   test('a reconnect keeps the counters and the card, and catches up', () async {
     final second = FakeCameraClient([old, shot, missed]);
     connections.add(second);

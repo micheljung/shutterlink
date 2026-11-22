@@ -138,6 +138,7 @@ class AutoUploadCubit extends Cubit<AutoUploadState> {
   static const reconnectingText = 'Reconnecting to the camera';
   static const unreachableText = 'Camera not reachable';
   static const userActionText = 'Open Shutterlink to allow USB access';
+  static const notRespondingText = ConnectCubit.notRespondingMessage;
 
   final ConnectCubit _connect;
   final ModeCubit _modes;
@@ -346,6 +347,10 @@ class AutoUploadCubit extends Cubit<AutoUploadState> {
       ConnectReconnecting(userActionNeeded: true) => (
         LiveServiceState.reconnecting,
         userActionText,
+      ),
+      ConnectReconnecting(notResponding: true) => (
+        LiveServiceState.reconnecting,
+        notRespondingText,
       ),
       ConnectReconnecting(unreachable: true) => (
         LiveServiceState.unreachable,

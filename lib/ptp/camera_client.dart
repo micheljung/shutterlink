@@ -94,6 +94,15 @@ class CameraDisconnectedException implements Exception {
   String toString() => 'CameraDisconnectedException($cause)';
 }
 
+/// The camera is on the cable but does not answer the reset sequence, as
+/// when its firmware crashed.
+class CameraNotRespondingException extends CameraDisconnectedException {
+  const CameraNotRespondingException([super.cause]);
+
+  @override
+  String toString() => 'CameraNotRespondingException($cause)';
+}
+
 class PtpResponseException implements Exception {
   const PtpResponseException(this.operation, this.responseCode);
 
@@ -131,6 +140,15 @@ class CancelToken {
 typedef ChunkWriter = Future<void> Function(Uint8List chunk);
 typedef TransferProgress = void Function(int received, int total);
 
+/// How a transport that was dropped is retried: after [first], then every
+/// [repeat].
+class ReconnectPolicy {
+  const ReconnectPolicy({required this.first, required this.repeat});
+
+  final Duration first;
+  final Duration repeat;
+}
+
 abstract interface class CameraClient {
   CameraDeviceInfo get deviceInfo;
 
@@ -158,8 +176,12 @@ abstract interface class CameraClient {
   /// held.
   bool get thumbnailsUpright;
 
+  /// Null keeps the supervisor's own backoff.
+  ReconnectPolicy? get reconnectPolicy;
+
   /// Streams [object] from [offset] to [write]: [length] bytes, or to the
-  /// end without one.
+  /// end without one. [chunkSize] caps each transfer request; without it
+  /// the transport picks its own.
   Future<void> download(
     CameraObject object,
     ChunkWriter write, {
@@ -167,6 +189,7 @@ abstract interface class CameraClient {
     int? length,
     TransferProgress? onProgress,
     CancelToken? cancelToken,
+    int? chunkSize,
   });
 
   bool get canDelete;

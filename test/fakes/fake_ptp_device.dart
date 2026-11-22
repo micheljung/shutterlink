@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -21,6 +23,14 @@ const _objectAdded64NameOffset = 0x2C;
 const _transferFormatAt = 0x0C;
 const _transferSizeAt = 0x14;
 const _transferNameOffset = 0x1C;
+const _u32Size = 4;
+const _canonPropertyPayloadSize = 3 * _u32Size;
+const _viewFinderRecordHeaderSize = 2 * _u32Size;
+
+/// A GetViewFinderData record type that is not a JPEG, such as the EVF
+/// info block a real body sends next to the frame.
+const fakeViewFinderInfoRecordType = 4;
+const _fakeViewFinderInfoLength = 16;
 
 class FakeObject {
   FakeObject({
@@ -118,13 +128,53 @@ Uint8List objectRemovedRecord(int handle) {
 }
 
 /// A Canon PropValueChanged record with a single u32 value.
-Uint8List propertyChangedRecord(int property, int value) {
-  const size = _recordHandleAt + 8;
+Uint8List propertyChangedRecord(int property, int value) =>
+    propertyBytesChangedRecord(
+      property,
+      (ByteData(
+        _u32Size,
+      )..setUint32(0, value, Endian.little)).buffer.asUint8List(),
+    );
+
+/// A Canon PropValueChanged record with a value of any length.
+Uint8List propertyBytesChangedRecord(int property, List<int> value) {
+  const valueAt = _recordHandleAt + _u32Size;
+  final size = valueAt + value.length;
   final record = ByteData(size)
     ..setUint32(0, size, Endian.little)
     ..setUint32(_recordTypeAt, CanonEosEvent.propValueChanged, Endian.little)
+    ..setUint32(_recordHandleAt, property, Endian.little);
+  return record.buffer.asUint8List()..setAll(valueAt, value);
+}
+
+/// A Canon AvailListChanged record; [count] overrides the real value count.
+Uint8List allowedValuesRecord(
+  int property,
+  int dataType,
+  List<int> values, {
+  int? count,
+}) {
+  const dataTypeAt = _recordHandleAt + _u32Size;
+  const countAt = dataTypeAt + _u32Size;
+  const valuesAt = countAt + _u32Size;
+  final size = valuesAt + values.length * _u32Size;
+  final record = ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_recordTypeAt, CanonEosEvent.availListChanged, Endian.little)
     ..setUint32(_recordHandleAt, property, Endian.little)
-    ..setUint32(_recordHandleAt + 4, value, Endian.little);
+    ..setUint32(dataTypeAt, dataType, Endian.little)
+    ..setUint32(countAt, count ?? values.length, Endian.little);
+  for (final (i, value) in values.indexed) {
+    record.setUint32(valuesAt + i * _u32Size, value, Endian.little);
+  }
+  return record.buffer.asUint8List();
+}
+
+/// A record whose size is below the header, which ends a Canon event batch.
+Uint8List malformedEventRecord() {
+  final record = ByteData(canonEventHeaderSize)
+    ..setUint32(0, _u32Size, Endian.little)
+    ..setUint32(_recordTypeAt, CanonEosEvent.storageInfoChanged, Endian.little);
   return record.buffer.asUint8List();
 }
 
@@ -136,6 +186,25 @@ Uint8List storageChangedRecord(int storageId) {
     ..setUint32(_recordTypeAt, CanonEosEvent.storageInfoChanged, Endian.little)
     ..setUint32(_recordHandleAt, storageId, Endian.little);
   return record.buffer.asUint8List();
+}
+
+/// A Canon CameraStatusChanged record, as the EOS R sends it around a shot.
+Uint8List cameraStatusRecord(int status) {
+  const size = _recordHandleAt + _u32Size;
+  final record = ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_recordTypeAt, CanonEosEvent.cameraStatusChanged, Endian.little)
+    ..setUint32(_recordHandleAt, status, Endian.little);
+  return record.buffer.asUint8List();
+}
+
+Uint8List viewFinderRecord(int type, Uint8List payload) {
+  final size = _viewFinderRecordHeaderSize + payload.length;
+  final record = ByteData(size)
+    ..setUint32(0, size, Endian.little)
+    ..setUint32(_u32Size, type, Endian.little);
+  return record.buffer.asUint8List()
+    ..setAll(_viewFinderRecordHeaderSize, payload);
 }
 
 Uint8List patternBytes(int length, {int seed = 1}) {
@@ -280,6 +349,46 @@ class FakePtpDevice {
   final receivedOpcodes = <int>[];
   int _partialBytesSent = 0;
 
+  /// Canon properties set with SetDevicePropValueEx, by property.
+  final canonProperties = <int, int>{};
+
+  /// Every SetDevicePropValueEx payload, in order.
+  final canonPropertyPayloads = <Uint8List>[];
+
+  /// JPEGs GetViewFinderData hands out, one per request, while the EVF
+  /// output includes the PC.
+  final liveViewFrames = Queue<Uint8List>();
+
+  /// Response codes GetViewFinderData answers with before any frame, one per
+  /// request.
+  final viewFinderCodes = Queue<int>();
+
+  /// Remote release, zoom and AF commands, in order.
+  final vendorCalls = <({int opcode, List<int> params, Uint8List? dataOut})>[];
+
+  /// Response codes that replace the normal answer, by opcode.
+  final responseOverrides = <int, int>{};
+
+  /// Queue a PropValueChanged echo for every SetDevicePropValueEx.
+  bool echoCanonProperties = false;
+
+  static const _firstCapturedHandle = 0x30;
+  int _capturedCount = 0;
+  bool _capturing = false;
+
+  /// How long after the release the new object is announced.
+  Duration captureObjectDelay = const Duration(milliseconds: 60);
+
+  /// How long after the new object the camera reports idle.
+  Duration captureIdleDelay = const Duration(milliseconds: 30);
+
+  /// Releases that capture nothing and send no event, as when autofocus
+  /// fails.
+  int failedAutofocusReleases = 0;
+
+  /// RemoteReleaseOn calls refused because a capture was still running.
+  int busyRefusals = 0;
+
   void addObject(FakeObject object, {bool sixtyFourBit = false}) {
     objects.add(object);
     queueEventRecord(objectAddedRecord(object, sixtyFourBit: sixtyFourBit));
@@ -292,10 +401,21 @@ class FakePtpDevice {
 
   void queueEventRecord(Uint8List record) => _pendingEvents.add(record);
 
-  FakePtpReply handle(int opcode, List<int> params) {
+  /// Operations whose command is followed by a data-out phase.
+  static const dataOutOperations = {
+    PtpOperation.setDevicePropValue,
+    CanonEosOperation.setDevicePropValueEx,
+    CanonEosOperation.setLiveAfFrame,
+  };
+
+  FakePtpReply handle(int opcode, List<int> params, {Uint8List? dataOut}) {
     final p = params;
     FakeObject? object(int handle) =>
         objects.firstWhereOrNull((o) => o.handle == handle);
+    final override = responseOverrides[opcode];
+    if (override != null) {
+      return FakePtpReply(override);
+    }
     switch (opcode) {
       case PtpOperation.openSession:
         return FakePtpReply(openSessionCode);
@@ -368,6 +488,32 @@ class FakePtpDevice {
           return FakePtpReply(devicePropValueCode);
         }
         return FakePtpReply(PtpResponseCode.ok, data: value);
+      case PtpOperation.setDevicePropValue:
+        if (dataOut == null) {
+          return const FakePtpReply(PtpResponseCode.generalError);
+        }
+        devicePropertyValues[p[0]] = dataOut;
+        return const FakePtpReply(PtpResponseCode.ok);
+      case CanonEosOperation.setDevicePropValueEx:
+        return _setCanonProperty(dataOut);
+      case CanonEosOperation.getViewFinderData:
+        return _viewFinderData();
+      case CanonEosOperation.remoteReleaseOn ||
+          CanonEosOperation.remoteReleaseOff ||
+          CanonEosOperation.zoom ||
+          CanonEosOperation.zoomPosition ||
+          CanonEosOperation.doAf ||
+          CanonEosOperation.setLiveAfFrame:
+        vendorCalls.add((opcode: opcode, params: p, dataOut: dataOut));
+        if (opcode == CanonEosOperation.remoteReleaseOn && _capturing) {
+          busyRefusals++;
+          return const FakePtpReply(PtpResponseCode.deviceBusy);
+        }
+        if (opcode == CanonEosOperation.remoteReleaseOn &&
+            p.firstOrNull == CanonRemoteRelease.fullPress) {
+          _capture();
+        }
+        return const FakePtpReply(PtpResponseCode.ok);
       case CanonEosOperation.getEvent:
         return FakePtpReply(PtpResponseCode.ok, data: _eventData());
       case PtpOperation.closeSession ||
@@ -377,6 +523,75 @@ class FakePtpDevice {
       default:
         return const FakePtpReply(PtpResponseCode.operationNotSupported);
     }
+  }
+
+  /// A shot as the EOS R reports it: capture started with
+  /// StorageInfoChanged at once, the new object later, then idle. The camera
+  /// refuses another release until then.
+  void _capture() {
+    if (failedAutofocusReleases > 0) {
+      failedAutofocusReleases--;
+      return;
+    }
+    final handle = _firstCapturedHandle + _capturedCount++;
+    _capturing = true;
+    queueEventRecord(cameraStatusRecord(CanonCameraStatus.capturing));
+    queueEventRecord(storageChangedRecord(fakeStorageId));
+    Timer(captureObjectDelay, () {
+      addObject(
+        FakeObject(
+          handle: handle,
+          format: PtpObjectFormat.exifJpeg,
+          filename: 'IMG_${handle.toString().padLeft(4, '0')}.JPG',
+          parent: folderHandle,
+          content: patternBytes(jpegSize, seed: handle),
+          thumbnail: patternBytes(100, seed: handle),
+        ),
+      );
+    });
+    Timer(captureObjectDelay + captureIdleDelay, () {
+      _capturing = false;
+      queueEventRecord(cameraStatusRecord(CanonCameraStatus.idle));
+    });
+  }
+
+  FakePtpReply _setCanonProperty(Uint8List? dataOut) {
+    if (dataOut == null || dataOut.length != _canonPropertyPayloadSize) {
+      return const FakePtpReply(PtpResponseCode.generalError);
+    }
+    canonPropertyPayloads.add(dataOut);
+    final view = ByteData.sublistView(dataOut);
+    final property = view.getUint32(_u32Size, Endian.little);
+    final value = view.getUint32(2 * _u32Size, Endian.little);
+    canonProperties[property] = value;
+    if (echoCanonProperties) {
+      queueEventRecord(propertyChangedRecord(property, value));
+    }
+    return const FakePtpReply(PtpResponseCode.ok);
+  }
+
+  FakePtpReply _viewFinderData() {
+    if (viewFinderCodes.isNotEmpty) {
+      return FakePtpReply(viewFinderCodes.removeFirst());
+    }
+    final output = canonProperties[CanonEosProperty.evfOutputDevice] ?? 0;
+    if ((output & CanonEvfOutput.pc) == 0 || liveViewFrames.isEmpty) {
+      return const FakePtpReply(CanonEosResponseCode.deviceNotReady);
+    }
+    final data = PtpDataWriter()
+      ..bytes(
+        viewFinderRecord(
+          fakeViewFinderInfoRecordType,
+          Uint8List(_fakeViewFinderInfoLength),
+        ),
+      )
+      ..bytes(
+        viewFinderRecord(
+          CanonViewFinder.jpegRecordType,
+          liveViewFrames.removeFirst(),
+        ),
+      );
+    return FakePtpReply(PtpResponseCode.ok, data: data.toBytes());
   }
 
   Uint8List _eventData() {
